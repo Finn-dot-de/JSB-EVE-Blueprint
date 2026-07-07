@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: eve_postgres
+    restart: unless-stopped
+    profiles: ["dev", "prod"]
+    environment:
+      POSTGRES_DB: eve_blueprint
+      POSTGRES_USER: eve_user
+      POSTGRES_PASSWORD: secret_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eve_user -d eve_blueprint"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Das Spring Boot Backend ---
+  backend:
+    build: .
+    container_name: eve_backend
+    restart: unless-stopped
+    profiles: ["dev", "prod"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/eve_blueprint
+      - SPRING_DATASOURCE_USERNAME=eve_user
+      - SPRING_DATASOURCE_PASSWORD=secret_password
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+
+  # --- DEV FRONTEND (ng serve) ---
+  frontend-dev:
+    build:
+      context: frontend
+      target: dev
+    container_name: eve_frontend_dev
+    restart: unless-stopped
+    profiles: ["dev"]
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  # --- PROD FRONTEND (Nginx) ---
+  frontend-prod:
+    build:
+      context: frontend
+      target: prod
+    container_name: eve_frontend_prod
+    restart: unless-stopped
+    profiles: ["prod"]
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:

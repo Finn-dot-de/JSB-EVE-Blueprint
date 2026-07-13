@@ -1,0 +1,66 @@
+<div class="terminal-wrapper">
+  <header class="scanline">
+    <h1>[ BUY-BOT 3000 ]</h1>
+    <p class="status">> System Online... Auth Token valid_</p>
+  </header>
+
+  <div class="input-section">
+    <label for="eve-import">> Asset-Liste (Copy & Paste aus EVE):</label>
+    <textarea
+      id="eve-import"
+      [(ngModel)]="inputText"
+      rows="10"
+      placeholder="50000 Tritanium&#10;10 PLEX">
+    </textarea>
+
+    <div class="controls">
+      <select [(ngModel)]="selectedStation">
+        @for (station of stations; track station) {
+          <option [value]="station">{{ station }}</option>
+        }
+      </select>
+
+      <button (click)="calculate()" [disabled]="isLoading || !inputText">
+        {{ isLoading ? 'PROCESSING...' : 'MACH MIR EIN ANGEBOT' }}
+      </button>
+    </div>
+  </div>
+
+  @if (isLoading || results.length > 0) {
+    <div class="results-section">
+      @if (isLoading) {
+        <div class="loader">> Analysiere Marktdaten über ESI API... bitte warten_</div>
+      } @else {
+        <table class="retro-table">
+          <thead>
+          <tr>
+            <th>Status</th>
+            <th class="right">Anzahl</th>
+            <th>Assetname</th>
+            <th class="right">Volumen (m³)</th>
+            <th class="center">Bedarf</th>
+            <th class="right">Preis (ISK)</th>
+          </tr>
+          </thead>
+          <tbody>
+            @for (item of results; track item.name) {
+              <tr [class.blacklisted]="item.isBlacklisted">
+                <td>{{ item.isBlacklisted ? '(X)' : '[OK]' }}</td>
+                <td class="right">{{ item.quantity | number }}</td>
+                <td>{{ item.name }}</td>
+                <td class="right">{{ item.volume | number:'1.1-2' }}</td>
+                <td class="center stars">{{ getStars(item.demand) }}</td>
+                <td class="right">{{ item.price | number }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        <div class="summary">
+          <h2 class="total-price">GESAMTPREIS: {{ totalPrice | number }} ISK</h2>
+          <p class="bot-reaction">> {{ botReaction }}<span class="cursor">_</span></p>
+        </div>
+      }
+    </div>
+  }
+</div>

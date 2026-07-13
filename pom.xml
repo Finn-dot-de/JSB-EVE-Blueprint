@@ -8,11 +8,11 @@
         <version>4.1.0</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>eve-blueprint</groupId>
-    <artifactId>eve-blueprint</artifactId>
+    <groupId>eve-own-auth</groupId>
+    <artifactId>eve-own-auth</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>eve-blueprint</name>
-    <description>eve-blueprint</description>
+    <name>eve-own-auth</name>
+    <description>eve-own-auth</description>
     <url/>
     <licenses>
         <license/>

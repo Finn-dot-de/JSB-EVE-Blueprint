@@ -1,4 +1,4 @@
-package com.eveblueprint.backend.service.auth;
+package com.eve.own.auth.backend.service.auth;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;

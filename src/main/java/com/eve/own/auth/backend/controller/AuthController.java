@@ -1,7 +1,7 @@
-package com.eveblueprint.backend.controller;
+package com.eve.own.auth.backend.controller;
 
-import com.eveblueprint.backend.service.auth.AuthService;
-import com.eveblueprint.backend.service.auth.JwtService;
+import com.eve.own.auth.backend.service.auth.AuthService;
+import com.eve.own.auth.backend.service.auth.JwtService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;

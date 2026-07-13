@@ -1,11 +1,11 @@
-package com.eveblueprint.backend.service.auth;
+package com.eve.own.auth.backend.service.auth;
 
-import com.eveblueprint.backend.database.entity.Alliance;
-import com.eveblueprint.backend.database.entity.Character;
-import com.eveblueprint.backend.database.entity.Corporation;
-import com.eveblueprint.backend.database.repository.AllianceRepository;
-import com.eveblueprint.backend.database.repository.CharacterRepository;
-import com.eveblueprint.backend.database.repository.CorporationRepository;
+import com.eve.own.auth.backend.database.entity.Alliance;
+import com.eve.own.auth.backend.database.entity.Character;
+import com.eve.own.auth.backend.database.entity.Corporation;
+import com.eve.own.auth.backend.database.repository.AllianceRepository;
+import com.eve.own.auth.backend.database.repository.CharacterRepository;
+import com.eve.own.auth.backend.database.repository.CorporationRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;

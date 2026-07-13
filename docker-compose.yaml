@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     profiles: ["dev", "prod"]
     environment:
-      POSTGRES_DB: eve_blueprint
+      POSTGRES_DB: eve_own_auth
       POSTGRES_USER: eve_user
       POSTGRES_PASSWORD: secret_password
     ports:
@@ -13,7 +13,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eve_user -d eve_blueprint"]
+      test: ["CMD-SHELL", "pg_isready -U eve_user -d eve_own_auth"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -32,7 +32,7 @@ services:
     env_file:
       - .env
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/eve_blueprint
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/eve_own_auth
       - SPRING_DATASOURCE_USERNAME=eve_user
       - SPRING_DATASOURCE_PASSWORD=secret_password
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update

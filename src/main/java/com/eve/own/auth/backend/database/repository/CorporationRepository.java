@@ -1,6 +1,6 @@
-package com.eveblueprint.backend.database.repository;
+package com.eve.own.auth.backend.database.repository;
 
-import com.eveblueprint.backend.database.entity.Corporation;
+import com.eve.own.auth.backend.database.entity.Corporation;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

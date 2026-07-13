@@ -1,4 +1,4 @@
-package com.eveblueprint.backend.service.auth;
+package com.eve.own.auth.backend.service.auth;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

@@ -1,11 +1,11 @@
 import { Injectable } from '@angular/core';
 import { Observable, delay, of } from 'rxjs';
-import {AssetResult, BuybackResponse} from '../models/buback.model';
+import {AssetResult, BuybackResponse} from '../models/model.model';
 
 @Injectable({
   providedIn: 'root'
 })
-export class BuybackService {
+export class ServiceService {
 
   // Diese Methode wird später durch this.http.post('/api/buyback/calculate', { text, station }) ersetzt
   calculateOffer(eveText: string, station: string): Observable<BuybackResponse> {

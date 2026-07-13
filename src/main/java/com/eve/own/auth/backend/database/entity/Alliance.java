@@ -1,4 +1,4 @@
-package com.eveblueprint.backend.database.entity;
+package com.eve.own.auth.backend.database.entity;
 
 import jakarta.persistence.*;
 import lombok.Getter;

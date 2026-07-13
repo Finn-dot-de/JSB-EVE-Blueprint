@@ -1,4 +1,4 @@
-package com.eveblueprint.backend.security.config;
+package com.eve.own.auth.backend.security.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

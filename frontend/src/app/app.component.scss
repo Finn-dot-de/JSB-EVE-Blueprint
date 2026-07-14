@@ -1,0 +1,23 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* Nimmt die volle Bildschirmhöhe ein */
+}
+
+.content-wrapper {
+  display: flex;
+  flex: 1; /* Nimmt den restlichen Platz unter der Navbar ein */
+  overflow: hidden; /* Verhindert, dass die ganze Seite scrollt */
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto; /* Nur der Content-Bereich soll scrollbar sein */
+  background-color: var(--bg-color);
+}

@@ -23,6 +23,7 @@
 hs_err_pid*
 replay_pid*
 .vscode
+.env
 
 HELP.md
 target/
@@ -57,3 +58,4 @@ build/
 
 ### VS Code ###
 .vscode/
+

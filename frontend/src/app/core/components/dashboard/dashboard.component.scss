@@ -1,0 +1,208 @@
+// Spezifische Farben für das EVE-Dashboard
+$eve-green: #00dfa2;
+$eve-red: #ff3366;
+$card-bg: #2a2d36;
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding-bottom: 2rem;
+}
+
+/* =========================================
+   DER NEUE BANNER (Kopfzeile)
+   ========================================= */
+.dashboard-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.2); // Leicht abgedunkelt
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.banner-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.banner-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.banner-name {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-right: 1rem;
+}
+
+.banner-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+
+  .tiny-logo {
+    width: 20px;
+    height: 20px;
+    border-radius: 2px;
+  }
+}
+
+.banner-right {
+  display: flex;
+  gap: 8px;
+
+  .btn-sync {
+    background-color: $eve-green;
+    color: #000;
+    border: none;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: opacity 0.2s;
+
+    &:hover { opacity: 0.8; }
+  }
+}
+
+/* =========================================
+   SECTION DIVIDER (Titel mit Linien)
+   ========================================= */
+.section-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  font-weight: 500;
+  margin: 1rem 0;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  &::before { margin-right: 1.5rem; }
+  &::after { margin-left: 1.5rem; }
+}
+
+/* =========================================
+   GLANCE GRID (Die großen Icons oben)
+   ========================================= */
+.glance-grid {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-top: -1rem; // Zieht das Grid etwas näher an den Divider
+
+  // Hier überschreiben wir die Standardgröße der Icons (50px statt 42px)
+  .stat-item .icon-box {
+    width: 50px;
+    height: 50px;
+
+    img {
+      width: 75%;
+      height: 75%;
+    }
+  }
+
+  .stat-item .stat-value {
+    font-size: 0.9rem; // Etwas größerer Text für die Live-Zahlen
+  }
+}
+
+/* =========================================
+   CARD GRID (Das Raster für die Asset-Boxen)
+   ========================================= */
+.card-grid {
+  display: flex;
+  flex-wrap: wrap; // Bricht um, wenn der Bildschirm zu klein wird
+  gap: 1.5rem;
+  justify-content: center;
+}
+
+.stat-card {
+  background-color: $card-bg;
+  border-radius: 6px;
+  min-width: 200px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+
+  .card-title {
+    text-align: center;
+    padding: 0.75rem;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    background-color: rgba(0, 0, 0, 0.2); // Leicht dunklerer Header
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px 6px 0 0;
+  }
+
+  .card-content {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1rem;
+  }
+}
+
+/* =========================================
+   ALLGEMEINE STAT ITEMS (Für die Karten)
+   ========================================= */
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+
+  .icon-box {
+    width: 42px; // Standardgröße für Asset-Karten
+    height: 42px;
+    background-color: #1a1c23;
+    border-radius: 6px;
+    border: 2px solid #4a4e59;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    transition: transform 0.2s ease;
+
+    &:hover {
+      transform: translateY(-2px);
+    }
+
+    img {
+      width: 80%;
+      height: 80%;
+      object-fit: contain;
+    }
+
+    /* Dynamische Rahmenfarben */
+    &.good { border-color: $eve-green; }
+    &.bad { border-color: $eve-red; }
+    &.info { border-color: #3b82f6; }
+  }
+
+  .stat-value {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #4a4e59; // Standard Textfarbe
+
+    /* Dynamische Textfarben */
+    &.good { color: $eve-green; }
+    &.bad { color: $eve-red; }
+    &.info { color: #3b82f6; }
+  }
+}

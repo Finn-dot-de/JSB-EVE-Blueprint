@@ -1,0 +1,63 @@
+<div class="dashboard-container">
+
+  @if (dashboardData(); as data) {
+
+    <div class="dashboard-banner">
+      <div class="banner-left">
+        <img [src]="data.portraitUrl" alt="Portrait" class="banner-avatar">
+
+        <h2 class="banner-name">{{ data.characterName }}</h2>
+
+        @if (data.allianceName) {
+          <div class="banner-tag">
+            <img #allianceLogo src="https://images.evetech.net/alliances/1/logo?size=32" alt="Alliance" class="tiny-logo" (error)="allianceLogo.src='assets/fallback.png'">
+            <span>{{ data.allianceName }}</span>
+          </div>
+        }
+
+        <div class="banner-tag">
+          <img #corpLogo src="https://images.evetech.net/corporations/1/logo?size=32" alt="Corp" class="tiny-logo" (error)="corpLogo.src='assets/fallback.png'">
+          <span>{{ data.corporationName }}</span>
+        </div>
+      </div>
+
+      <div class="banner-right">
+        <button class="btn-sync"><i class="fa-solid fa-rotate"></i></button>
+        <button class="btn-sync check"><i class="fa-solid fa-check"></i></button>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <span>Account at a Glance</span>
+    </div>
+
+    <div class="glance-grid">
+      <div class="stat-item">
+        <div class="icon-box good">
+          <img src="https://images.evetech.net/types/1333/icon?size=64" alt="ISK">
+        </div>
+        <span class="stat-value good">{{ data.totalWalletBalance | number:'1.0-0' }} ISK</span>
+      </div>
+
+      <div class="stat-item">
+        <div class="icon-box info">
+          <i class="fa-solid fa-brain" style="font-size: 1.5rem; color: #3b82f6;"></i>
+        </div>
+        <span class="stat-value info">0 SP</span>
+      </div>
+
+      <div class="stat-item">
+        <div class="icon-box neutral">
+          <i class="fa-solid fa-users" style="font-size: 1.5rem; color: #94a3b8;"></i>
+        </div>
+        <span class="stat-value">{{ data.totalCharacters }} Chars</span>
+      </div>
+    </div>
+
+  } @else {
+    <div style="display: flex; justify-content: center; padding: 3rem;">
+      <div class="loading-spinner"></div>
+    </div>
+  }
+
+</div>

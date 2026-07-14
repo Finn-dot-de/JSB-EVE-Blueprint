@@ -1,0 +1,49 @@
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+
+    @for (item of menuItems; track item.name) {
+
+      @if (!item.children) {
+        <a
+          [routerLink]="item.route"
+          routerLinkActive="active"
+          class="nav-item"
+        >
+          <i class="icon" [class]="item.icon"></i>
+          <span class="label">{{ item.name }}</span>
+        </a>
+      }
+
+      @else {
+        <div class="nav-group">
+          <button class="nav-item nav-folder" (click)="toggleMenu(item)">
+            <i class="icon" [class]="item.icon"></i>
+            <span class="label">{{ item.name }}</span>
+            <i class="fa-solid fa-chevron-right chevron" [class.rotated]="item.expanded"></i>
+          </button>
+
+          @if (item.expanded) {
+            <div class="sub-menu">
+              @for (subItem of item.children; track subItem.name) {
+                <a
+                  [routerLink]="subItem.route"
+                  routerLinkActive="active"
+                  class="nav-item sub-item"
+                >
+                  <i class="icon" [class]="subItem.icon"></i>
+                  <span class="label">{{ subItem.name }}</span>
+                </a>
+              }
+            </div>
+          }
+        </div>
+      }
+
+    }
+
+  </nav>
+
+  <div class="sidebar-footer">
+    <small>v1.0.0 | EVE Auth</small>
+  </div>
+</aside>

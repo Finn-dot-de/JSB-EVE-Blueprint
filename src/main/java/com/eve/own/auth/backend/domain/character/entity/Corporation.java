@@ -12,7 +12,7 @@ public class Corporation {
 
     @Id
     @Column(name = "corporation_id")
-    private Long id; // ID wird direkt von der ESI geliefert
+    private Long id;
 
     @Column(nullable = false)
     private String name;
@@ -23,4 +23,8 @@ public class Corporation {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "alliance_id")
     private Alliance alliance;
+
+    @Column(name = "faction_id")
+    private Long factionId;
 }
+

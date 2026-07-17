@@ -34,4 +34,12 @@ public class Character {
 
     @Column(name = "main_character_id")
     private Long mainCharacterId;
+
+    @Column(name = "faction_id")
+    private Long factionId;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "character_roles", joinColumns = @JoinColumn(name = "character_id"))
+    private java.util.Set<String> roles = new java.util.HashSet<>();
+
 }

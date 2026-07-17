@@ -1,11 +1,13 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { catchError, of, tap } from 'rxjs';
+import { Router } from '@angular/router';
 
 export interface AuthUser {
   characterId: number;
   characterName: string;
   portraitUrl: string;
+  roles: string[]; // NEU: Die Rollen vom Backend empfangen
 }
 
 @Injectable({
@@ -13,8 +15,8 @@ export interface AuthUser {
 })
 export class AuthService {
   private http = inject(HttpClient);
+  private router = inject(Router);
 
-  // Hält nur die nackten Daten vom Backend
   currentUser = signal<AuthUser | null>(null);
   loading = signal<boolean>(true);
 
@@ -40,13 +42,23 @@ export class AuthService {
       .subscribe();
   }
 
+  // NEU: Helfer-Methode für die Rechte-Prüfung im UI
+  hasAnyRole(allowedRoles: string[]): boolean {
+    const user = this.currentUser();
+    if (!user || !user.roles) return false;
+    return allowedRoles.some(role => user.roles.includes(role));
+  }
+
   login() {
     window.location.href = 'http://localhost:8080/api/auth/login';
   }
 
   logout() {
     this.http.post('http://localhost:8080/api/auth/logout', {}).subscribe({
-      next: () => this.currentUser.set(null),
+      next: () => {
+        this.currentUser.set(null);
+        this.router.navigate(['/home']);
+      },
       error: (err) => console.error('Logout fehlgeschlagen', err)
     });
   }

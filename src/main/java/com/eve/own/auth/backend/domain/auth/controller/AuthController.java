@@ -86,7 +86,7 @@ public class AuthController {
             // 3. WICHTIG: Das JWT wird IMMER für den Main-Charakter ausgestellt!
             // Selbst wenn er gerade einen Alt eingeloggt hat, soll er danach wieder als Main im Tool sein.
             Long jwtTargetId = character.getMainCharacterId();
-            String token = jwtService.generateToken(jwtTargetId, "Main-Token");
+            String token = jwtService.generateToken(jwtTargetId, "Main-Token", character.getRoles());
 
             ResponseCookie jwtCookie = ResponseCookie.from("toky", token)
                     .httpOnly(true)
@@ -144,7 +144,8 @@ public class AuthController {
         return ResponseEntity.ok(new UserProfileDto(
                 characterId,
                 character.getName(),
-                String.format("https://images.evetech.net/characters/%d/portrait?size=64", characterId)
+                String.format("https://images.evetech.net/characters/%d/portrait?size=64", characterId),
+                character.getRoles()
         ));
     }
 

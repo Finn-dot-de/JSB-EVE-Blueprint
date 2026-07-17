@@ -2,6 +2,9 @@ package com.eve.own.auth.backend.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -15,12 +18,29 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
+    }
+
+    // ==========================================
+    // DIE ROLLEN-HIERARCHIE
+    // ==========================================
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.fromHierarchy("""
+            ROLE_IT_ADMIN > ROLE_CEO
+            ROLE_CEO > ROLE_DIRECTOR
+            ROLE_DIRECTOR > ROLE_MANAGER
+            ROLE_MANAGER > ROLE_SENIOR_MEMBER
+            ROLE_SENIOR_MEMBER > ROLE_MEMBER
+            ROLE_MEMBER > ROLE_JUNIOR_MEMBER
+            ROLE_JUNIOR_MEMBER > ROLE_USER
+            """);
     }
 
     @Bean

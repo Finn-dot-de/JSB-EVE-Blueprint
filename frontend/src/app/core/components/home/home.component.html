@@ -1,0 +1,13 @@
+<div class="home-container">
+  <div class="hero-section">
+    <i class="fa-solid fa-space-awesome hero-icon"></i>
+    <h1>Willkommen bei EVE Auth</h1>
+    <p>Das zentrale Management-Tool für deine Corporation und Allianz.</p>
+
+    @if (!authService.currentUser()) {
+      <button class="btn-eve-login-large" (click)="authService.login()">
+        <img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-large.png" alt="Log in with EVE Online">
+      </button>
+    }
+  </div>
+</div>

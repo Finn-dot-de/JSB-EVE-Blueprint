@@ -11,13 +11,18 @@ import java.time.Instant;
 @Setter
 public class CharacterStats {
     @Id
-    private Long characterId; // Identisch mit Character ID
+    private Long characterId;
 
     private Double walletBalance;
+
+    @Column(name = "skill_points")
     private Long skillPoints;
 
-    // Das ETag von CCP, um zu sehen, ob sich Daten geändert haben
+    @Column(name = "rat_kills")
+    private Long ratKills;
+
     private String walletEtag;
+    private String skillsEtag;
 
     private Instant lastUpdated;
 }

@@ -1,0 +1,56 @@
+<div class="roles-container">
+
+  <div class="section-divider">
+    <span>Corporation Roles & Titles</span>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+  } @else {
+
+    <div class="roles-list">
+      @for (title of titles(); track title.titleId) {
+
+        <div class="role-item">
+          <div class="role-left">
+            <div class="shield-icon" [ngClass]="getRoleIconClass(title.mappedRole)">
+              <i class="fa-solid fa-shield-halved"></i>
+            </div>
+
+            <div class="role-name-box">
+              <span class="role-name">
+                @if (title.mappedRole?.includes('ADMIN') || title.mappedRole?.includes('DIRECTOR')) {
+                  <i class="fa-solid fa-lock" style="font-size: 0.8rem; margin-right: 4px; opacity: 0.7;"></i>
+                }
+                {{ title.name }}
+              </span>
+              @if (title.mappedRole) {
+                <span class="mapped-badge">{{ title.mappedRole }}</span>
+              }
+            </div>
+          </div>
+
+          <div class="role-right">
+            <div class="member-count">
+              <span>-</span>
+              <i class="fa-solid fa-user"></i>
+            </div>
+
+            <div class="action-buttons">
+              <button class="btn-action edit" (click)="editMapping(title)" title="Mapping bearbeiten">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button class="btn-action more">
+                <i class="fa-solid fa-ellipsis"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      }
+    </div>
+
+  }
+</div>

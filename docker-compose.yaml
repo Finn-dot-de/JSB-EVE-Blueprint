@@ -18,6 +18,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # --- NEU: Der SDE-Bootstrap-Job ---
+  sde-updater:
+    build:
+      context: ./eve_sde
+      dockerfile: Dockerfile
+    container_name: eve_sde_updater
+    profiles: ["dev", "prod"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DB=eve_own_auth
+      - PG_USER=eve_user
+      - PG_PASS=secret_password
+      - FORCE_SDE_UPDATE=false
+
   # --- Das Spring Boot Backend ---
   backend:
     build: .
@@ -27,6 +45,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      sde-updater:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     env_file:
@@ -70,3 +90,4 @@ services:
 
 volumes:
   postgres_data:
+  

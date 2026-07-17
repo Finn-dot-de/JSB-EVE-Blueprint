@@ -5,18 +5,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "eve_types")
+@Table(name = "inv_groups", schema = "evesde")
 @Getter @Setter
-public class EveType {
+public class InvGroup {
     @Id
-    @Column(name = "type_id")
-    private Long typeId;
-
-    private String name;
-
     @Column(name = "group_id")
     private Long groupId;
 
-    private Double volume;
-    private Double mass;
+    @Column(name = "category_id")
+    private Long categoryId;
+
+    @Column(name = "group_name")
+    private String groupName;
 }

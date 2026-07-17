@@ -4,6 +4,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.http.ResponseEntity;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Service
 public class EsiService {
 
@@ -15,9 +18,8 @@ public class EsiService {
         this.restClient = esiClient;
     }
 
-    // --- NEU: fetch akzeptiert jetzt 'Object... uriVariables' ---
+    // --- Die generische "Magic" Methode für alle ESI-Calls ---
     private <T> EsiResponse<T> fetch(String uri, Object[] uriVariables, String token, String oldEtag, Class<T> responseType) {
-        // Hier werden die Variablen (z.B. characterId) in den URI-String eingesetzt
         var request = restClient.get().uri(uri, uriVariables);
 
         if (token != null) request.header("Authorization", "Bearer " + token);
@@ -54,14 +56,81 @@ public class EsiService {
         return fetch("/characters/{id}/skills/", new Object[]{characterId}, token, etag, SkillResponse.class);
     }
 
-    public EsiResponse<EsiAssetResponse[]> getAssets(Long characterId, String token, String etag) {
-        return fetch("/characters/{id}/assets/", new Object[]{characterId}, token, etag, EsiAssetResponse[].class);
+    // --- NEU: Paginierte Asset-Abfrage ---
+    public List<EsiAssetResponse> getAllAssets(Long characterId, String token) {
+        List<EsiAssetResponse> allAssets = new ArrayList<>();
+        int page = 1;
+        int maxPages = 1;
+
+        do {
+            var response = restClient.get()
+                    .uri("/characters/{id}/assets/?page={page}", characterId, page)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .toEntity(EsiAssetResponse[].class);
+
+            if (response.getBody() != null) {
+                allAssets.addAll(List.of(response.getBody()));
+            }
+
+            String xPages = response.getHeaders().getFirst("X-Pages");
+            if (xPages != null) {
+                maxPages = Integer.parseInt(xPages);
+            }
+            page++;
+        } while (page <= maxPages);
+
+        return allAssets;
     }
 
-    // --- Records ---
-    public record EsiAssetResponse(Long item_id, Integer type_id, Long location_id, Integer quantity) {}
+    public EsiResponse<EsiLpResponse[]> getLoyaltyPoints(Long characterId, String token, String etag) {
+        return fetch("/characters/{id}/loyalty/points/", new Object[]{characterId}, token, etag, EsiLpResponse[].class);
+    }
+
+    public EsiResponse<EsiMiningResponse[]> getMiningLedger(Long characterId, String token, String etag) {
+        return fetch("/characters/{id}/mining/", new Object[]{characterId}, token, etag, EsiMiningResponse[].class);
+    }
+
+    // NEU: Wallet Journal (für Kopfgeld/Ratting)
+    public EsiResponse<EsiJournalResponse[]> getWalletJournal(Long characterId, String token, String etag) {
+        return fetch("/characters/{id}/wallet/journal/", new Object[]{characterId}, token, etag, EsiJournalResponse[].class);
+    }
+
+
+
+    // Die Methode zum Abrufen
+    public EsiCorporationResponse getCorporationInfo(Long corporationId) {
+        // Wir rufen deine generische fetch-Methode auf und ziehen uns direkt die .data() raus
+        return fetch("/corporations/{id}/", new Object[]{corporationId}, null, null, EsiCorporationResponse.class).data();
+    }
+
+    public EsiResponse<EsiTitleResponse[]> getCharacterTitles(Long characterId, String token, String etag) {
+        return fetch("/characters/{id}/titles/", new Object[]{characterId}, token, etag, EsiTitleResponse[].class);
+    }
+
+    public EsiResponse<EsiCorpTitleResponse[]> getCorporationTitles(Long corpId, String token, String etag) {
+        return fetch("/corporations/{id}/titles/", new Object[]{corpId}, token, etag, EsiCorpTitleResponse[].class);
+    }
+    
+    public EsiResponse<EsiCharacterFleetResponse> getCharacterFleet(Long characterId, String token) {
+        return fetch("/characters/{id}/fleet/", new Object[]{characterId}, token, null, EsiCharacterFleetResponse.class);
+    }
+
+    public EsiResponse<EsiFleetMemberResponse[]> getFleetMembers(Long fleetId, String token) {
+        return fetch("/fleets/{id}/members/", new Object[]{fleetId}, token, null, EsiFleetMemberResponse[].class);
+    }
+
+    // --- Records anpassen/erweitern ---
+    public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}
+    public record EsiFleetMemberResponse(Long character_id, java.time.Instant join_time, String role, Long ship_type_id, Long solar_system_id) {}
+    public record EsiCorpTitleResponse(Long title_id, String name) {}
+    public record EsiTitleResponse(Long title_id, String name) {}
+    public record EsiMiningResponse(String date, Long quantity, Long solar_system_id, Long type_id) {}
+    public record EsiJournalResponse(Long id, String date, String ref_type, Double amount) {}
+    public record EsiLpResponse(Long corporation_id, Integer loyalty_points) {}
+    public record SkillResponse(Long total_sp, Integer unallocated_sp) {}
+    public record EsiAssetResponse(Long item_id, Long type_id, Long location_id, Integer quantity, Boolean is_singleton) {}
     public record EsiCharacterResponse(String name, Long corporation_id) {}
-    public record EsiCorporationResponse(String name, String ticker, Long alliance_id) {}
-    public record EsiAllianceResponse(String name, String ticker) {} // Hinzugefügt!
-    public record SkillResponse(Long total_sp) {}
+    public record EsiCorporationResponse(String name, String ticker, Long alliance_id, Long faction_id) {}
+    public record EsiAllianceResponse(String name, String ticker) {}
 }

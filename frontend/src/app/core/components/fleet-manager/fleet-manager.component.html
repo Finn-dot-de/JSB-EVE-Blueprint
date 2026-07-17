@@ -1,0 +1,146 @@
+<div class="roles-container">
+  <div class="section-divider">
+    <span>Fleet Management</span>
+  </div>
+
+  <!-- FC BEREICH: Neues Formular oder Aktives Control-Panel -->
+  @if (isFleetCommander) {
+    @if (myActiveFleet(); as active) {
+      <div class="surface-panel active-fleet-panel" style="margin-bottom: 2rem;">
+        <div class="fleet-header">
+          <div class="status-pulse"></div>
+          <h3>FAT Aktiv: {{ active.fleetName }}</h3>
+        </div>
+
+        <div class="link-box">
+          <code>{{ getJoinUrlFor(active.trackingCode) }}</code>
+          <button class="btn-icon" (click)="copyLinkToClipboard(active.trackingCode)" title="Kopieren">
+            <i class="fa-solid fa-copy"></i>
+          </button>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: center; margin-top: 1.5rem;">
+          <button class="btn-esi" (click)="syncEsi()" [disabled]="isSyncing()">
+            @if (isSyncing()) { <i class="fa-solid fa-spinner fa-spin"></i> }
+            @else { <i class="fa-solid fa-cloud-arrow-down"></i> Manueller ESI Sync }
+          </button>
+
+          <button class="btn-primary" style="background-color: #ff3366;" (click)="closeFleet()">
+            <i class="fa-solid fa-stop"></i> FAT Beenden
+          </button>
+        </div>
+
+        @if (syncResult()) {
+          <div class="sync-result" [class.error]="syncResult()?.includes('Fehler')" style="margin-top: 1rem;">
+            {{ syncResult() }}
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="surface-panel create-form" style="margin-bottom: 2rem;">
+        <h3>Neue Flotte erfassen</h3>
+        <div class="form-group"><label>Flotten Name / Ziel</label><input type="text" [(ngModel)]="fleetName"></div>
+        <div class="form-group"><label>Doctrine</label><input type="text" [(ngModel)]="doctrine"></div>
+        <div class="form-group"><label>Link Gültigkeit (Minuten)</label><input type="number" [(ngModel)]="expiryMinutes"></div>
+        <button class="btn-primary" (click)="createFleet()" [disabled]="isCreating() || !fleetName">
+          FAT Erstellen
+        </button>
+      </div>
+    }
+  }
+
+  <!-- ALLGEMEINER BEREICH: Übersicht aller Flotten (Letzte 24h) -->
+  @if (recentFleets().length > 0) {
+    <div class="surface-panel">
+
+      <!-- TABS -->
+      <div style="display: flex; gap: 15px; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; overflow-x: auto;">
+        @for (fleet of recentFleets(); track fleet.id) {
+          <button
+            style="background: none; border: none; font-size: 1rem; cursor: pointer; padding: 5px 10px; white-space: nowrap; transition: all 0.2s;"
+            [style.border-bottom]="selectedFleetId() === fleet.id ? '2px solid var(--accent-color)' : 'none'"
+            [style.color]="selectedFleetId() === fleet.id ? 'var(--accent-color)' : 'var(--text-primary)'"
+            (click)="selectFleet(fleet.id)">
+
+            @if (fleet.endTime) {
+              <i class="fa-solid fa-circle" style="color: #ff3366; font-size: 0.6rem; vertical-align: middle; margin-right: 6px;"></i>
+            } @else {
+              <i class="fa-solid fa-circle" style="color: #00dfa2; font-size: 0.6rem; vertical-align: middle; margin-right: 6px;"></i>
+            }
+            {{ fleet.fleetName }}
+            <span style="opacity: 0.6; font-size: 0.85em;">(FC: {{ fleet.fcCharacterName }})</span>
+          </button>
+        }
+      </div>
+
+      <!-- DETAILS DER GEWÄHLTEN FLOTTE -->
+      @if (selectedFleetObj(); as selected) {
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 style="margin: 0; color: var(--text-primary);">Piloten erfasst: {{ attendanceList().length }}</h3>
+          @if (!selected.endTime) {
+            <span style="color: #00dfa2; font-size: 0.85rem;"><i class="fa-solid fa-circle-dot fa-fade"></i> Live Update aktiv</span>
+          } @else {
+            <span style="color: #ff3366; font-size: 0.85rem;"><i class="fa-solid fa-ban"></i> Tracking beendet</span>
+          }
+        </div>
+
+        <!-- Wenn der FC eine alte Flotte ansieht, zeige ihm sicherheitshalber den PAP-Link nochmal -->
+        @if (selected.endTime && selected.fcCharacterId === authService.currentUser()?.characterId) {
+          <div class="link-box" style="margin-bottom: 1.5rem; border-color: rgba(255, 51, 102, 0.3);">
+            <div>
+              <span style="color: #ff3366; font-size: 0.8rem; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                PAP Link (Läuft ab um {{ selected.linkExpiryTime | date:'HH:mm' }})
+              </span>
+              <code>{{ getJoinUrlFor(selected.trackingCode) }}</code>
+            </div>
+            <button class="btn-icon" (click)="copyLinkToClipboard(selected.trackingCode)" title="Kopieren">
+              <i class="fa-solid fa-copy"></i>
+            </button>
+          </div>
+        }
+
+        <!-- TABELLE -->
+        <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary);">
+          <thead>
+          <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
+            <th style="padding: 10px;">Pilot</th>
+            <th style="padding: 10px;">Schiff</th>
+            <th style="padding: 10px;">Gejoint am</th>
+          </tr>
+          </thead>
+          <tbody>
+            @for (member of attendanceList(); track member.id) {
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td style="padding: 10px; display: flex; align-items: center; gap: 10px;">
+                  <img [src]="'https://images.evetech.net/characters/' + member.characterId + '/portrait?size=32'" style="border-radius: 4px;">
+                  {{ member.characterName }}
+                </td>
+                <td style="padding: 10px;">
+                  @if (member.shipTypeId) {
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <img [src]="'https://images.evetech.net/types/' + member.shipTypeId + '/icon?size=32'">
+                      {{ member.shipName || 'Unbekannt' }}
+                    </div>
+                  } @else {
+                    <span style="color: var(--text-secondary); font-style: italic;">Über Link gejoint</span>
+                  }
+                </td>
+                <td style="padding: 10px; color: var(--text-secondary);">
+                  {{ member.joinTime | date:'HH:mm:ss' }}
+                </td>
+              </tr>
+            }
+            @if (attendanceList().length === 0) {
+              <tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-secondary);">Noch keine Piloten erfasst.</td></tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
+  } @else {
+    <div style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+      <i class="fa-solid fa-bed fa-3x" style="margin-bottom: 1rem; opacity: 0.5;"></i>
+      <p>In den letzten 24 Stunden gab es keine Flottenaktivität.</p>
+    </div>
+  }
+</div>

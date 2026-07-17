@@ -20,15 +20,24 @@ public class JwtService {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateToken(Long characterId, String characterName) {
+    public String generateToken(Long characterId, String characterName, java.util.Set<String> roles) {
         long expirationMs = 86400000;
         return Jwts.builder()
                 .subject(characterId.toString())
                 .claim("name", characterName)
+                .claim("roles", roles)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expirationMs))
                 .signWith(key)
                 .compact();
+    }
+
+    // NEU: Methode zum Auslesen der Rollen
+    @SuppressWarnings("unchecked")
+    public java.util.Set<String> getRolesFromToken(String token) {
+        Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+        java.util.List<String> roles = claims.get("roles", java.util.List.class);
+        return roles != null ? new java.util.HashSet<>(roles) : new java.util.HashSet<>();
     }
 
     public boolean validateToken(String token) {

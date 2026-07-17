@@ -88,3 +88,19 @@ services:
         condition: service_started
     ports:
       - "80:80"
+
+  nginx-proxy-manager:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    profiles: [ "prod" ]
+    ports:
+      - "80:80"     # HTTP (Für Let's Encrypt und Weiterleitungen)
+      - "443:443"   # HTTPS (Das SSL-Zertifikat)
+      - "81:81"     # Das Admin-Interface
+    volumes:
+      - ./npm/data:/data
+      - ./npm/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - frontend-prod
+      - backend

@@ -1,6 +1,7 @@
 import {Component, OnInit, inject, signal, computed} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import {environment} from '../../../../environments/environment';
 
 // 1. NEU: Wir definieren die Struktur, die dein Java-Backend jetzt schickt
 export interface DashboardAssetSummaryDto {
@@ -192,7 +193,7 @@ export class DashboardComponent implements OnInit {
   }
 
   ngOnInit() {
-    this.http.get<DashboardDto>('http://localhost:8080/api/dashboard').subscribe({
+    this.http.get<DashboardDto>(`${environment.apiUrl}/dashboard`).subscribe({
       next: (data) => this.dashboardData.set(data),
       error: (err) => console.error('Fehler beim Laden des Dashboards', err)
     });

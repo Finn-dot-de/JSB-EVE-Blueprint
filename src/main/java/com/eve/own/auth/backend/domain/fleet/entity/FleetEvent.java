@@ -17,15 +17,14 @@ public class FleetEvent {
 
     private Long fcCharacterId;
     private String fcCharacterName;
-
     private String fleetName;
     private String doctrine;
-
     private Instant startTime;
     private Instant endTime;
-
     private Instant linkExpiryTime;
 
+    private String trackingType;
+
     @Column(unique = true)
-    private String trackingCode = UUID.randomUUID().toString();
+    private String trackingCode;
 }

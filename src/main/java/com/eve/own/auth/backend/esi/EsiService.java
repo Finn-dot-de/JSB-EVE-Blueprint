@@ -120,7 +120,16 @@ public class EsiService {
         return fetch("/fleets/{id}/members/", new Object[]{fleetId}, token, null, EsiFleetMemberResponse[].class);
     }
 
+    public EsiResponse<EsiOnlineResponse> getCharacterOnlineStatus(Long characterId, String token) {
+        return fetch("/characters/{id}/online/", new Object[]{characterId}, token, null, EsiOnlineResponse.class);
+    }
+
+    public EsiResponse<Long[]> getCorporationMembers(Long corpId, String token) {
+        return fetch("/corporations/{id}/members/", new Object[]{corpId}, token, null, Long[].class);
+    }
+
     // --- Records anpassen/erweitern ---
+    public record EsiOnlineResponse(Boolean online, String last_login, String last_logout, Integer logins) {}
     public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}
     public record EsiFleetMemberResponse(Long character_id, java.time.Instant join_time, String role, Long ship_type_id, Long solar_system_id) {}
     public record EsiCorpTitleResponse(Long title_id, String name) {}

@@ -1,11 +1,13 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import {environment} from '../../../environments/environment';
 
 export interface CreateFleetDto {
   fleetName: string;
   doctrine: string;
   linkExpiryMinutes: number;
+  trackingType: 'LIVE' | 'LINK';
 }
 
 export interface FleetEvent {
@@ -14,10 +16,11 @@ export interface FleetEvent {
   fcCharacterName: string;
   fleetName: string;
   doctrine: string;
-  trackingCode: string;
   startTime: string;
-  endTime: string | null;
-  linkExpiryTime: string;
+  endTime: string;
+  trackingType: string;
+  trackingCode: string;
+  linkExpiryTime?: string;
 }
 
 export interface FleetAttendance {
@@ -34,7 +37,7 @@ export interface FleetAttendance {
 })
 export class FleetService {
   private http = inject(HttpClient);
-  private apiUrl = 'http://localhost:8080/api/fleets';
+  private apiUrl = `${environment.apiUrl}/fleets`;
 
   createFleet(dto: CreateFleetDto): Observable<FleetEvent> {
     return this.http.post<FleetEvent>(`${this.apiUrl}/create`, dto);

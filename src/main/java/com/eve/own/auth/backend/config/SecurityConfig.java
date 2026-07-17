@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.config;
 
+import org.springframework.beans.factory.annotation.Value; // NEU
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
@@ -22,14 +23,14 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
+    private final String frontendUrl;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter,
+                          @Value("${app.frontend.url}") String frontendUrl) {
         this.jwtAuthFilter = jwtAuthFilter;
+        this.frontendUrl = frontendUrl;
     }
 
-    // ==========================================
-    // DIE ROLLEN-HIERARCHIE
-    // ==========================================
     @Bean
     public RoleHierarchy roleHierarchy() {
         return RoleHierarchyImpl.fromHierarchy("""
@@ -54,19 +55,16 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login", "/api/auth/callback", "/api/auth/me").permitAll()
                         .anyRequest().authenticated()
                 )
-                // HIER den neuen Filter registrieren:
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // 2. Hier definieren wir den Türsteher für die verschiedenen Ports
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of("http://localhost:4200"));
+        configuration.setAllowedOrigins(List.of(frontendUrl, "http://localhost:4200", "http://localhost"));
         configuration.setAllowCredentials(true);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));

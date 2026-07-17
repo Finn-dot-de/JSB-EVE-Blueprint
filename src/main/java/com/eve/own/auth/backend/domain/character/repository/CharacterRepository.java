@@ -23,4 +23,6 @@ public interface CharacterRepository extends JpaRepository<com.eve.own.auth.back
     @EntityGraph(attributePaths = {"corporation", "roles"})
     @Query("SELECT c FROM Character c")
     List<Character> findAllWithCorporation();
+
+    List<Character> findByCorporationId(Long corporationId);
 }

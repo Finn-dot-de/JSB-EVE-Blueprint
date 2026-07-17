@@ -1,0 +1,10 @@
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES (null, 'fa-solid fa-gauge-high', 'Dashboard', 'ROLE_USER', '/dashboard');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES (null, 'fa-solid fa-gears', 'Services', 'ROLE_USER', '/services');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES (null, 'fa-solid fa-link', 'CharLink', 'ROLE_USER', '/charlink');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES ('Fleet Management', 'fa-solid fa-bell', 'Fleet Pings', 'ROLE_MEMBER', '/fleet/pings');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES ('Gruppen Management', 'fa-solid fa-shield-halved', 'Roles & Rights', 'ROLE_DIRECTOR', '/groups/rights');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES ('CorpTools', 'fa-solid fa-eye', 'Character Audit', 'ROLE_MEMBER', '/corptools/audit');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES ('Fleet Management', 'fa-solid fa-list', 'Fittings and Doctrines', 'ROLE_JUNIOR_MEMBER', '/fleet/fittings');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES ('Gruppen Management', 'fa-solid fa-users', 'Groups', 'ROLE_JUNIOR_MEMBER', '/groups/manage');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES ('Fleet Management', 'fa-solid fa-space-shuttle', 'Fleet Activity Tracking', 'ROLE_JUNIOR_MEMBER', '/fleet/tracking');
+INSERT INTO public.navigation_links (category, icon, label, required_role, url) VALUES (null, 'fa-solid fa-book', 'Corp Book', null, 'https://docs.google.com/document/d/14_Ow-3q1-GdZ6G5m9YfYsa3VmlaQ_bbLRru5hoWaHZk/edit?tab=t.0#heading=h.vf1bqlck9foj');

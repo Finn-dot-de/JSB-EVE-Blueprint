@@ -41,8 +41,10 @@ public class NavigationController {
 
         List<NavigationLink> allLinks = navRepo.findAll();
 
-        // Der Filter bleibt genau gleich, aber userRoles enthält jetzt auch alle vererbten Rollen!
         List<NavigationLink> allowedLinks = allLinks.stream()
+                // 1. Filter: Ist der Link überhaupt aktiv?
+                .filter(link -> Boolean.TRUE.equals(link.getActive()))
+                // 2. Filter: Hat der User die nötigen Rechte dafür?
                 .filter(link -> link.getRequiredRole() == null || userRoles.contains(link.getRequiredRole()))
                 .toList();
 

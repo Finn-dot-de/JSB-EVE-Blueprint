@@ -17,4 +17,7 @@ public class NavigationLink {
     private String icon;       // FontAwesome oder SVG Name
     private String category;   // "INDUSTRY", "TOOLS", "LINKS"
     private String requiredRole; // z.B. "ADMIN", "MEMBER" (Null für alle)
+
+    @Column(columnDefinition = "boolean default true")
+    private Boolean active = true;
 }

@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FleetService, FleetEvent, FleetAttendance } from '../../services/fleet.service';
-import { AuthService } from '../../auth/auth.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-fleet-manager',
@@ -19,21 +19,20 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   attendanceList = signal<FleetAttendance[]>([]);
   selectedFleetId = signal<number | null>(null);
 
+  // Modal Status
+  showCreateModal = signal(false);
+
   // FC Formular
   fleetName = '';
   doctrine = '';
   expiryMinutes = 60;
+  trackingType: 'LIVE' | 'LINK' = 'LIVE';
+
   isCreating = signal(false);
   isSyncing = signal(false);
   syncResult = signal<string | null>(null);
 
   private pollingInterval: any;
-
-  // --- HIGHLIGHT: Intelligente Computed Signals für sauberes HTML ---
-  myActiveFleet = computed(() => {
-    const myId = this.authService.currentUser()?.characterId;
-    return this.recentFleets().find(f => f.fcCharacterId === myId && !f.endTime);
-  });
 
   selectedFleetObj = computed(() => {
     return this.recentFleets().find(f => f.id === this.selectedFleetId());
@@ -77,39 +76,48 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   createFleet() {
     if (!this.fleetName) return;
     this.isCreating.set(true);
+
     this.fleetService.createFleet({
-      fleetName: this.fleetName, doctrine: this.doctrine, linkExpiryMinutes: this.expiryMinutes
+      fleetName: this.fleetName,
+      doctrine: this.doctrine,
+      linkExpiryMinutes: this.expiryMinutes,
+      trackingType: this.trackingType
     }).subscribe({
       next: () => {
         this.isCreating.set(false);
+        this.showCreateModal.set(false); // Modal schließen
+        this.fleetName = ''; // Formular zurücksetzen
+        this.doctrine = '';
         this.loadRecentFleets();
       },
-      error: () => this.isCreating.set(false)
-    });
-  }
-
-  syncEsi() {
-    const fleet = this.myActiveFleet();
-    if (!fleet) return;
-    this.isSyncing.set(true);
-    this.fleetService.syncFleetViaEsi(fleet.id).subscribe({
-      next: (count) => {
-        this.syncResult.set(`Sync OK: ${count} neue Member!`);
-        this.isSyncing.set(false);
-        this.loadAttendance(fleet.id);
-      },
       error: (err) => {
-        this.syncResult.set(err.error?.message || 'ESI Fehler');
-        this.isSyncing.set(false);
+        this.isCreating.set(false);
+        alert(err.error?.message || 'Unbekannter Fehler beim Erstellen der Flotte.');
       }
     });
   }
 
-  closeFleet() {
-    const fleet = this.myActiveFleet();
-    if (!fleet) return;
+  syncEsi(fleetId: number) {
+    this.isSyncing.set(true);
+    this.fleetService.syncFleetViaEsi(fleetId).subscribe({
+      next: (count) => {
+        this.syncResult.set(`Sync OK: ${count} neue Member!`);
+        this.isSyncing.set(false);
+        this.loadAttendance(fleetId);
+        setTimeout(() => this.syncResult.set(null), 5000); // Nachricht nach 5s ausblenden
+      },
+      error: (err) => {
+        this.syncResult.set(err.error?.message || 'ESI Fehler');
+        this.isSyncing.set(false);
+        setTimeout(() => this.syncResult.set(null), 5000);
+      }
+    });
+  }
+
+  // NEU: Akzeptiert jetzt direkt die ID aus der Tabelle
+  closeFleet(fleetId: number) {
     if (confirm('Tracking für diesen FAT wirklich beenden?')) {
-      this.fleetService.closeFleet(fleet.id).subscribe({
+      this.fleetService.closeFleet(fleetId).subscribe({
         next: () => {
           this.syncResult.set(null);
           this.loadRecentFleets();
@@ -120,8 +128,12 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
   copyLinkToClipboard(code: string) {
     const url = this.getJoinUrlFor(code);
-    navigator.clipboard.writeText(url);
-    alert('PAP-Link in die Zwischenablage kopiert!');
+    navigator.clipboard.writeText(url).then(() => {
+      alert('PAP-Link in die Zwischenablage kopiert!');
+    }).catch(err => {
+      console.error('Konnte Link nicht kopieren: ', err);
+      alert('Fehler beim Kopieren des Links.');
+    });
   }
 
   getJoinUrlFor(code: string): string {

@@ -11,7 +11,8 @@ services:
     ports:
       - "5434:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql
+      # HIER GEÄNDERT: Bind Mount auf einen lokalen Ordner (z.B. ./pg_data)
+      - ./pg_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U eve_user -d eve_own_auth"]
       interval: 5s
@@ -87,7 +88,3 @@ services:
         condition: service_started
     ports:
       - "80:80"
-
-volumes:
-  postgres_data:
-  

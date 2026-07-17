@@ -73,20 +73,23 @@ public class AuthController {
     public ResponseEntity<Void> eveCallback(@RequestParam("code") String code,
                                             @RequestParam("state") String state) {
         try {
-            // 1. Prüfen, ob der User BEREITS eingeloggt ist (Alt hinzufügen)
+            // 1. User identifizieren
             Long loggedInMainId = null;
             var auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
                 loggedInMainId = (Long) auth.getPrincipal();
             }
 
-            // 2. Den AuthService aufrufen und die (vielleicht leere) Main-ID mitgeben
+            // 2. Charakter verarbeiten
             var character = authService.processEveLogin(code, loggedInMainId);
 
-            // 3. WICHTIG: Das JWT wird IMMER für den Main-Charakter ausgestellt!
-            // Selbst wenn er gerade einen Alt eingeloggt hat, soll er danach wieder als Main im Tool sein.
+            // 3. Falls der Charakter selbst der Main ist, nehmen wir seine Rollen, sonst laden wir den Main
+            Character mainChar = characterRepo.findById(character.getMainCharacterId()).orElse(character);
+            java.util.Set<String> rolesToUse = mainChar.getRoles();
+
+            // 4. Token mit den Rollen des Main-Charakters generieren
             Long jwtTargetId = character.getMainCharacterId();
-            String token = jwtService.generateToken(jwtTargetId, "Main-Token", character.getRoles());
+            String token = jwtService.generateToken(jwtTargetId, "Main-Token", rolesToUse);
 
             ResponseCookie jwtCookie = ResponseCookie.from("toky", token)
                     .httpOnly(true)
@@ -128,19 +131,29 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserProfileDto> getCurrentUser() {
+    public ResponseEntity<UserProfileDto> getCurrentUser(HttpServletResponse response) {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
-
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         Long characterId = (Long) authentication.getPrincipal();
-
         assert characterId != null;
-        Character character = characterRepo.findById(characterId).orElseThrow();
 
-        // Das UserProfileDto nutzen
+        var characterOpt = characterRepo.findById(characterId);
+
+        if (characterOpt.isEmpty()) {
+            Cookie cookie = new Cookie("toky", null);
+            cookie.setPath("/");
+            cookie.setHttpOnly(true);
+            cookie.setMaxAge(0);
+            response.addCookie(cookie);
+
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        Character character = characterOpt.get();
+
         return ResponseEntity.ok(new UserProfileDto(
                 characterId,
                 character.getName(),

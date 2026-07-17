@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import {environment} from '../../../environments/environment';
 
 export interface CorpTitleDto {
   titleId: number;
@@ -13,7 +14,7 @@ export interface CorpTitleDto {
 })
 export class GroupService {
   private http = inject(HttpClient);
-  private apiUrl = 'http://localhost:8080/api/groups';
+  private apiUrl = `${environment.apiUrl}/groups`;
 
   getCorporationTitles(): Observable<CorpTitleDto[]> {
     return this.http.get<CorpTitleDto[]>(`${this.apiUrl}/titles`);

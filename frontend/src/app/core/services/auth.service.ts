@@ -2,12 +2,13 @@ import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { catchError, of, tap } from 'rxjs';
 import { Router } from '@angular/router';
+import {environment} from '../../../environments/environment';
 
 export interface AuthUser {
   characterId: number;
   characterName: string;
   portraitUrl: string;
-  roles: string[]; // NEU: Die Rollen vom Backend empfangen
+  roles: string[];
 }
 
 @Injectable({
@@ -30,7 +31,7 @@ export class AuthService {
   }
 
   checkAuthStatus() {
-    this.http.get<AuthUser>('http://localhost:8080/api/auth/me')
+    this.http.get<AuthUser>(`${environment.apiUrl}/auth/me`)
       .pipe(
         tap(user => this.currentUser.set(user)),
         catchError(() => {
@@ -50,11 +51,11 @@ export class AuthService {
   }
 
   login() {
-    window.location.href = 'http://localhost:8080/api/auth/login';
+    window.location.href = `${environment.apiUrl}/auth/login`;
   }
 
   logout() {
-    this.http.post('http://localhost:8080/api/auth/logout', {}).subscribe({
+    this.http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
       next: () => {
         this.currentUser.set(null);
         this.router.navigate(['/home']);

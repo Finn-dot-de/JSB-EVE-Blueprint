@@ -2,6 +2,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import {environment} from '../../../../environments/environment';
 
 export interface NavigationLinkDto {
   id: number;
@@ -59,9 +60,7 @@ export class SidebarComponent implements OnInit {
   }
 
   loadNavigation() {
-    // Falls du das Backend noch nicht befüllt hast, kannst du zum Testen
-    // hier auch erst mal statische Dummy-Daten laden lassen.
-    this.http.get<NavigationLinkDto[]>('http://localhost:8080/api/navigation').subscribe({
+    this.http.get<NavigationLinkDto[]>(`${environment.apiUrl}/navigation`).subscribe({
       next: (links) => this.buildMenu(links),
       error: (err) => console.error('Fehler beim Laden der Navigation', err)
     });
@@ -73,7 +72,7 @@ export class SidebarComponent implements OnInit {
 
     // 1. Links aus der DB sortieren
     links.forEach(link => {
-      // Wenn die URL mit http beginnt, ist es ein externer Link
+
       const isExt = link.url.startsWith('http');
 
       const item: MenuItem = {
@@ -93,7 +92,6 @@ export class SidebarComponent implements OnInit {
       }
     });
 
-    // 2. Das fertige Menü anhand der Blaupause zusammenbauen
     const sortedMenu: MenuItem[] = [];
     const processedKeys = new Set<string>();
 
@@ -101,19 +99,18 @@ export class SidebarComponent implements OnInit {
       // Ist es eine Kategorie/Ein Ordner?
       if (categoryMap.has(key)) {
         let folderIcon = 'fa-solid fa-folder';
-        // Spezifische Ordner-Icons
         if (key === 'CorpTools') folderIcon = 'fa-solid fa-folder';
-        // Du kannst hier bei Bedarf andere Icons definieren, z.B. fa-users-gear für Gruppen
+
 
         sortedMenu.push({
           name: key,
           icon: folderIcon,
-          expanded: false, // Standardmäßig zugeklappt
+          expanded: false,
           children: categoryMap.get(key)
         });
         processedKeys.add(key);
       }
-      // Ist es ein direkter Link?
+
       else if (rootItemsMap.has(key)) {
         sortedMenu.push(rootItemsMap.get(key)!);
         processedKeys.add(key);

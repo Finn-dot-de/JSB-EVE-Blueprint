@@ -26,5 +26,25 @@ export const routes: Routes = [
     path: 'fleet/join/:code',
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/fleet-join/fleet-join.component').then(m => m.FleetJoinComponent)
-  }
+  },
+  {
+    path: 'charlink',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/charlink/charlink.component').then(m => m.CharlinkComponent)
+  },
+  {
+    path: 'charlink/stats',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/corp-stats/corp-stats.component').then(m => m.CorpStatsComponent)
+  },
+  {
+    path: 'services',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/services/services.component').then(m => m.ServicesComponent)
+  },
+  {
+    path: 'admin/discord',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/discord-admin/discord-admin.component').then(m => m.DiscordAdminComponent)
+  },
 ];

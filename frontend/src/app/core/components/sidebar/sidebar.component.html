@@ -1,6 +1,6 @@
 <aside class="sidebar">
   <nav class="sidebar-nav">
-    @for (item of menuItems; track item.name) {
+    @for (item of menuItems(); track item.name) {
 
       @if (!item.children) {
         <!-- FALL 1: Keine Unterpunkte -->

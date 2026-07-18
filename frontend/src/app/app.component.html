@@ -3,20 +3,26 @@
   <app-navbar></app-navbar>
 
   <div class="content-wrapper">
-    <!-- Lade-Screen -->
+
     @if (authService.loading()) {
-      <div class="global-loading">...</div>
+      <!-- Unser schicker Lade-Screen für die allererste Sekunde -->
+      <div class="global-loading">
+        <i class="fa-solid fa-satellite-dish fa-spin fa-3x"></i>
+        <h2>Verbinde mit EVE Datenbank...</h2>
+        <p>Autorisierung wird geprüft</p>
+      </div>
     } @else {
 
-      <!-- Wir behalten das @if für die Security (Auth-Check) -->
+      <!-- Wenn geladen: Sidebar rendern, falls eingeloggt -->
       @if (authService.currentUser()) {
-        <!-- Die Sidebar ist IMMER da, wenn der User eingeloggt ist, aber CSS steuert die Sichtbarkeit -->
-        <app-sidebar [class.sidebar-hidden]="!isSidebarVisible()"></app-sidebar>
+        <app-sidebar></app-sidebar>
       }
 
       <main class="main-content">
         <router-outlet></router-outlet>
       </main>
+
     }
+
   </div>
 </div>

@@ -192,20 +192,22 @@ public class FleetController {
     }
 
     @PostMapping("/join/{trackingCode}")
-    public ResponseEntity<Void> joinFleetViaLink(@PathVariable String trackingCode) {
+    public ResponseEntity<?> joinFleetViaLink(@PathVariable String trackingCode) {
         Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
         assert charId != null;
         Character c = characterRepo.findById(charId).orElseThrow();
 
-        FleetEvent event = fleetRepo.findByTrackingCode(trackingCode)
-                .orElseThrow(() -> new RuntimeException("FAT Link existiert nicht."));
+        FleetEvent event = fleetRepo.findByTrackingCode(trackingCode).orElse(null);
+        if (event == null) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", "FAT Link existiert nicht."));
+        }
 
         if (event.getLinkExpiryTime() != null && Instant.now().isAfter(event.getLinkExpiryTime())) {
-            throw new RuntimeException("Dieser FAT-Link ist abgelaufen und nicht mehr gültig!");
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", "Dieser FAT-Link ist abgelaufen und nicht mehr gültig!"));
         }
 
         if (event.getEndTime() != null) {
-            throw new RuntimeException("Zu spät! Der FC hat diesen FAT bereits geschlossen.");
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", "Zu spät! Der FC hat diesen FAT bereits geschlossen."));
         }
 
         // =======================================================
@@ -216,14 +218,13 @@ public class FleetController {
             var onlineResp = esiService.getCharacterOnlineStatus(c.getId(), token);
 
             if (onlineResp.data() == null || !Boolean.TRUE.equals(onlineResp.data().online())) {
-                throw new RuntimeException("Anti-Cheat: Du bist aktuell nicht im Spiel online! Bitte logge dich erst in EVE ein.");
+
+                return ResponseEntity.badRequest().body(java.util.Map.of("message", "Anti-Cheat: Du bist aktuell nicht im Spiel online! Bitte logge dich erst in EVE ein."));
             }
         } catch (HttpClientErrorException.Forbidden | HttpClientErrorException.Unauthorized e) {
-            throw new RuntimeException("Fehlende ESI-Rechte! Logge dich einmal im Tool neu ein, um die Online-Rechte zu gewähren.");
-        } catch (RuntimeException e) {
-            throw e;
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(java.util.Map.of("message", "Fehlende ESI-Rechte! Logge dich einmal im Tool neu ein, um die Online-Rechte zu gewähren."));
         } catch (Exception e) {
-            throw new RuntimeException("Konnte Online-Status nicht prüfen: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(java.util.Map.of("message", "Konnte Online-Status nicht prüfen: " + e.getMessage()));
         }
         // =======================================================
 

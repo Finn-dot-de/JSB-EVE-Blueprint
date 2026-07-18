@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import {Component, inject, signal} from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { NavbarComponent } from './core/components/navbar/navbar.component';
 import { SidebarComponent } from './core/components/sidebar/sidebar.component';
@@ -13,4 +13,6 @@ import { AuthService } from './core/services/auth.service'; // Wichtig!
 })
 export class AppComponent {
   public authService = inject(AuthService);
+
+  isSidebarVisible = signal(false);
 }

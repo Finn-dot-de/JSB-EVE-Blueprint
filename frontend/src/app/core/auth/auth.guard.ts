@@ -11,10 +11,12 @@ export const authGuard: CanActivateFn = (route, state) => {
   return toObservable(authService.loading).pipe(
     filter(isLoading => !isLoading),
     map(() => {
-
       if (authService.currentUser()) {
         return true;
       }
+
+      localStorage.setItem('redirectAfterLogin', state.url);
+
       return router.parseUrl('/home');
     })
   );

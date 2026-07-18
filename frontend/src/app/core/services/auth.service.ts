@@ -33,7 +33,19 @@ export class AuthService {
   checkAuthStatus() {
     this.http.get<AuthUser>(`${environment.apiUrl}/auth/me`)
       .pipe(
-        tap(user => this.currentUser.set(user)),
+        tap(user => {
+          this.currentUser.set(user);
+
+          if (user) {
+            const redirectUrl = localStorage.getItem('redirectAfterLogin');
+            if (redirectUrl) {
+
+              localStorage.removeItem('redirectAfterLogin');
+
+              this.router.navigateByUrl(redirectUrl);
+            }
+          }
+        }),
         catchError(() => {
           this.currentUser.set(null);
           return of(null);

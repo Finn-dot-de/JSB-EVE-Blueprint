@@ -11,9 +11,12 @@ export interface AltDto {
 }
 
 export interface CorpStatsDto {
+  corpId: number;
+  corpName: string;
   totalEsiMembers: number;
   registeredMains: number;
   registeredAlts: number;
+  totalRegisteredChars: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -25,7 +28,7 @@ export class CharacterService {
     return this.http.get<AltDto[]>(`${this.apiUrl}/alts`);
   }
 
-  getCorpStats(): Observable<CorpStatsDto> {
-    return this.http.get<CorpStatsDto>(`${this.apiUrl}/corp-stats`);
+  getCorpStats(): Observable<CorpStatsDto[]> {
+    return this.http.get<CorpStatsDto[]>(`${this.apiUrl}/corp-stats`);
   }
 }

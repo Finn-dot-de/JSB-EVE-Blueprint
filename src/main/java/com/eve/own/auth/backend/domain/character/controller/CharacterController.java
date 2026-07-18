@@ -4,6 +4,7 @@ import com.eve.own.auth.backend.domain.auth.service.AuthService;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.esi.EsiService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -22,15 +25,25 @@ public class CharacterController {
     private final CharacterRepository characterRepo;
     private final EsiService esiService;
     private final AuthService authService;
+    private final Long mainCorpId;
+    private final String altCorpIdsStr;
 
-    public CharacterController(CharacterRepository characterRepo, EsiService esiService, AuthService authService) {
+    // Variablen  ber den Konstruktor injizieren
+    public CharacterController(CharacterRepository characterRepo,
+                               EsiService esiService,
+                               AuthService authService,
+                               @Value("${eve.sso.allowed-corp-id}") Long mainCorpId,
+                               @Value("${eve.alt-corp-ids:}") String altCorpIdsStr) {
         this.characterRepo = characterRepo;
         this.esiService = esiService;
         this.authService = authService;
+        this.mainCorpId = mainCorpId;
+        this.altCorpIdsStr = altCorpIdsStr;
     }
 
     public record AltDto(Long id, String name, String portraitUrl, boolean isMain) {}
-    public record CorpStatsDto(int totalEsiMembers, int registeredMains, int registeredAlts) {}
+
+    public record CorpStatsDto(Long corpId, String corpName, int totalEsiMembers, int registeredMains, int registeredAlts, int totalRegisteredChars) {}
 
     @GetMapping("/alts")
     public ResponseEntity<List<AltDto>> getMyCharacters() {
@@ -56,31 +69,84 @@ public class CharacterController {
         Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
         assert charId != null;
         Character reqChar = characterRepo.findById(charId).orElseThrow();
-        Long corpId = reqChar.getCorporation().getId();
+
+        // 1. Liste aller zu prüfenden Corps aufbauen
+        List<Long> corpIdsToTrack = new ArrayList<>();
+        corpIdsToTrack.add(mainCorpId);
+        if (altCorpIdsStr != null && !altCorpIdsStr.isBlank()) {
+            Arrays.stream(altCorpIdsStr.split(","))
+                    .map(String::trim)
+                    .map(Long::valueOf)
+                    .forEach(corpIdsToTrack::add);
+        }
 
         try {
-            // 1. Echte Member-Zahl aus EVE laden
             String token = authService.getValidAccessToken(reqChar);
-            var esiMembers = esiService.getCorporationMembers(corpId, token).data();
-            int totalEsiMembers = esiMembers != null ? esiMembers.length : 0;
+            List<CorpStatsDto> resultList = new ArrayList<>();
 
-            // 2. Datenbank auswerten
-            List<Character> corpCharsInDb = characterRepo.findByCorporationId(corpId);
+            for (Long cId : corpIdsToTrack) {
+                int totalEsiMembers = 0;
+                String corpName = "Unknown Corp (" + cId + ")";
 
-            // Wie viele einzigartige Mains haben wir in dieser Corp?
-            long registeredMains = corpCharsInDb.stream()
-                    .map(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId())
-                    .distinct()
-                    .count();
+                // 2a. ZUERST die Charaktere aus der DB laden
+                List<Character> corpCharsInDb = characterRepo.findByCorporationId(cId);
 
-            // Der Rest sind Alts
-            int registeredAlts = corpCharsInDb.size() - (int) registeredMains;
+                try {
+                    // Den öffentlichen Corp-Namen kann jeder abfragen
+                    var corpInfo = esiService.getCorporationInfo(cId);
+                    if (corpInfo != null && corpInfo.name() != null) {
+                        corpName = corpInfo.name();
+                    }
 
-            return ResponseEntity.ok(new CorpStatsDto(totalEsiMembers, (int) registeredMains, registeredAlts));
+                    // 2b. Den richtigen ESI-Türöffner (Token) für diese Corp finden!
+                    // ESI verlangt für die Memberliste meistens einen Director. Wir suchen bevorzugt danach.
+                    Character tokenProvider = corpCharsInDb.stream()
+                            .filter(c -> c.getRoles().contains("ROLE_DIRECTOR") || c.getRoles().contains("ROLE_CEO"))
+                            .findFirst()
+                            .orElse(corpCharsInDb.stream().findFirst().orElse(null));
+
+                    // Wenn wir jemanden aus dieser Corp haben, fragen wir mit SEINEM Token bei ESI an
+                    if (tokenProvider != null) {
+                        String specificCorpToken = authService.getValidAccessToken(tokenProvider);
+                        var esiMembers = esiService.getCorporationMembers(cId, specificCorpToken).data();
+                        if (esiMembers != null) {
+                            totalEsiMembers = esiMembers.length;
+                        }
+                    } else {
+                        System.err.println("Wir haben noch niemanden aus Corp " + cId + " im Auth, der die Memberliste lesen darf.");
+                    }
+
+                } catch (Exception e) {
+                    System.err.println("ESI Daten für Corp " + cId + " konnten nicht geladen werden: " + e.getMessage());
+                }
+
+                // 2c. Mathematik für die Statistik: Mains gibt es NUR in der Hauptcorp!
+                long registeredMains = 0;
+                int totalRegisteredChars = corpCharsInDb.size();
+                int registeredAlts = 0;
+
+                if (cId.equals(mainCorpId)) {
+                    // Hauptcorp: Wir zählen die einzigartigen Mains wie gewohnt
+                    registeredMains = corpCharsInDb.stream()
+                            .map(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId())
+                            .distinct()
+                            .count();
+                    registeredAlts = totalRegisteredChars - (int) registeredMains;
+                } else {
+                    // Alt-Corps: Hier gibt es keine Mains, jeder erfasste Charakter ist ein Alt!
+                    registeredMains = 0;
+                    registeredAlts = totalRegisteredChars;
+                }
+
+                // 2d. Fertige Statistik für diese Corp zur Liste hinzufügen
+                resultList.add(new CorpStatsDto(cId, corpName, totalEsiMembers, (int) registeredMains, registeredAlts, totalRegisteredChars));
+            }
+
+            return ResponseEntity.ok(resultList);
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(java.util.Map.of("message", "Fehler beim Laden der ESI Corp-Daten. Fehlt der Scope 'esi-corporations.read_corporation_membership.v1'?"));
+                    .body(java.util.Map.of("message", "Fehler beim Laden der ESI Corp-Daten."));
         }
     }
 }

@@ -125,15 +125,16 @@ public class AccountSyncScheduler {
             characterRepo.save(c);
         }
 
-        // 2. Sicherheits-Check
-        if (!currentCorpId.equals(MY_MAIN_CORP_ID)) {
+        boolean isMain = c.getMainCharacterId() == null || c.getMainCharacterId().equals(c.getId());
+
+        if (isMain && !currentCorpId.equals(MY_MAIN_CORP_ID)) {
             c.setRoles(new java.util.HashSet<>());
             characterRepo.save(c);
-
-            log.info("Sicherheits-Kick: Charakter {} hat die Main-Corp verlassen. Alle Rechte entzogen.", c.getName());
-            return false; // Ist kein Member mehr
+            log.info("Sicherheits-Kick: Main-Charakter {} hat die Main-Corp verlassen. Alle Rechte entzogen.", c.getName());
+            return false;
         }
-        return true; // Ist noch Member
+
+        return true;
     }
 
     private void syncCorporationFaction(Character c) {

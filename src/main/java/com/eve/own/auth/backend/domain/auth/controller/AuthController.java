@@ -99,15 +99,24 @@ public class AuthController {
                     .sameSite("Lax")
                     .build();
 
+            // --- NEU: Dynamische Weiterleitung ---
+            String targetUrl;
+            if (loggedInMainId != null) {
+                // User war schon eingeloggt -> Er hat gerade einen Alt hinzugefügt
+                targetUrl = frontendUrl.endsWith("/") ? frontendUrl + "charlink" : frontendUrl + "/charlink";
+            } else {
+                // User war nicht eingeloggt -> Frischer Haupt-Login
+                targetUrl = frontendUrl; // (Oder frontendUrl + "/dashboard", je nachdem, wo er starten soll)
+            }
+
             return ResponseEntity.status(HttpStatus.FOUND)
                     .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
-                    .location(URI.create(frontendUrl))
+                    .location(URI.create(targetUrl)) // Hier nutzen wir jetzt die Ziel-URL
                     .build();
 
         } catch (SecurityException e) {
             // 3. Sauber loggen als WARNUNG (Jemand aus einer fremden Corp hat es versucht)
             log.warn("Login abgelehnt: {}", e.getMessage());
-
             String errorUrl = frontendUrl.endsWith("/")
                     ? frontendUrl + "?error=wrong_corp"
                     : frontendUrl + "/?error=wrong_corp";
@@ -115,11 +124,9 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.FOUND)
                     .location(URI.create(errorUrl))
                     .build();
-
         } catch (Exception e) {
             // 4. Sauber loggen als FEHLER (inklusive Stacktrace für das Debugging)
             log.error("Unerwarteter Fehler beim EVE SSO Callback", e);
-
             String errorUrl = frontendUrl.endsWith("/")
                     ? frontendUrl + "?error=login_failed"
                     : frontendUrl + "/?error=login_failed";

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CharacterService, CorpStatsDto } from '../../services/character.service';
 
@@ -12,16 +12,10 @@ import { CharacterService, CorpStatsDto } from '../../services/character.service
 export class CorpStatsComponent implements OnInit {
   private charService = inject(CharacterService);
 
-  stats = signal<CorpStatsDto | null>(null);
+  // Das Signal ist jetzt ein Array!
+  stats = signal<CorpStatsDto[]>([]);
   errorMsg = signal<string | null>(null);
   loading = signal(true);
-
-  // Berechnet den prozentualen Anteil für den CSS-Kreis (z.B. 52%)
-  authPercentage = computed(() => {
-    const s = this.stats();
-    if (!s || s.totalEsiMembers === 0) return 0;
-    return Math.round((s.registeredMains / s.totalEsiMembers) * 100);
-  });
 
   ngOnInit() {
     this.charService.getCorpStats().subscribe({
@@ -34,5 +28,11 @@ export class CorpStatsComponent implements OnInit {
         this.loading.set(false);
       }
     });
+  }
+
+  // Hilfsmethode für das Kuchendiagramm im HTML
+  getPercentage(s: CorpStatsDto): number {
+    if (!s || s.totalEsiMembers === 0) return 0;
+    return Math.round((s.totalRegisteredChars / s.totalEsiMembers) * 100);
   }
 }

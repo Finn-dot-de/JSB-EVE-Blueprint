@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import {Component, OnInit, inject, signal} from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
@@ -32,7 +32,7 @@ export interface MenuItem {
 export class SidebarComponent implements OnInit {
   private http = inject(HttpClient);
 
-  menuItems: MenuItem[] = [];
+  menuItems = signal<MenuItem[]>([]);
 
   // Die exakte Blaupause für deine gewünschte Reihenfolge
   private layoutOrder = [
@@ -131,7 +131,7 @@ export class SidebarComponent implements OnInit {
     });
 
     // 4. Menü rendern
-    this.menuItems = sortedMenu;
+    this.menuItems.set(sortedMenu);
   }
 
   toggleMenu(item: MenuItem) {

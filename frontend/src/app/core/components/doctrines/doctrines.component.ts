@@ -58,14 +58,52 @@ export class DoctrinesComponent implements OnInit {
     })).sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  parsedModules = computed(() => {
+  parsedGroups = computed(() => {
     const doc = this.selectedDoctrine();
     if (!doc) return [];
 
-    const lines = doc.eftString.split('\n');
-    return lines.slice(1)
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
+    const rawLines = doc.eftString.split('\n');
+    if (rawLines.length <= 1) return [];
+
+    const groups: { name: string; modules: string[] }[] = [
+      { name: 'High Slots', modules: [] },
+      { name: 'Mid Slots', modules: [] },
+      { name: 'Low Slots', modules: [] },
+      { name: 'Rigs', modules: [] },
+      { name: 'Subsystems', modules: [] },
+      { name: 'Drones', modules: [] },
+      { name: 'Cargo / Ammo', modules: [] }
+    ];
+
+    let currentBlock = 0;
+    let hasStarted = false;
+
+    // Wir ignorieren Zeile 0 (Das ist immer [Schiff, Name])
+    for (let i = 1; i < rawLines.length; i++) {
+      const line = rawLines[i].trim();
+
+      // Bei einer Leerzeile springen wir eine Kategorie weiter (genau so funktioniert das EFT Format)
+      if (line === '') {
+        if (hasStarted) {
+          currentBlock++;
+        }
+        continue;
+      }
+
+      hasStarted = true;
+
+      // Pyfa fügt manchmal "[Empty High slot]" ein, das wollen wir im UI nicht anzeigen
+      if (line.startsWith('[Empty') && line.endsWith(']')) {
+        continue;
+      }
+
+      // Sicherheits-Clamp: Alles nach Block 6 (Drones) landet automatisch im Cargo
+      const blockIndex = Math.min(currentBlock, 6);
+      groups[blockIndex].modules.push(line);
+    }
+
+    // Wir geben dem UI nur die Gruppen zurück, in denen auch wirklich ein Modul steckt
+    return groups.filter(g => g.modules.length > 0);
   });
 
   get isFleetCommander(): boolean {

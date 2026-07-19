@@ -70,12 +70,16 @@
         </div>
 
         <div class="modules-list">
-          <h4 style="color: var(--text-secondary); margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">Enthaltene Module</h4>
-          <ul>
-            @for (mod of parsedModules(); track $index) {
-              <li>{{ mod }}</li>
-            }
-          </ul>
+          @for (group of parsedGroups(); track group.name) {
+            <div class="module-group">
+              <h4 class="module-group-title">{{ group.name }}</h4>
+              <ul>
+                @for (mod of group.modules; track $index) {
+                  <li>{{ mod }}</li>
+                }
+              </ul>
+            </div>
+          }
         </div>
 
         <div style="display: flex; gap: 10px; margin-top: 1.5rem;">

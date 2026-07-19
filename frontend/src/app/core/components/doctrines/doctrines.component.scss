@@ -229,9 +229,28 @@
     background-color: rgba(0,0,0,0.2);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 1rem;
-    max-height: 300px;
+    padding: 1.25rem;
+    max-height: 350px;
     overflow-y: auto;
+
+    /* Custom Scrollbar für die Liste */
+    &::-webkit-scrollbar { width: 6px; }
+    &::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 4px; }
+
+    .module-group {
+      margin-bottom: 1.25rem;
+      &:last-child { margin-bottom: 0; }
+    }
+
+    .module-group-title {
+      color: var(--accent-color); /* Blaue oder Grüne Akzentfarbe */
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0 0 0.5rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 4px;
+    }
 
     ul {
       list-style-type: none;
@@ -241,8 +260,16 @@
         color: var(--text-primary);
         font-size: 0.9rem;
         padding: 4px 0;
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-        &:last-child { border-bottom: none; }
+        display: flex;
+        align-items: center;
+
+        /* Schicker Aufzählungs-Punkt */
+        &::before {
+          content: "•";
+          color: var(--text-secondary);
+          margin-right: 8px;
+          font-size: 0.8rem;
+        }
       }
     }
   }

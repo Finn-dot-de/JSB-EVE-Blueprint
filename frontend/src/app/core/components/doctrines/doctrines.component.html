@@ -3,7 +3,7 @@
     <span>Fittings & Doctrines</span>
   </div>
 
-  <!-- NEU: Top Bar mit Suche und Erstellen-Button -->
+  <!-- Top Bar mit Suche und Erstellen-Button -->
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
 
     <div class="search-box">
@@ -18,12 +18,15 @@
     }
   </div>
 
-  <!-- MODAL: Fitting Erstellen -->
+  <!-- MODAL: Fitting Erstellen/Bearbeiten -->
   @if (showCreateModal()) {
     <div class="modal-overlay" (click)="closeModals()">
       <div class="surface-panel modal-content" (click)="$event.stopPropagation()">
-        <h3 style="margin-top: 0; color: var(--text-primary);">Neues Fitting importieren</h3>
-        
+        <!-- Dynamische Überschrift -->
+        <h3 style="margin-top: 0; color: var(--text-primary);">
+          {{ editingDoctrineId() ? 'Fitting bearbeiten' : 'Neues Fitting importieren' }}
+        </h3>
+
         <div style="margin-bottom: 1rem;">
           <label style="color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase;">Doctrine / Gruppe</label>
           <input type="text" [(ngModel)]="newDoctrineName" placeholder="z.B. SYN Cerberus" style="width: 100%; box-sizing: border-box; background-color: rgba(0,0,0,0.3); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0.8rem; border-radius: 6px; outline: none; margin-top: 0.5rem;">
@@ -77,7 +80,6 @@
 
         <div style="display: flex; gap: 10px; margin-top: 1.5rem;">
           <button class="btn-secondary" style="flex: 1;" (click)="closeModals()">Schließen</button>
-          <!-- Der magische Ingame Import Button -->
           <button class="btn-primary" style="flex: 2; justify-content: center; background-color: #00dfa2; color: #0d1117;" (click)="copyToClipboard(doc.eftString)">
             <i class="fa-solid fa-file-import"></i> Ingame Importieren (Copy)
           </button>
@@ -87,7 +89,7 @@
     </div>
   }
 
-  <!-- Übersicht aller Fittings (Cards) -->
+  <!-- Übersicht aller Fittings (Gruppiert) -->
   <div>
     @for (group of groupedDoctrines(); track group.name) {
       <div class="doctrine-group">
@@ -114,9 +116,14 @@
                 </div>
 
                 @if (isFleetCommander) {
-                  <button class="btn-icon btn-danger" (click)="deleteDoctrine(doc.id); $event.stopPropagation()" title="Löschen">
-                    <i class="fa-solid fa-trash-can"></i>
-                  </button>
+                  <div style="display: flex; gap: 4px;">
+                    <button class="btn-icon btn-edit" (click)="openEditModal(doc); $event.stopPropagation()" title="Bearbeiten">
+                      <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="btn-icon btn-danger" (click)="deleteDoctrine(doc.id); $event.stopPropagation()" title="Löschen">
+                      <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
                 }
               </div>
 

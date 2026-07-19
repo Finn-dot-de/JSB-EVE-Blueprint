@@ -37,10 +37,11 @@ public class FleetDoctrineController {
     // Nur FCs und Directors dürfen Fittings erstellen
     public record CreateDoctrineDto(String doctrineName, String shipType, String name, String eftString) {}
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38', 'ROLE_IT_ADMIN')")
     @PostMapping
     public ResponseEntity<?> createDoctrine(@RequestBody CreateDoctrineDto dto) {
         Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+        assert charId != null;
         Character creator = characterRepo.findById(charId).orElseThrow();
 
         FleetDoctrine doc = new FleetDoctrine();
@@ -63,5 +64,23 @@ public class FleetDoctrineController {
     public ResponseEntity<?> deleteDoctrine(@PathVariable Long id) {
         doctrineRepo.deleteById(id);
         return ResponseEntity.ok().build();
+    }
+
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateDoctrine(@PathVariable Long id, @RequestBody CreateDoctrineDto dto) {
+        FleetDoctrine doc = doctrineRepo.findById(id).orElseThrow();
+
+        doc.setDoctrineName(dto.doctrineName() != null && !dto.doctrineName().isBlank() ? dto.doctrineName() : "Ungruppiert");
+        doc.setShipType(dto.shipType());
+        doc.setName(dto.name());
+        doc.setEftString(dto.eftString());
+
+        // SDE erneut abfragen, falls sich der Schiffstyp geändert hat
+        invTypeRepo.findByTypeNameIgnoreCase(dto.shipType()).ifPresent(invType -> {
+            doc.setShipTypeId(invType.getTypeId());
+        });
+
+        return ResponseEntity.ok(doctrineRepo.save(doc));
     }
 }

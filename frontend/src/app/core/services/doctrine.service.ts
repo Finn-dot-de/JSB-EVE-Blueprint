@@ -39,4 +39,8 @@ export class DoctrineService {
   deleteDoctrine(id: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}`);
   }
+
+  updateDoctrine(id: number, dto: CreateDoctrineDto): Observable<FleetDoctrine> {
+    return this.http.put<FleetDoctrine>(`${this.apiUrl}/${id}`, dto);
+  }
 }

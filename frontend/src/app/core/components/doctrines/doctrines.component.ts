@@ -3,8 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DoctrineService, FleetDoctrine } from '../../services/doctrine.service';
 import { AuthService } from '../../services/auth.service';
-import {ToastService} from '../../services/toast.service';
-import {ConfirmService} from '../../services/confirm.service';
+import { ToastService } from '../../services/toast.service';
+import { ConfirmService } from '../../services/confirm.service';
 
 @Component({
   selector: 'app-doctrines',
@@ -23,6 +23,8 @@ export class DoctrinesComponent implements OnInit {
 
   showCreateModal = signal(false);
   selectedDoctrine = signal<FleetDoctrine | null>(null);
+  editingDoctrineId = signal<number | null>(null); // Speichert die ID beim Bearbeiten
+
   newEftInput = signal('');
   newDoctrineName = signal('');
   isSubmitting = signal(false);
@@ -66,12 +68,6 @@ export class DoctrinesComponent implements OnInit {
       .filter(line => line.length > 0);
   });
 
-  openCreateModal() {
-    this.newEftInput.set('');
-    this.newDoctrineName.set('');
-    this.showCreateModal.set(true);
-  }
-
   get isFleetCommander(): boolean {
     return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38']);
   }
@@ -84,6 +80,21 @@ export class DoctrinesComponent implements OnInit {
     this.doctrineService.getDoctrines().subscribe(docs => this.doctrines.set(docs));
   }
 
+  openCreateModal() {
+    this.editingDoctrineId.set(null); // Reset für neues Fitting
+    this.newEftInput.set('');
+    this.newDoctrineName.set('');
+    this.showCreateModal.set(true);
+  }
+
+  // Öffnet das Modal mit den vorausgefüllten Daten zum Bearbeiten
+  openEditModal(doc: FleetDoctrine) {
+    this.editingDoctrineId.set(doc.id);
+    this.newDoctrineName.set(doc.doctrineName === 'Ungruppiert' ? '' : doc.doctrineName);
+    this.newEftInput.set(doc.eftString);
+    this.showCreateModal.set(true);
+  }
+
   openDetails(doc: FleetDoctrine) {
     this.selectedDoctrine.set(doc);
   }
@@ -91,6 +102,7 @@ export class DoctrinesComponent implements OnInit {
   closeModals() {
     this.showCreateModal.set(false);
     this.selectedDoctrine.set(null);
+    this.editingDoctrineId.set(null);
   }
 
   parseAndSaveFitting() {
@@ -106,26 +118,43 @@ export class DoctrinesComponent implements OnInit {
       const shipType = match[1].trim();
       const fitName = match[2].trim();
 
-      this.doctrineService.createDoctrine({
-        doctrineName: this.newDoctrineName().trim(),
+      let finalDoctrineName = this.newDoctrineName().trim();
+
+      if (!finalDoctrineName) {
+        const nameParts = fitName.split(' ');
+
+        if (nameParts.length >= 2) {
+          finalDoctrineName = `${nameParts[0]} ${nameParts[1]}`;
+        } else {
+          finalDoctrineName = fitName;
+        }
+      }
+
+      const payload = {
+        doctrineName: finalDoctrineName,
         shipType: shipType,
         name: fitName,
         eftString: rawText
-      }).subscribe({
+      };
+
+      // Entscheide: Update (PUT) oder Create (POST)
+      const request$ = this.editingDoctrineId()
+        ? this.doctrineService.updateDoctrine(this.editingDoctrineId()!, payload)
+        : this.doctrineService.createDoctrine(payload);
+
+      request$.subscribe({
         next: () => {
           this.isSubmitting.set(false);
           this.closeModals();
           this.loadDoctrines();
-          this.toastService.success(`Fitting "${fitName}" erfolgreich gespeichert!`);
+          this.toastService.success(`Fitting erfolgreich unter "${finalDoctrineName}" gespeichert!`);
         },
         error: (err) => {
           this.isSubmitting.set(false);
-          // NEU: Roter Error-Toast
           this.toastService.error('Fehler beim Speichern: ' + (err.error?.message || 'Unbekannt'));
         }
       });
     } else {
-      // NEU: Fehler-Toast
       this.toastService.error('Ungültiges EFT Format! Die erste Zeile muss [Schiffstyp, Fitting Name] lauten.');
     }
   }
@@ -133,7 +162,6 @@ export class DoctrinesComponent implements OnInit {
   copyToClipboard(eftString: string | undefined) {
     if (!eftString) return;
     navigator.clipboard.writeText(eftString).then(() => {
-      // NEU: Eleganter Info-Toast
       this.toastService.info('Fitting kopiert! Öffne Ingame dein Fitting-Fenster und wähle "Import from Clipboard".');
       this.closeModals();
     }).catch(err => {

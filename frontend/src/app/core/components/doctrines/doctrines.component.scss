@@ -415,3 +415,29 @@
   text-transform: uppercase;
   letter-spacing: 1px;
 }
+
+.btn-icon {
+  background-color: rgba(255, 255, 255, 0.03); /* Sehr dezenter Hintergrund */
+  border: 1px solid var(--border-color);       /* Der gewünschte Umriss */
+  color: var(--text-secondary);                /* Helles Grau als Standardfarbe */
+  cursor: pointer;
+  padding: 0.4rem 0.6rem;                      /* Etwas kompakteres Padding für Box-Buttons */
+  border-radius: 4px;
+  transition: all 0.2s;
+
+  &.btn-danger {
+    &:hover {
+      color: #ff3366;
+      background-color: rgba(255, 51, 102, 0.1);
+      border-color: rgba(255, 51, 102, 0.3);   /* Roter Umriss beim Hover */
+    }
+  }
+
+  &.btn-edit {
+    &:hover {
+      color: var(--accent-color);
+      background-color: rgba(37, 99, 235, 0.1);
+      border-color: rgba(37, 99, 235, 0.3);    /* Blauer Umriss beim Hover */
+    }
+  }
+}

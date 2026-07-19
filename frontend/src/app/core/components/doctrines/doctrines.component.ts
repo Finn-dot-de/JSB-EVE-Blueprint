@@ -21,25 +21,56 @@ export class DoctrinesComponent implements OnInit {
 
   doctrines = signal<FleetDoctrine[]>([]);
 
-  // Modal States
   showCreateModal = signal(false);
   selectedDoctrine = signal<FleetDoctrine | null>(null);
-
-  // Formular
   newEftInput = signal('');
+  newDoctrineName = signal('');
   isSubmitting = signal(false);
 
-  // Berechnet aus dem EFT-Text automatisch eine saubere Liste der Module für die Detailansicht
+  searchQuery = signal('');
+
+  groupedDoctrines = computed(() => {
+    const query = this.searchQuery().toLowerCase();
+    let filtered = this.doctrines();
+
+    if (query) {
+      filtered = filtered.filter(doc =>
+        doc.name.toLowerCase().includes(query) ||
+        doc.shipType.toLowerCase().includes(query) ||
+        (doc.doctrineName && doc.doctrineName.toLowerCase().includes(query))
+      );
+    }
+
+    const groups = new Map<string, FleetDoctrine[]>();
+    filtered.forEach(doc => {
+      const groupName = doc.doctrineName || 'Ungruppiert';
+      if (!groups.has(groupName)) {
+        groups.set(groupName, []);
+      }
+      groups.get(groupName)!.push(doc);
+    });
+
+    return Array.from(groups.entries()).map(([name, docs]) => ({
+      name,
+      docs: docs.sort((a, b) => a.shipType.localeCompare(b.shipType))
+    })).sort((a, b) => a.name.localeCompare(b.name));
+  });
+
   parsedModules = computed(() => {
     const doc = this.selectedDoctrine();
     if (!doc) return [];
 
-    // Splitten den Text am Zeilenumbruch, ignorieren die erste Zeile [Schiff, Name] und leere Zeilen
     const lines = doc.eftString.split('\n');
     return lines.slice(1)
       .map(line => line.trim())
       .filter(line => line.length > 0);
   });
+
+  openCreateModal() {
+    this.newEftInput.set('');
+    this.newDoctrineName.set('');
+    this.showCreateModal.set(true);
+  }
 
   get isFleetCommander(): boolean {
     return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38']);
@@ -51,11 +82,6 @@ export class DoctrinesComponent implements OnInit {
 
   loadDoctrines() {
     this.doctrineService.getDoctrines().subscribe(docs => this.doctrines.set(docs));
-  }
-
-  openCreateModal() {
-    this.newEftInput.set('');
-    this.showCreateModal.set(true);
   }
 
   openDetails(doc: FleetDoctrine) {
@@ -81,6 +107,7 @@ export class DoctrinesComponent implements OnInit {
       const fitName = match[2].trim();
 
       this.doctrineService.createDoctrine({
+        doctrineName: this.newDoctrineName().trim(),
         shipType: shipType,
         name: fitName,
         eftString: rawText

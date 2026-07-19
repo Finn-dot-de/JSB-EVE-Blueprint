@@ -3,6 +3,7 @@ package com.eve.own.auth.backend.domain.fleet.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+
 import java.time.Instant;
 
 @Entity
@@ -15,13 +16,15 @@ public class FleetDoctrine {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String shipType;    // z.B. "Megathron"
-    private Long shipTypeId;    // Die SDE TypeID für das Bild (z.B. 24694)
-    private String name;        // z.B. "Armor Brawler V2"
+    private String doctrineName;
+
+    private String shipType;
+    private Long shipTypeId;
+    private String name;
 
     @Column(columnDefinition = "TEXT", nullable = false)
-    private String eftString;   // Der komplette EFT-Text
+    private String eftString;
 
-    private String createdBy;   // Wer hat es erstellt?
+    private String createdBy;
     private Instant createdAt;
 }

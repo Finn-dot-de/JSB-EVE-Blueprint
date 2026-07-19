@@ -28,8 +28,6 @@ public class FleetDoctrineController {
         this.invTypeRepo = invTypeRepo;
     }
 
-    public record CreateDoctrineDto(String shipType, String name, String eftString) {}
-
     // Jeder eingeloggte User darf die Fittings sehen
     @GetMapping
     public ResponseEntity<List<FleetDoctrine>> getAllDoctrines() {
@@ -37,20 +35,22 @@ public class FleetDoctrineController {
     }
 
     // Nur FCs und Directors dürfen Fittings erstellen
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38', 'ROLE_IT_ADMIN')")
+    public record CreateDoctrineDto(String doctrineName, String shipType, String name, String eftString) {}
+
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
     @PostMapping
     public ResponseEntity<?> createDoctrine(@RequestBody CreateDoctrineDto dto) {
         Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
         Character creator = characterRepo.findById(charId).orElseThrow();
 
         FleetDoctrine doc = new FleetDoctrine();
+        doc.setDoctrineName(dto.doctrineName() != null && !dto.doctrineName().isBlank() ? dto.doctrineName() : "Ungruppiert");
         doc.setShipType(dto.shipType());
         doc.setName(dto.name());
         doc.setEftString(dto.eftString());
         doc.setCreatedBy(creator.getName());
         doc.setCreatedAt(Instant.now());
 
-        // Wir fragen die lokale EVE SDE Datenbank, ob sie das Schiff kennt, um das Bild zu laden!
         invTypeRepo.findByTypeNameIgnoreCase(dto.shipType()).ifPresent(invType -> {
             doc.setShipTypeId(invType.getTypeId());
         });

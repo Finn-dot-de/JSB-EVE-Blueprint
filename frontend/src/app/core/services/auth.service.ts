@@ -54,8 +54,7 @@ export class AuthService {
       )
       .subscribe();
   }
-
-  // NEU: Helfer-Methode für die Rechte-Prüfung im UI
+  
   hasAnyRole(allowedRoles: string[]): boolean {
     const user = this.currentUser();
     if (!user || !user.roles) return false;

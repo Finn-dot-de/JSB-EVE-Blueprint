@@ -5,6 +5,7 @@ import { environment } from '../../../environments/environment';
 
 export interface FleetDoctrine {
   id: number;
+  doctrineName: string;
   shipType: string;
   shipTypeId: number | null;
   name: string;
@@ -14,6 +15,7 @@ export interface FleetDoctrine {
 }
 
 export interface CreateDoctrineDto {
+  doctrineName: string;
   shipType: string;
   name: string;
   eftString: string;

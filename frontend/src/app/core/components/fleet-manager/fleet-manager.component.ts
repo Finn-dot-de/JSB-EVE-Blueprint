@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FleetService, FleetEvent, FleetAttendance } from '../../services/fleet.service';
 import { AuthService } from '../../services/auth.service';
+import { ToastService } from '../../services/toast.service';
+import {ConfirmService} from '../../services/confirm.service';
 
 @Component({
   selector: 'app-fleet-manager',
@@ -14,6 +16,8 @@ import { AuthService } from '../../services/auth.service';
 export class FleetManagerComponent implements OnInit, OnDestroy {
   public authService = inject(AuthService);
   private fleetService = inject(FleetService);
+  private toastService = inject(ToastService);
+  private confirmService = inject(ConfirmService);
 
   recentFleets = signal<FleetEvent[]>([]);
   attendanceList = signal<FleetAttendance[]>([]);
@@ -30,7 +34,6 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
   isCreating = signal(false);
   isSyncing = signal(false);
-  syncResult = signal<string | null>(null);
 
   private pollingInterval: any;
 
@@ -89,10 +92,11 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
         this.fleetName = ''; // Formular zurücksetzen
         this.doctrine = '';
         this.loadRecentFleets();
+        this.toastService.success('Flotte erfolgreich gestartet!');
       },
       error: (err) => {
         this.isCreating.set(false);
-        alert(err.error?.message || 'Unbekannter Fehler beim Erstellen der Flotte.');
+        this.toastService.error(err.error?.message || 'Unbekannter Fehler beim Erstellen der Flotte.');
       }
     });
   }
@@ -101,25 +105,31 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     this.isSyncing.set(true);
     this.fleetService.syncFleetViaEsi(fleetId).subscribe({
       next: (count) => {
-        this.syncResult.set(`Sync OK: ${count} neue Member!`);
+        this.toastService.success(`Sync abgeschlossen: ${count} neue Member erfasst!`);
         this.isSyncing.set(false);
         this.loadAttendance(fleetId);
-        setTimeout(() => this.syncResult.set(null), 5000); // Nachricht nach 5s ausblenden
       },
       error: (err) => {
-        this.syncResult.set(err.error?.message || 'ESI Fehler');
+        this.toastService.error(err.error?.message || 'ESI Fehler beim Synchronisieren.');
         this.isSyncing.set(false);
-        setTimeout(() => this.syncResult.set(null), 5000);
       }
     });
   }
 
-  // NEU: Akzeptiert jetzt direkt die ID aus der Tabelle
-  closeFleet(fleetId: number) {
-    if (confirm('Tracking für diesen FAT wirklich beenden?')) {
+  async closeFleet(fleetId: number) {
+
+    // Die Code-Ausführung "wartet" hier (await), bis der User im Modal klickt
+    const confirmed = await this.confirmService.ask(
+      'Tracking beenden?',
+      'Möchtest du das Tracking für diesen FAT wirklich beenden? Die Flotte wird dadurch geschlossen.',
+      'FAT beenden',
+      'Abbrechen'
+    );
+
+    if (confirmed) {
       this.fleetService.closeFleet(fleetId).subscribe({
         next: () => {
-          this.syncResult.set(null);
+          this.toastService.info('Flotten-Tracking wurde beendet.');
           this.loadRecentFleets();
         }
       });
@@ -129,10 +139,10 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   copyLinkToClipboard(code: string) {
     const url = this.getJoinUrlFor(code);
     navigator.clipboard.writeText(url).then(() => {
-      alert('PAP-Link in die Zwischenablage kopiert!');
+      this.toastService.success('PAP-Link erfolgreich kopiert!');
     }).catch(err => {
       console.error('Konnte Link nicht kopieren: ', err);
-      alert('Fehler beim Kopieren des Links.');
+      this.toastService.error('Fehler beim Kopieren des PAP-Links.');
     });
   }
 

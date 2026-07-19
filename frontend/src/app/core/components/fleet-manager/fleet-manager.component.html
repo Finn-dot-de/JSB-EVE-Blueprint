@@ -110,9 +110,6 @@
               @if (isSyncing()) { <i class="fa-solid fa-spinner fa-spin"></i> }
               @else { <i class="fa-solid fa-cloud-arrow-down"></i> Manueller ESI Sync }
             </button>
-            @if (syncResult()) {
-              <div style="font-size: 0.8rem; color: #00dfa2; text-align: center; margin-bottom: 1rem;">{{ syncResult() }}</div>
-            }
           }
 
           <!-- PAP Link anzeigen (nur für FC, wenn LINK-FAT) -->

@@ -1,11 +1,9 @@
 <div class="app-layout">
-  <!-- Navbar ist immer da -->
   <app-navbar></app-navbar>
 
   <div class="content-wrapper">
 
     @if (authService.loading()) {
-      <!-- Unser schicker Lade-Screen für die allererste Sekunde -->
       <div class="global-loading">
         <i class="fa-solid fa-satellite-dish fa-spin fa-3x"></i>
         <h2>Verbinde mit EVE Datenbank...</h2>
@@ -13,7 +11,6 @@
       </div>
     } @else {
 
-      <!-- Wenn geladen: Sidebar rendern, falls eingeloggt -->
       @if (authService.currentUser()) {
         <app-sidebar></app-sidebar>
       }
@@ -26,3 +23,6 @@
 
   </div>
 </div>
+
+<app-toast></app-toast>
+<app-confirm></app-confirm>

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { environment } from '../../../../environments/environment';
 import { DiscordService } from '../../services/discord.service';
+import {ToastService} from '../../services/toast.service';
 
 @Component({
   selector: 'app-services',
@@ -15,6 +16,7 @@ export class ServicesComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private discordService = inject(DiscordService);
+  private toastService = inject(ToastService);
 
   isDiscordConnected = signal(false);
   isLoading = signal(true);
@@ -26,7 +28,7 @@ export class ServicesComponent implements OnInit {
         // URL sauber machen, damit das nicht beim nächsten Neuladen nochmal aufploppt
         this.router.navigate([], { queryParams: { discord: null }, queryParamsHandling: 'merge' });
       } else if (params['discord'] === 'error') {
-        alert('Fehler bei der Verbindung mit Discord.');
+        this.toastService.error("Fehler bei der Verbindung mit Discord.")
         this.router.navigate([], { queryParams: { discord: null }, queryParamsHandling: 'merge' });
       }
     });

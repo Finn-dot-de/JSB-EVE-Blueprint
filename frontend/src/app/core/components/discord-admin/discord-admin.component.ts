@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DiscordService, DiscordMapping } from '../../services/discord.service';
+import { ToastService } from '../../services/toast.service'; // <-- NEU: Importieren
 
 @Component({
   selector: 'app-discord-admin',
@@ -11,6 +12,7 @@ import { DiscordService, DiscordMapping } from '../../services/discord.service';
 })
 export class DiscordAdminComponent implements OnInit {
   private discordService = inject(DiscordService);
+  private toastService = inject(ToastService);
 
   mappings = signal<DiscordMapping[]>([]);
   loading = signal(true);
@@ -23,7 +25,7 @@ export class DiscordAdminComponent implements OnInit {
       },
       error: (err) => {
         console.error('Fehler beim Laden der Mappings:', err);
-        alert('Zugriff verweigert oder Fehler beim Laden der Rollen!');
+        this.toastService.error('Zugriff verweigert oder Fehler beim Laden der Rollen!');
         this.loading.set(false);
       }
     });
@@ -31,8 +33,8 @@ export class DiscordAdminComponent implements OnInit {
 
   saveMapping(mapping: DiscordMapping) {
     this.discordService.saveMapping(mapping).subscribe({
-      next: () => alert(`Mapping für ${mapping.authRole} gespeichert!`),
-      error: () => alert(`Fehler beim Speichern von ${mapping.authRole}.`)
+      next: () => this.toastService.success(`Mapping für ${mapping.authRole} gespeichert!`),
+      error: () => this.toastService.error(`Fehler beim Speichern von ${mapping.authRole}.`)
     });
   }
 }

@@ -47,4 +47,9 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/discord-admin/discord-admin.component').then(m => m.DiscordAdminComponent)
   },
+  {
+    path: 'fleet/doctrines',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/doctrines/doctrines.component').then(m => m.DoctrinesComponent)
+  },
 ];

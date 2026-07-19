@@ -1,0 +1,23 @@
+@if (confirmService.state().isOpen) {
+  <div class="modal-overlay" (click)="confirmService.respond(false)">
+    <div class="surface-panel modal-content confirm-modal" (click)="$event.stopPropagation()">
+
+      <div class="confirm-icon">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+
+      <h3>{{ confirmService.state().title }}</h3>
+      <p>{{ confirmService.state().message }}</p>
+
+      <div class="confirm-actions">
+        <button class="btn-secondary" (click)="confirmService.respond(false)">
+          {{ confirmService.state().cancelText }}
+        </button>
+        <button class="btn-primary btn-danger" (click)="confirmService.respond(true)">
+          {{ confirmService.state().confirmText }}
+        </button>
+      </div>
+
+    </div>
+  </div>
+}

@@ -1,0 +1,283 @@
+.sidebar {
+  width: 260px;
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  // Custom Scrollbar (optional, sieht bei Dark-Themes edler aus)
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--border-color);
+    border-radius: 4px;
+  }
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0;
+}
+
+/* ==================
+   Basis Menüpunkte
+   ================== */
+.nav-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 1.5rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.95rem;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+
+  .icon {
+    font-size: 1.1rem;
+    margin-right: 12px;
+    width: 20px;
+    text-align: center;
+  }
+
+  .label {
+    flex: 1; // Drückt den Pfeil ganz nach rechts
+  }
+
+  &:hover {
+    color: var(--text-primary);
+    background-color: rgba(100, 116, 139, 0.1); // Sanfter Hover
+  }
+
+  &.active {
+    color: var(--accent-color);
+    background-color: rgba(37, 99, 235, 0.08); // Sanfter blauer Hintergrund
+    border-left-color: var(--accent-color);
+    font-weight: 500;
+  }
+
+  .icon {
+    font-size: 1.1rem;
+    margin-right: 12px;
+    width: 24px; // Feste Breite für alle Icons
+    text-align: center; // Zentriert schmale Icons (wie fa-link) in der 24px Box
+    opacity: 0.85; // Leicht transparent für den Sci-Fi Look
+    transition: opacity 0.2s ease;
+  }
+
+  &:hover .icon {
+    opacity: 1;
+  }
+
+  &.active .icon {
+    opacity: 1;
+  }
+}
+
+// Der Aufklapp-Pfeil ganz rechts
+.nav-folder {
+  .chevron {
+    font-size: 0.85rem;
+    opacity: 0.6;
+    transition: transform 0.3s ease;
+  }
+
+  .chevron.rotated {
+    transform: rotate(90deg);
+  }
+}
+
+/* ==================
+   Aufklapp-Ordner & Chevron
+   ================== */
+.nav-folder {
+  font-weight: 500;
+
+  .chevron {
+    font-size: 1.2rem;
+    transition: transform 0.3s ease;
+  }
+
+  .chevron.rotated {
+    transform: rotate(90deg); // Pfeil zeigt nach unten, wenn offen
+  }
+}
+
+/* ==================
+   Untermenüs (Sub-items)
+   ================== */
+.sub-menu {
+  background-color: rgba(0, 0, 0, 0.1); // Macht den Ordner-Hintergrund minimal dunkler
+  padding: 0.25rem 0;
+
+  .sub-item {
+    padding-left: 3rem; // Rückt die Unterpunkte ein
+    font-size: 0.9rem;
+
+    // Untermenüs haben keinen linken Rand-Balken, das sieht sonst zu unruhig aus
+    border-left: none;
+
+    &.active {
+      border-left: none;
+      color: var(--accent-color);
+      // Optional: Du könntest dem Label hier ein "font-weight: bold" geben
+    }
+  }
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 1rem;
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.top-navbar {
+  height: 60px;
+  background-color: var(--bg-surface, #1e2025);
+  border-bottom: 1px solid var(--border-color, #2a2d36);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 2rem;
+  color: var(--text-primary, #e2e8f0);
+}
+
+/* --- Brand / Logo links --- */
+.nav-brand {
+  font-size: 1.25rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .brand-icon {
+    color: var(--accent-color, #3b82f6);
+  }
+}
+
+/* --- User Menü rechts --- */
+.user-menu-container {
+  position: relative; // Wichtig für das absolute Dropdown
+}
+
+.user-profile-btn {
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+  color: var(--text-primary, #e2e8f0);
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .nav-portrait {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #4a4e59);
+  }
+
+  .nav-char-name {
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  .chevron {
+    font-size: 0.8rem;
+    color: var(--text-secondary, #94a3b8);
+    transition: transform 0.2s ease;
+
+    &.open {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+/* --- Das Dropdown Menü --- */
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 5px); // Direkt unter dem Button
+  right: 0;
+  width: 220px;
+  background-color: var(--bg-surface, #1e2025);
+  border: 1px solid var(--border-color, #2a2d36);
+  border-radius: 6px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dropdown-header {
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  color: var(--text-primary, #e2e8f0);
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.2s ease;
+
+  i {
+    width: 20px;
+    text-align: center;
+    color: var(--text-secondary, #94a3b8);
+  }
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+
+    i { color: var(--text-primary, #e2e8f0); }
+  }
+}
+
+/* Spezielle Hover-Effekte für bestimmte Buttons */
+.add-alt-btn:hover {
+  color: #00dfa2; // EVE Grün
+  i { color: #00dfa2; }
+}
+
+.logout-btn:hover {
+  color: #ff3366; // Rot
+  i { color: #ff3366; }
+}
+
+.divider {
+  height: 1px;
+  background-color: var(--border-color, #2a2d36);
+  margin: 0.25rem 0;
+}

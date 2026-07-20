@@ -1,0 +1,13 @@
+<div class="home-container">
+  <div class="hero-section">
+    <i><img src="https://images.evetech.net/corporations/98378388/logo?size=128"></i>
+    <h1>Willkommen beim .MA. Auth</h1>
+    <p>Das zentrale Auth Portal für Marauders-Associated </p>
+
+    @if (!authService.currentUser()) {
+      <button class="btn-eve-login-large" (click)="authService.login()">
+        <img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-large.png" alt="Log in with EVE Online">
+      </button>
+    }
+  </div>
+</div>

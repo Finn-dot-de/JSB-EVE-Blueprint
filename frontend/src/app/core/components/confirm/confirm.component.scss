@@ -1,0 +1,81 @@
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 10000; /* Muss über allem liegen */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-modal {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  animation: popIn 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+  padding: 2rem;
+
+  h3 {
+    color: var(--text-primary);
+    margin: 1rem 0 0.5rem 0;
+    font-size: 1.25rem;
+  }
+
+  p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 2rem;
+  }
+}
+
+.confirm-icon {
+  font-size: 3rem;
+  color: #ff3366; /* Ein warnendes Rot */
+  opacity: 0.9;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+
+  button {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* Button-Styling (angelehnt an deine anderen Buttons) */
+.btn-primary {
+  background-color: var(--accent-color);
+  color: #fff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &.btn-danger {
+    background-color: #ff3366;
+    &:hover { background-color: #e62050; }
+  }
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  &:hover { background-color: rgba(255, 255, 255, 0.05); }
+}
+
+@keyframes popIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}

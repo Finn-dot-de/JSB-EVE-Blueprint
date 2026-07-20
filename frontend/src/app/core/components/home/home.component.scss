@@ -1,0 +1,25 @@
+.home-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 80vh;
+  text-align: center;
+}
+.hero-section {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  padding: 4rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.hero-icon {
+  font-size: 4rem;
+  color: var(--accent-color);
+  margin-bottom: 1rem;
+}
+h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+p { color: var(--text-secondary); margin-bottom: 2.5rem; font-size: 1.1rem; }
+.btn-eve-login-large {
+  background: none; border: none; cursor: pointer; transition: opacity 0.2s;
+}
+.btn-eve-login-large:hover { opacity: 0.85; }

@@ -1,0 +1,11 @@
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES (null, 'fa-solid fa-gears', 'Services', 'ROLE_USER', '/services', true);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES ('Fleet Management', 'fa-solid fa-list', 'Fittings and Doctrines', 'ROLE_JUNIOR_MEMBER', '/fleet/fittings', false);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES ('Gruppen Management', 'fa-solid fa-shield-halved', 'Roles & Rights', 'ROLE_DIRECTOR', '/groups/rights', true);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES ('Fleet Management', 'fa-solid fa-space-shuttle', 'Fleet Activity Tracking', 'ROLE_JUNIOR_MEMBER', '/fleet/tracking', true);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES (null, 'fa-solid fa-gauge-high', 'Dashboard', 'ROLE_USER', '/dashboard', false);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES ('Fleet Management', 'fa-solid fa-bell', 'Fleet Pings', 'ROLE_MEMBER', '/fleet/pings', true);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES (null, 'fa-solid fa-link', 'CharLink', 'ROLE_USER', '/charlink', true);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES ('CorpTools', 'fa-solid fa-eye', 'Character Audit', 'ROLE_MEMBER', '/corptools/audit', false);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES ('Gruppen Management', 'fa-solid fa-users', 'Groups', 'ROLE_JUNIOR_MEMBER', '/groups/manage', true);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES (null, 'fa-solid fa-book', 'Corp Book', null, 'https://docs.google.com/document/d/14_Ow-3q1-GdZ6G5m9YfYsa3VmlaQ_bbLRru5hoWaHZk/edit?tab=t.0#heading=h.vf1bqlck9foj', true);
+INSERT INTO public.navigation_links (category, icon, label, required_role, url, active) VALUES ('Admin', 'fa-brands fa-discord', 'Discord Admin', 'ROLE_IT_ADMIN', '/admin/discord', true);

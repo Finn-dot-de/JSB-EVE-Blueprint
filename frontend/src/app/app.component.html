@@ -1,1 +1,28 @@
-<app-buy-bot></app-buy-bot>
+<div class="app-layout">
+  <app-navbar></app-navbar>
+
+  <div class="content-wrapper">
+
+    @if (authService.loading()) {
+      <div class="global-loading">
+        <i class="fa-solid fa-satellite-dish fa-spin fa-3x"></i>
+        <h2>Verbinde mit EVE Datenbank...</h2>
+        <p>Autorisierung wird geprüft</p>
+      </div>
+    } @else {
+
+      @if (authService.currentUser()) {
+        <app-sidebar></app-sidebar>
+      }
+
+      <main class="main-content">
+        <router-outlet></router-outlet>
+      </main>
+
+    }
+
+  </div>
+</div>
+
+<app-toast></app-toast>
+<app-confirm></app-confirm>

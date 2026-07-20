@@ -1,0 +1,48 @@
+<header class="navbar">
+  <div class="navbar-brand">
+    <i><img src="https://images.evetech.net/corporations/98378388/logo?size=64"></i>
+    <h1>Marauders-Associated</h1>
+  </div>
+
+  <div class="navbar-actions">
+    @if (authService.loading()) {
+      <div class="loading-spinner"></div>
+    } @else {
+
+      @if (authService.currentUser(); as user) {
+        <div class="user-menu-container">
+
+          <button class="user-profile-btn" (click)="toggleMenu()">
+            <img [src]="authService.portraitUrl()" alt="Portrait" class="nav-portrait">
+            <span class="nav-char-name">Charakter #{{ user.characterId }}</span>
+            <i class="fa-solid fa-chevron-down chevron" [class.open]="isMenuOpen()"></i>
+          </button>
+
+          @if (isMenuOpen()) {
+            <div class="dropdown-menu">
+              <div class="dropdown-header">Account Management</div>
+
+              <button class="dropdown-item add-alt-btn" (click)="addAltCharacter()">
+                <i class="fa-solid fa-user-plus"></i>
+                <span>Alt hinzufügen</span>
+              </button>
+
+              <div class="divider"></div>
+
+              <button class="dropdown-item logout-btn" (click)="authService.logout()">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span>Abmelden</span>
+              </button>
+            </div>
+          }
+        </div>
+      }
+
+      @else {
+        <button class="btn-eve-login" (click)="authService.login()">
+          <img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-small.png" alt="Log in with EVE Online">
+        </button>
+      }
+    }
+  </div>
+</header>

@@ -1,0 +1,195 @@
+<div class="dashboard-container">
+
+  @if (dashboardData(); as data) {
+
+    <div class="dashboard-banner">
+      <div class="banner-left">
+        <img [src]="data.portraitUrl" alt="Portrait" class="banner-avatar">
+        <div class="banner-info">
+          <h2 class="banner-name">{{ data.characterName }}</h2>
+          <div class="banner-tags">
+            @if (data.allianceName && data.allianceId) {
+              <div class="banner-tag">
+                <img [src]="'https://images.evetech.net/alliances/' + data.allianceId + '/logo?size=32'" alt="Alliance" class="tiny-logo">
+                <span>{{ data.allianceName }}</span>
+              </div>
+            }
+            <div class="banner-tag">
+              <img [src]="'https://images.evetech.net/corporations/' + data.corporationId + '/logo?size=32'" alt="Corp" class="tiny-logo">
+              <span>{{ data.corporationName }}</span>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: -5px; margin-top: 8px;">
+            @for (alt of data.linkedCharacters; track alt.id) {
+              @if (alt.name !== data.characterName) {
+                <img [src]="alt.portraitUrl" [title]="alt.name" style="width: 26px; height: 26px; border-radius: 50%; border: 2px solid #161925; margin-right: -8px; z-index: 1;">
+              }
+            }
+          </div>
+
+        </div>
+      </div>
+
+      <div class="banner-right">
+        <button class="btn-sync"><i class="fa-solid fa-rotate"></i></button>
+        <button class="btn-sync check"><i class="fa-solid fa-check"></i></button>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <span>Account at a Glance</span>
+    </div>
+
+    <div class="glance-grid">
+      <div class="glance-item wallet">
+        <div class="icon-box">
+          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABCJJREFUeNrsWe1LU2EUvw/4dX+A61uQgSUYsyQTtkRC0PVGhBP6ErhVWNNtaZPl3XxNdEsFoY2+hS3IilIJK2oWZREXIxJiH/qW/gH7fO/tPCKktsE9d8992bo/GGPovc85v+d3znPOeTjOggULFixYsPC/gqh98Mev30n4cpjRqcP799Up/d8KtYtIklgWClBPgCjZTOpTTh8CJLHKpFEd04kAqdCfFjlCBPjeKNoXWfYi88xi3aEDGV0IEMV/ckCOEOI7VnMwy2Ifv3z/6UA6vwnrx3XJAatr6/Y8Ckgcr61m4vyntXUbvD+KPM6i9bXVOV0IAOMq97J/wlGzwCqK4f1ecKgS8Uga1hd0OwXy7H6KlfPvv35zyZLkkRHSh+1XvX6FyvjfdQRC7GVYOP9uVbDB8cqjpE9I1Fl/JKcrAXuOwExTw9EcCwJkWeJlmUPUFyTV1FAnFLMmixBYYeH86w+fXfBeF+KRbHNjfdGhpzYEqshfDRYt/+XMR5r1eYLTfpQF8RXqpCqvQJKiR95mi7OhaPlLsswTWbYhEl+q5WQjkyOXcAZj6c0Klf0kRvqtzc4Ow5shFlh49ZYWVJisT6vNKEsbDCVAhCOPEEzW51JnWpqzZUHA06VlDxQ8DkTcC+daT6VNMw8oBvMvXtqh4PEipR/TwhZDCIBCisY9quC5eLZ1oywISD957oHEh2lzhfbzp9Na2aMrAXOPn9m3Oz3F0oeCJ6SlTUzqgAeP5pXtKCFBWFDxKA0SZBqqrkKVZvZS+4WcKRQgyVJSqUdIeLY/+eCj4WEOAkSJK1WwIaCE7wgsBTDKAb4CXSNNeEHEqzYRtb65u8HZ5H0bOEOTo+KsT8fqVzsvCyWngAK7791WgOIaqetKp1CSIbAX07P3HJAYPRjp03LXiBzAPAQSM7NU+g85xFwfWmJfd9c1wQgCmCsAWlyvTFCXGqmg/7ohzjNXwERiCkpikkQ8kr0Z8HdwBoKZAu5MxPH3eYzHW4YSAM4HwSGU9MO9oWxZEDA8Nk4vNdow0o+E+5hnfbAjueP9cV0IiA2N2CRRNHSySzE4POoGOxzYKrFoAqDY4eGDmuxGByLMpQ8KdO74KehCwG0+BtIXXYhHhMEoz3y8BXbYd9lBiPYK6I8M2FRcamgy2QU7dladuZGh2IbmBOCvsrnU2Mgw88luuD9Cd79NbZeoioC+W2E38ipbGB8bTWu0+wFu9+2SoCkBod4++9aiOOlrMtkFW9x5cpC2CqBHHjiEkX4sPjmRY+18IBhyQ9/By0UOSlAEdPcEsJcamam7iQwrp/3dPXY6YIENKFh4wXqoPKO4Gbrh99PF5zjUlZbuEGamp32aKEASt+LezM5v5RvNegFINmZ3Hh3/KALEEhh9E0JHaxYsWLBgwYJS/BFgAE4Kq3N5izE5AAAAAElFTkSuQmCC" alt="ISK">
+        </div>
+        <div class="glance-info">
+          <span class="value green">{{ formatShortNumber(data.totalWalletBalance) }} ISK</span>
+          <span class="label">Total Wallet</span>
+        </div>
+      </div>
+
+      <div class="glance-item brain">
+        <div class="icon-box">
+          <i class="fa-solid fa-brain"></i>
+        </div>
+        <div class="glance-info">
+          <span class="value blue">{{ formatShortNumber(data.totalSkillPoints) }} SP</span>
+          <span class="label">Total Skills</span>
+        </div>
+      </div>
+
+      <div class="glance-item chars">
+        <div class="icon-box">
+          <i class="fa-solid fa-users"></i>
+        </div>
+        <div class="glance-info">
+          <span class="value">{{ data.totalCharacters }} Chars</span>
+          <span class="label">Linked Accounts</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <span>Character Assets</span>
+    </div>
+
+    <div class="assets-categories-grid">
+
+      <div class="asset-card">
+        <div class="card-header">Subcapital</div>
+        <div class="card-content">
+          @for (ship of subcapitalList(); track ship.name) {
+            <div class="ship-icon-box" [title]="ship.name" [class.empty]="ship.quantity === 0">
+              <img [src]="getShipIconUrl(ship.name)" [alt]="ship.name" class="eve-ship-icon">
+              <span class="ship-count">{{ ship.quantity > 0 ? ship.quantity : '-' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="asset-card">
+        <div class="card-header">Capital</div>
+        <div class="card-content">
+          @for (ship of capitalList(); track ship.name) {
+            <div class="ship-icon-box" [title]="ship.name" [class.empty]="ship.quantity === 0">
+              <img [src]="getShipIconUrl(ship.name)" [alt]="ship.name" class="eve-ship-icon">
+              <span class="ship-count">{{ ship.quantity > 0 ? ship.quantity : '-' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="asset-card">
+        <div class="card-header">Industrial</div>
+        <div class="card-content">
+          @for (ship of industrialList(); track ship.name) {
+            <div class="ship-icon-box" [title]="ship.name" [class.empty]="ship.quantity === 0">
+              <img [src]="getShipIconUrl(ship.name)" [alt]="ship.name" class="eve-ship-icon">
+              <span class="ship-count">{{ ship.quantity > 0 ? ship.quantity : '-' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- NOTABLE (Dynamisch) -->
+      <div class="asset-card notable">
+        <div class="card-header">Notable</div>
+        <div class="card-content">
+          @for (item of notableList(); track item.name) {
+            <div class="ship-icon-box" [title]="item.name" [class.empty]="item.quantity === 0">
+              <img [src]="getShipIconUrl(item.name)" [alt]="item.name" class="eve-ship-icon">
+              <span class="ship-count">{{ item.quantity > 0 ? item.quantity : '-' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- STRUCTURES (Dynamisch) -->
+      <div class="asset-card structures">
+        <div class="card-header">Structures</div>
+        <div class="card-content">
+          @for (item of structuresList(); track item.name) {
+            <div class="ship-icon-box" [title]="item.name" [class.empty]="item.quantity === 0">
+              <!-- Die CSS-Klasse "rounded-img" macht diese Icons schön rund -->
+              <img [src]="getShipIconUrl(item.name)" [alt]="item.name" class="eve-ship-icon rounded-img">
+              <span class="ship-count">{{ item.quantity > 0 ? item.quantity : '-' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+    </div>
+
+    <<div class="section-divider">
+      <span>Affiliations</span>
+    </div>
+
+    <div class="assets-categories-grid">
+
+      <div class="asset-card">
+        <div class="card-header">Detected Militia</div>
+        <div class="card-content">
+          @for (militia of militiaList(); track militia.name) {
+            <div class="ship-icon-box" [title]="militia.name" [class.empty]="militia.quantity === 0">
+              <img [src]="getMilitiaIconUrl(militia.name)" [alt]="militia.name" class="eve-ship-icon">
+              <span class="ship-count">{{ militia.quantity > 0 ? militia.quantity : '-' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="asset-card">
+        <div class="card-header">Evermarks</div>
+        <div class="card-content">
+          <div class="ship-icon-box" title="Paragon Evermarks" [class.empty]="data.affiliations.evermarks === 0">
+            <img src="https://images.evetech.net/corporations/1000419/logo?size=128" alt="Paragon" class="eve-ship-icon">
+            <span class="ship-count">{{ data.affiliations.evermarks > 0 ? formatShortNumber(data.affiliations.evermarks) : '-' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="asset-card" style="min-width: 350px;">
+        <div class="card-header">Loyalty Points</div>
+        <div class="card-content">
+          @for (lp of lpAffiliationList(); track lp.name) {
+            <div class="ship-icon-box" [title]="getLpDisplayName(lp.name)" [class.empty]="lp.quantity === 0">
+              <img [src]="getLpIconUrl(lp.name)" [alt]="lp.name" class="eve-ship-icon">
+              <span class="ship-count">{{ lp.quantity > 0 ? formatShortNumber(lp.quantity) : '-' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+    </div>
+
+  } @else {
+    <div class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+  }
+
+</div>

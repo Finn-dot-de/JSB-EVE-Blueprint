@@ -1,0 +1,90 @@
+<div class="roles-container">
+  <div class="section-divider">
+    <h1>
+      <span>Corporation Auth Statistik</span>
+    </h1>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+  } @else if (errorMsg()) {
+    <div class="surface-panel text-center">
+      <i class="fa-solid fa-triangle-exclamation fa-3x" style="color: #ff3366; margin-bottom: 1rem;"></i>
+      <p style="color: #ff3366;">{{ errorMsg() }}</p>
+    </div>
+  } @else {
+
+    <!-- Hier loopen wir jetzt über alle konfigurierten Corps -->
+    <div style="display: flex; flex-direction: column; gap: 2rem;">
+      @for (s of stats(); track s.corpId) {
+
+        <div class="surface-panel">
+          <!-- Corp Header (Logo + Name) -->
+          <div
+            style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+            <img [src]="'https://images.evetech.net/corporations/' + s.corpId + '/logo?size=64'" alt="Logo"
+                 style="width: 48px; height: 48px; border-radius: 6px;">
+            <h2 style="margin: 0; color: var(--text-primary);">{{ s.corpName }}</h2>
+          </div>
+
+          <div style="display: flex; gap: 3rem; align-items: center; justify-content: center; flex-wrap: wrap;">
+
+            <!-- Der magische CSS Pie Chart -->
+            <div class="pie-chart-container">
+              <div class="pie-chart"
+                   [style.background]="'conic-gradient(#00dfa2 0% ' + getPercentage(s) + '%, rgba(255,255,255,0.05) ' + getPercentage(s) + '% 100%)'">
+                <div class="pie-inner">
+                  <span class="pie-percent">{{ getPercentage(s) }}%</span>
+                  <span class="pie-label">Auth Quote</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Die harten Fakten daneben -->
+            <div class="stats-details" style="display: flex; flex-direction: column; gap: 1rem;">
+
+              <!-- Haupt-Metrik -->
+              <div class="stat-row" style="padding: 15px 20px;">
+                <i class="fa-solid fa-users" style="color: var(--text-secondary); font-size: 1.8rem; width: 35px;"></i>
+                <div>
+                  <div style="font-size: 1.8rem; color: var(--text-primary); font-weight: 600;">
+                    {{ s.totalRegisteredChars }} / {{ s.totalEsiMembers }}
+                  </div>
+                  <div style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase;">Charaktere im
+                    Auth erfasst
+                  </div>
+                </div>
+              </div>
+
+              <!-- Detail-Split -->
+              <div style="display: flex; gap: 1rem;">
+
+                <!-- Diese Box wird NUR gerendert, wenn es mehr als 0 Mains gibt (also bei der Hauptcorp) -->
+                @if (s.registeredMains > 0) {
+                  <div class="stat-row" style="flex: 1;">
+                    <i class="fa-solid fa-user-astronaut" style="color: #00dfa2; font-size: 1.2rem; width: 25px;"></i>
+                    <div>
+                      <div style="font-size: 1.3rem; color: var(--text-primary); font-weight: 600;">{{ s.registeredMains }}</div>
+                      <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase;">Einzigartige Mains</div>
+                    </div>
+                  </div>
+                }
+
+                <div class="stat-row" style="flex: 1;">
+                  <i class="fa-solid fa-users-viewfinder" style="color: var(--accent-color); font-size: 1.2rem; width: 25px;"></i>
+                  <div>
+                    <div style="font-size: 1.3rem; color: var(--text-primary); font-weight: 600;">{{ s.registeredAlts }}</div>
+                    <div style="color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase;">Erfasste Alts</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

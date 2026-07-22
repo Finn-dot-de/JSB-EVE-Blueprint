@@ -61,6 +61,39 @@ public class DiscordBotService {
                 .body(DiscordUserResponse.class);
     }
 
+    // 3. User auf den Server einladen (JETZT MIT NICKNAME)
+    public void addMemberToServer(String discordUserId, String userAccessToken, List<String> discordRoleIds, String nickname) {
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("access_token", userAccessToken);
+        body.put("roles", discordRoleIds);
+        if (nickname != null && !nickname.isBlank()) {
+            body.put("nick", nickname.length() > 32 ? nickname.substring(0, 32) : nickname);
+        }
+
+        botClient.put()
+                .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    // 4. Rollen und Nickname synchronisieren
+    public void syncMemberData(String discordUserId, List<String> discordRoleIds, String nickname) {
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("roles", discordRoleIds);
+        if (nickname != null && !nickname.isBlank()) {
+            body.put("nick", nickname.length() > 32 ? nickname.substring(0, 32) : nickname);
+        }
+
+        botClient.patch()
+                .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
     // 3. User auf den Server einladen
     public void addMemberToServer(String discordUserId, String userAccessToken, List<String> discordRoleIds) {
         Map<String, Object> body = Map.of(

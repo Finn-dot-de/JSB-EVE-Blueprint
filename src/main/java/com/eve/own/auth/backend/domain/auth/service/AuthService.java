@@ -172,6 +172,7 @@ public class AuthService {
 
         if (character.getCorporation().getId().equals(allowedCorpId)) {
             calculatedRoles.add("ROLE_MEMBER");
+            calculatedRoles.add("ROLE_MARAUDERS");
         }
 
         // --- SPEZIAL-ROLLEN RETTEN ---

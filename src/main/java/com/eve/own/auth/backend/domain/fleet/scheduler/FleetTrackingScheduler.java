@@ -58,7 +58,7 @@ public class FleetTrackingScheduler {
                         fleetRepo.save(event);
                         log.info("Auto-Tracker: LINK FAT '{}' ist abgelaufen und wurde beendet.", event.getFleetName());
                     }
-                    continue; // Bei Link-FATs gibt es kein ESI-Tracking
+                    continue;
                 }
 
                 // ========================================================

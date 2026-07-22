@@ -40,15 +40,18 @@ public class DiscordSyncScheduler {
                 Character character = characterRepo.findById(conn.getCharacterId()).orElse(null);
                 if (character == null) continue;
 
-                // Alle Discord-Rollen für diesen User ermitteln
+                Character mainChar = character.getMainCharacterId() != null
+                        ? characterRepo.findById(character.getMainCharacterId()).orElse(character)
+                        : character;
+                String expectedNickname = mainChar.getName();
+
                 List<String> expectedDiscordRoles = character.getRoles().stream()
-                        .map(authRole -> mappingRepo.findById(authRole))
+                        .map(mappingRepo::findById)
                         .filter(java.util.Optional::isPresent)
                         .map(mapping -> mapping.get().getDiscordRoleId())
                         .toList();
 
-                // Update über den Bot an Discord schicken
-                discordBotService.syncMemberRoles(conn.getDiscordUserId(), expectedDiscordRoles);
+                discordBotService.syncMemberData(conn.getDiscordUserId(), expectedDiscordRoles, expectedNickname);
 
             } catch (Exception e) {
                 log.error("Fehler beim Sync für Discord User {}: {}", conn.getDiscordUserId(), e.getMessage());

@@ -75,7 +75,7 @@ public class FleetController {
     // ==========================================
     // FC-ONLY: ERSTELLEN & VERWALTEN
     // ==========================================
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38')")
     @PostMapping("/create")
     public ResponseEntity<?> createFleet(@RequestBody CreateFleetDto dto) {
         Long fcId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
@@ -119,7 +119,7 @@ public class FleetController {
         return ResponseEntity.ok(fleetRepo.save(newFleet));
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38')")
     @PostMapping("/{eventId}/close")
     public ResponseEntity<?> closeFleet(@PathVariable Long eventId) {
         Long fcId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
@@ -134,7 +134,7 @@ public class FleetController {
         return ResponseEntity.ok().build();
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38')")
     @PostMapping("/{eventId}/sync-esi")
     public ResponseEntity<?> syncFleetViaEsi(@PathVariable Long eventId) {
         Long fcId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();

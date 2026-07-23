@@ -37,7 +37,7 @@ public class FleetDoctrineController {
     // Nur FCs und Directors dürfen Fittings erstellen
     public record CreateDoctrineDto(String doctrineName, String shipType, String name, String eftString) {}
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38', 'ROLE_IT_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38', 'ROLE_IT_ADMIN')")
     @PostMapping
     public ResponseEntity<?> createDoctrine(@RequestBody CreateDoctrineDto dto) {
         Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
@@ -59,14 +59,14 @@ public class FleetDoctrineController {
         return ResponseEntity.ok(doctrineRepo.save(doc));
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38', 'ROLE_IT_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38', 'ROLE_IT_ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteDoctrine(@PathVariable Long id) {
         doctrineRepo.deleteById(id);
         return ResponseEntity.ok().build();
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38')")
     @PutMapping("/{id}")
     public ResponseEntity<?> updateDoctrine(@PathVariable Long id, @RequestBody CreateDoctrineDto dto) {
         FleetDoctrine doc = doctrineRepo.findById(id).orElseThrow();

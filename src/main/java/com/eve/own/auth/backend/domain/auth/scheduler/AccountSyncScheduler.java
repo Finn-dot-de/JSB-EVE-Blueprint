@@ -270,7 +270,11 @@ public class AccountSyncScheduler {
         java.util.Set<String> calculatedRoles = new java.util.HashSet<>();
 
         calculatedRoles.add("ROLE_USER");
-        calculatedRoles.add("ROLE_MEMBER");
+
+        if (c.getCorporation().getId().equals(MY_MAIN_CORP_ID)) {
+            calculatedRoles.add("ROLE_MEMBER");
+            calculatedRoles.add("ROLE_MARAUDERS_ASSOCIATED");
+        }
 
         // =========================================================
         // NEU: Spezial-Rollen sichern, bevor alles neu berechnet wird!

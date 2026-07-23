@@ -9,6 +9,7 @@ import com.eve.own.auth.backend.domain.discord.service.DiscordBotService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException; // <-- Wichtig für die spezifischen Exceptions
 
 import java.util.List;
 
@@ -29,7 +30,6 @@ public class DiscordSyncScheduler {
         this.discordBotService = discordBotService;
     }
 
-    // Läuft z.B. alle 30 Minuten
     @Scheduled(fixedRate = 1800000)
     public void syncDiscordRoles() {
         log.info("Starte Discord Role Sync...");
@@ -53,8 +53,21 @@ public class DiscordSyncScheduler {
 
                 discordBotService.syncMemberData(conn.getDiscordUserId(), expectedDiscordRoles, expectedNickname);
 
+                Thread.sleep(200);
+
+            } catch (HttpClientErrorException.TooManyRequests e) {
+                log.warn("Rate Limit erreicht bei User {}. Pausiere für 5 Sekunden...", conn.getDiscordUserId());
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            } catch (HttpClientErrorException.Forbidden e) {
+                log.info("403 Forbidden bei User {}: Server-Owner oder Bot-Rolle zu niedrig.", conn.getDiscordUserId());
+            } catch (HttpClientErrorException.NotFound e) {
+                log.info("404 Not Found: User {} hat den Discord-Server verlassen.", conn.getDiscordUserId());
             } catch (Exception e) {
-                log.error("Fehler beim Sync für Discord User {}: {}", conn.getDiscordUserId(), e.getMessage());
+                log.error("Unerwarteter Fehler beim Sync für Discord User {}: {}", conn.getDiscordUserId(), e.getMessage());
             }
         }
         log.info("Discord Role Sync abgeschlossen.");

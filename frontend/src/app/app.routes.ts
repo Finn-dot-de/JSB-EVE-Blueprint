@@ -52,4 +52,9 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/doctrines/doctrines.component').then(m => m.DoctrinesComponent)
   },
+  {
+    path: 'corp/mining',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/mining-tax/mining-tax.component').then(m => m.MiningTaxComponent)
+  },
 ];

@@ -120,3 +120,27 @@
     }
   }
 }
+
+/* =========================================
+   DANGER BUTTON (Trennen)
+   ========================================= */
+.btn-danger-outline {
+  background-color: transparent;
+  color: #ff3366;
+  border: 1px solid rgba(255, 51, 102, 0.3);
+  padding: 0.85rem 1.5rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  &:hover {
+    background-color: rgba(255, 51, 102, 0.1); /* Leicht roter, transparenter Hintergrund beim Hover */
+    border-color: rgba(255, 51, 102, 0.6);
+  }
+}

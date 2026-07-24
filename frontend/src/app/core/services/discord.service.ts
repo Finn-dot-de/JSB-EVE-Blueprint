@@ -27,4 +27,8 @@ export class DiscordService {
   saveMapping(mapping: DiscordMapping): Observable<void> {
     return this.http.post<void>(`${this.apiUrl}/mappings`, mapping);
   }
+
+  disconnect(): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/disconnect`);
+  }
 }

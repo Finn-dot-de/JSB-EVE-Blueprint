@@ -6,10 +6,10 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class EsiService {
-
     private final RestClient restClient;
 
     public record EsiResponse<T>(T data, String etag) {}
@@ -18,24 +18,19 @@ public class EsiService {
         this.restClient = esiClient;
     }
 
-    // --- Die generische "Magic" Methode für alle ESI-Calls ---
     private <T> EsiResponse<T> fetch(String uri, Object[] uriVariables, String token, String oldEtag, Class<T> responseType) {
         var request = restClient.get().uri(uri, uriVariables);
-
         if (token != null) request.header("Authorization", "Bearer " + token);
         if (oldEtag != null) request.header("If-None-Match", oldEtag);
 
         ResponseEntity<T> response = request.retrieve().toEntity(responseType);
-
         if (response.getStatusCode().value() == 304) {
             return new EsiResponse<>(null, oldEtag);
         }
-
         String newEtag = response.getHeaders().getFirst("ETag");
         return new EsiResponse<>(response.getBody(), newEtag);
     }
 
-    // --- Aktualisierte Methoden ---
     public EsiResponse<EsiCharacterResponse> getCharacter(Long characterId, String etag) {
         return fetch("/characters/{id}/", new Object[]{characterId}, null, etag, EsiCharacterResponse.class);
     }
@@ -56,30 +51,25 @@ public class EsiService {
         return fetch("/characters/{id}/skills/", new Object[]{characterId}, token, etag, SkillResponse.class);
     }
 
-    // --- NEU: Paginierte Asset-Abfrage ---
     public List<EsiAssetResponse> getAllAssets(Long characterId, String token) {
         List<EsiAssetResponse> allAssets = new ArrayList<>();
         int page = 1;
         int maxPages = 1;
-
         do {
             var response = restClient.get()
                     .uri("/characters/{id}/assets/?page={page}", characterId, page)
                     .header("Authorization", "Bearer " + token)
                     .retrieve()
                     .toEntity(EsiAssetResponse[].class);
-
             if (response.getBody() != null) {
                 allAssets.addAll(List.of(response.getBody()));
             }
-
             String xPages = response.getHeaders().getFirst("X-Pages");
             if (xPages != null) {
                 maxPages = Integer.parseInt(xPages);
             }
             page++;
         } while (page <= maxPages);
-
         return allAssets;
     }
 
@@ -97,15 +87,13 @@ public class EsiService {
 
     public EsiIdName[] getUniverseNames(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return new EsiIdName[0];
-
         Long[] requestBody = ids.toArray(new Long[0]);
-
         try {
             return restClient.post()
                     .uri("/universe/names/")
                     .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                     .accept(org.springframework.http.MediaType.APPLICATION_JSON)
-                    .body(requestBody) // <-- Hier übergeben wir das saubere Array
+                    .body(requestBody)
                     .retrieve()
                     .body(EsiIdName[].class);
         } catch (Exception e) {
@@ -114,10 +102,7 @@ public class EsiService {
         }
     }
 
-
-    // Die Methode zum Abrufen
     public EsiCorporationResponse getCorporationInfo(Long corporationId) {
-        // Wir rufen deine generische fetch-Methode auf und ziehen uns direkt die .data() raus
         return fetch("/corporations/{id}/", new Object[]{corporationId}, null, null, EsiCorporationResponse.class).data();
     }
 
@@ -128,7 +113,7 @@ public class EsiService {
     public EsiResponse<EsiCorpTitleResponse[]> getCorporationTitles(Long corpId, String token, String etag) {
         return fetch("/corporations/{id}/titles/", new Object[]{corpId}, token, etag, EsiCorpTitleResponse[].class);
     }
-    
+
     public EsiResponse<EsiCharacterFleetResponse> getCharacterFleet(Long characterId, String token) {
         return fetch("/characters/{id}/fleet/", new Object[]{characterId}, token, null, EsiCharacterFleetResponse.class);
     }
@@ -145,7 +130,24 @@ public class EsiService {
         return fetch("/corporations/{id}/members/", new Object[]{corpId}, token, null, Long[].class);
     }
 
-    // --- Records anpassen/erweitern ---
+    public java.util.Map<String, FuzzworkPrice> getFuzzworkPrices(List<Long> typeIds) {
+        if (typeIds == null || typeIds.isEmpty()) return java.util.Map.of();
+        String typesParam = typeIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+        try {
+            return RestClient.create().get()
+                    .uri("https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=" + typesParam)
+                    .retrieve()
+                    .body(new org.springframework.core.ParameterizedTypeReference<java.util.Map<String, FuzzworkPrice>>() {});
+        } catch (Exception e) {
+            System.err.println("Fehler bei Fuzzwork Jita Preisen: " + e.getMessage());
+            return java.util.Map.of();
+        }
+    }
+
+    // --- Records ---
+    public record FuzzworkPrice(FuzzworkBuy buy, FuzzworkSell sell) {}
+    public record FuzzworkBuy(Double max) {}
+    public record FuzzworkSell(Double min) {}
     public record EsiIdName(Long id, String name, String category) {}
     public record EsiOnlineResponse(Boolean online, String last_login, String last_logout, Integer logins) {}
     public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}
@@ -153,7 +155,7 @@ public class EsiService {
     public record EsiCorpTitleResponse(Long title_id, String name) {}
     public record EsiTitleResponse(Long title_id, String name) {}
     public record EsiMiningResponse(String date, Long quantity, Long solar_system_id, Long type_id) {}
-    public record EsiJournalResponse(Long id, String date, String ref_type, Double amount) {}
+    public record EsiJournalResponse(Long id, String date, String ref_type, Double amount, Long second_party_id, String reason) {}
     public record EsiLpResponse(Long corporation_id, Integer loyalty_points) {}
     public record SkillResponse(Long total_sp, Integer unallocated_sp) {}
     public record EsiAssetResponse(Long item_id, Long type_id, Long location_id, Integer quantity, Boolean is_singleton) {}

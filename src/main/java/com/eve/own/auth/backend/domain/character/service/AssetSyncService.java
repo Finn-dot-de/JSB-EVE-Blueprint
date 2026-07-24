@@ -3,9 +3,11 @@ package com.eve.own.auth.backend.domain.character.service;
 import com.eve.own.auth.backend.domain.character.entity.CharacterActivity;
 import com.eve.own.auth.backend.domain.character.entity.CharacterAsset;
 import com.eve.own.auth.backend.domain.character.entity.CharacterLp;
+import com.eve.own.auth.backend.domain.character.entity.CharacterMining;
 import com.eve.own.auth.backend.domain.character.repository.CharacterActivityRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterAssetRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterLpRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterMiningRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +21,23 @@ public class AssetSyncService {
     private final CharacterAssetRepository assetRepo;
     private final CharacterLpRepository lpRepo;
     private final CharacterActivityRepository activityRepo;
+    private final CharacterMiningRepository miningRepo;
 
-    public AssetSyncService(CharacterAssetRepository assetRepo, CharacterLpRepository lpRepo, CharacterActivityRepository activityRepo) {
+    public AssetSyncService(CharacterAssetRepository assetRepo, CharacterLpRepository lpRepo,
+                            CharacterActivityRepository activityRepo, CharacterMiningRepository miningRepo) {
         this.assetRepo = assetRepo;
         this.lpRepo = lpRepo;
         this.activityRepo = activityRepo;
+        this.miningRepo = miningRepo;
     }
 
+    @Transactional
+    public void replaceCharacterMining(Long characterId, List<CharacterMining> miningList) {
+        miningRepo.deleteByCharacterId(characterId);
+        miningRepo.saveAll(miningList);
+        log.info("Mining-Ledger für Charakter {} aktualisiert: {} Einträge.", characterId, miningList.size());
+    }
+    
     @Transactional
     public void replaceCharacterAssets(Long characterId, List<CharacterAsset> newAssets) {
         assetRepo.deleteByCharacterId(characterId);

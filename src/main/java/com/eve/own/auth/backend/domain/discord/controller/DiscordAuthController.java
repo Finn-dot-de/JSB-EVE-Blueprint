@@ -1,6 +1,5 @@
 package com.eve.own.auth.backend.domain.discord.controller;
 
-import com.eve.own.auth.backend.domain.auth.entity.SystemRole;
 import com.eve.own.auth.backend.domain.auth.repository.SystemRoleRepository;
 import com.eve.own.auth.backend.domain.auth.repository.TitleRoleMappingRepository;
 import com.eve.own.auth.backend.domain.character.entity.Character;
@@ -21,10 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 @Slf4j
 @RestController
@@ -124,7 +120,8 @@ public class DiscordAuthController {
 
     @GetMapping("/status")
     public ResponseEntity<java.util.Map<String, Boolean>> getConnectionStatus() {
-        Long charId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+        assert charId != null;
         boolean isConnected = connectionRepo.existsById(charId);
         return ResponseEntity.ok(java.util.Map.of("connected", isConnected));
     }
@@ -183,7 +180,7 @@ public class DiscordAuthController {
         }
 
         // 3. Alphabetisch sortieren, sieht im Frontend aufgeräumter aus
-        result.sort((a, b) -> a.get("authRole").compareTo(b.get("authRole")));
+        result.sort(Comparator.comparing(a -> a.get("authRole")));
 
         return ResponseEntity.ok(result);
     }
@@ -196,6 +193,23 @@ public class DiscordAuthController {
         } else {
             mappingRepo.save(dto);
         }
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/disconnect")
+    public ResponseEntity<Void> disconnectDiscord() {
+        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+
+        assert charId != null;
+        connectionRepo.findById(charId).ifPresent(conn -> {
+            try {
+                discordBotService.syncMemberData(conn.getDiscordUserId(), new java.util.ArrayList<>(), null);
+            } catch (Exception e) {
+                log.warn("Konnte Rollen beim Trennen für User {} nicht entfernen: {}", conn.getDiscordUserId(), e.getMessage());
+            }
+            connectionRepo.delete(conn);
+        });
+
         return ResponseEntity.ok().build();
     }
 }

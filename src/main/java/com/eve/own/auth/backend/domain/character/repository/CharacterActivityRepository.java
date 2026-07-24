@@ -10,8 +10,9 @@ import java.util.List;
 
 @Repository
 public interface CharacterActivityRepository extends JpaRepository<CharacterActivity, Long> {
-
     List<CharacterActivity> findByCharacterId(Long characterId);
+
+    List<CharacterActivity> findByCharacterIdIn(List<Long> characterIds);
 
     @Modifying
     @Query("DELETE FROM CharacterActivity a WHERE a.characterId = :characterId")

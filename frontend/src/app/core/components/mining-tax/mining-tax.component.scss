@@ -1,0 +1,211 @@
+.roles-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-bottom: 3rem;
+}
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 1.5rem 0 0.5rem 0;
+  &::before, &::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+  }
+  &::before { margin-right: 1.5rem; }
+  &::after { margin-left: 1.5rem; }
+}
+
+.tabs {
+  display: flex;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+
+  &:hover { color: var(--text-primary); }
+  &.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+  }
+}
+
+.tax-form {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 200px;
+
+  label { font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; }
+  input, select {
+    background-color: rgba(0,0,0,0.2);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.75rem;
+    border-radius: 6px;
+    outline: none;
+
+
+    box-sizing: border-box;
+    width: 100%;
+
+    &:focus { border-color: var(--accent-color); }
+  }
+  select {
+    appearance: none;
+    cursor: pointer;
+  }
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: #fff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  height: 42px;
+  flex-shrink: 0; /* NEU: Verhindert, dass der Button vom Input zerquetscht wird */
+
+  &:hover { background-color: var(--accent-hover); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.eve-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-primary);
+
+  th {
+    text-align: left;
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  td {
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  tr:hover td { background-color: rgba(255,255,255,0.02); }
+}
+
+/* Badges für die Erz-Kategorien */
+.badge {
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid transparent;
+
+  &.ore { background: rgba(169, 177, 214, 0.1); color: #a9b1d6; border-color: rgba(169, 177, 214, 0.3); }
+  &.moon { background: rgba(245, 166, 35, 0.1); color: #f5a623; border-color: rgba(245, 166, 35, 0.3); }
+  &.ice { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.3); }
+  &.gas { background: rgba(0, 223, 162, 0.1); color: #00dfa2; border-color: rgba(0, 223, 162, 0.3); }
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: #fff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  height: 42px; // Gleiche Höhe wie Input Felder
+  &:hover { background-color: var(--accent-hover); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-icon {
+  background: none; border: none; color: var(--text-secondary); cursor: pointer;
+  padding: 6px; border-radius: 4px; transition: all 0.2s;
+  &:hover { color: #fff; }
+  &.btn-danger-hover:hover { color: #ff3366; background-color: rgba(255,51,102,0.1); }
+}
+
+.loading-container { display: flex; justify-content: center; padding: 4rem; }
+.loading-spinner { width: 32px; height: 32px; border: 3px solid rgba(255, 255, 255, 0.05); border-top-color: var(--accent-color); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* =========================================
+   MONATS NAVIGATION (Slider)
+   ========================================= */
+.month-navigation {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
+  margin-top: 1rem;
+
+  .month-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    min-width: 280px;
+    text-align: center;
+    letter-spacing: 1px;
+  }
+
+  .nav-arrow {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:disabled {
+      opacity: 0.2;
+      cursor: not-allowed;
+      background-color: transparent;
+    }
+
+    &:hover:not(:disabled) {
+      background-color: var(--accent-color);
+      border-color: var(--accent-color);
+      color: #fff;
+      transform: scale(1.05);
+      box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
+    }
+  }
+}

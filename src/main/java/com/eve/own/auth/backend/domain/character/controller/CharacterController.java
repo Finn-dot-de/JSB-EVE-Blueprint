@@ -122,14 +122,26 @@ public class CharacterController {
                     List<Long> missingIds = Arrays.stream(esiMembers).filter(id -> !dbIds.contains(id)).toList();
 
                     if (!missingIds.isEmpty()) {
-                        // In 500er Batches bei ESI anfragen (falls es eine riesige Corp ist)
                         for (int i = 0; i < missingIds.size(); i += 500) {
                             List<Long> batch = missingIds.subList(i, Math.min(i + 500, missingIds.size()));
                             var names = esiService.getUniverseNames(batch);
-                            if (names != null) {
+
+                            if (names != null && names.length > 0) {
                                 for (var n : names) {
                                     unauthedMembers.add(new UnauthedCharDto(n.id(), n.name(), "https://images.evetech.net/characters/" + n.id() + "/portrait?size=64"));
                                 }
+                            } else {
+                                // FALLBACK: Wenn die ESI-Bulk-Abfrage abstürzt (z.B. wegen eines gelöschten Chars),
+                                // holen wir die Namen pfeilschnell asynchron (parallel) als Einzelabfragen!
+                                List<UnauthedCharDto> fallbackResolved = batch.parallelStream().map(id -> {
+                                    try {
+                                        var charData = esiService.getCharacter(id, null).data();
+                                        return new UnauthedCharDto(id, charData.name(), "https://images.evetech.net/characters/" + id + "/portrait?size=64");
+                                    } catch (Exception ex) {
+                                        return new UnauthedCharDto(id, "Unbekannter Pilot (" + id + ")", "https://images.evetech.net/characters/" + id + "/portrait?size=64");
+                                    }
+                                }).toList();
+                                unauthedMembers.addAll(fallbackResolved);
                             }
                         }
                     }
@@ -146,16 +158,13 @@ public class CharacterController {
                     Long mainId = entry.getKey();
                     List<Character> charsInThisCorp = entry.getValue();
 
-                    // Den echten Main-Charakter direkt aus der Datenbank laden (auch wenn der Main in einer anderen Corp ist!)
                     Character mainChar = characterRepo.findById(mainId).orElse(charsInThisCorp.get(0));
 
-                    // Alle Chars DIESER Corp, die nicht der Main sind, sind hier die Alts
                     List<AuthedAltDto> alts = charsInThisCorp.stream()
                             .filter(c -> !c.getId().equals(mainChar.getId()))
                             .map(c -> new AuthedAltDto(c.getId(), c.getName(), "https://images.evetech.net/characters/" + c.getId() + "/portrait?size=64", false))
                             .toList();
 
-                    // Main-Kopfzeile bauen. Wir hängen ein kleines "[Extern]" dran, wenn der Main in einer anderen Corp liegt.
                     boolean isMainInThisCorp = charsInThisCorp.stream().anyMatch(c -> c.getId().equals(mainChar.getId()));
                     String displayName = mainChar.getName() + (isMainInThisCorp ? "" : " [Main extern]");
 
@@ -167,16 +176,19 @@ public class CharacterController {
                     ));
                 }
 
-                // Listen alphabetisch sortieren
                 authedMembers.sort(java.util.Comparator.comparing(AuthedMainDto::mainName, String.CASE_INSENSITIVE_ORDER));
                 unauthedMembers.sort(java.util.Comparator.comparing(UnauthedCharDto::name, String.CASE_INSENSITIVE_ORDER));
 
-                // Mathe für Stats
-                long registeredMains = cId.equals(mainCorpId) ? byMain.size() : 0;
+                // ==========================================
+                // 3. STATISTIKEN KORREKT ZÄHLEN
+                // ==========================================
+                int registeredMains = byMain.size(); // Zeigt jetzt korrekterweise IMMER die Mains an!
+                int registeredAlts = (int) corpCharsInDb.stream()
+                        .filter(c -> c.getMainCharacterId() != null && !c.getMainCharacterId().equals(c.getId()))
+                        .count();
                 int totalRegisteredChars = corpCharsInDb.size();
-                int registeredAlts = totalRegisteredChars - (int) registeredMains;
 
-                resultList.add(new CorpStatsDto(cId, corpName, totalEsiMembers, (int) registeredMains, registeredAlts, totalRegisteredChars, authedMembers, unauthedMembers));
+                resultList.add(new CorpStatsDto(cId, corpName, totalEsiMembers, registeredMains, registeredAlts, totalRegisteredChars, authedMembers, unauthedMembers));
             }
             return ResponseEntity.ok(resultList);
         } catch (Exception e) {

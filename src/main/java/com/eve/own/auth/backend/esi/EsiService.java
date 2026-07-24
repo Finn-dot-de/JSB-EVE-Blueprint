@@ -101,12 +101,13 @@ public class EsiService {
             return restClient.post()
                     .uri("/universe/names/")
                     .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .accept(org.springframework.http.MediaType.APPLICATION_JSON)
                     .body(ids)
                     .retrieve()
                     .body(EsiIdName[].class);
         } catch (Exception e) {
-            System.err.println("Fehler bei Universe Names ESI Abfrage: " + e.getMessage());
-            return new EsiIdName[0];
+            System.err.println("Fehler bei Universe Names ESI Bulk-Abfrage: " + e.getMessage());
+            return null;
         }
     }
 

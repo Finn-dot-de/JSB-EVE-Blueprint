@@ -10,6 +10,26 @@ export interface AltDto {
   isMain: boolean;
 }
 
+export interface AuthedAltDto {
+  id: number;
+  name: string;
+  portraitUrl: string;
+  isMain: boolean;
+}
+
+export interface AuthedMainDto {
+  mainId: number;
+  mainName: string;
+  portraitUrl: string;
+  alts: AuthedAltDto[];
+}
+
+export interface UnauthedCharDto {
+  id: number;
+  name: string;
+  portraitUrl: string;
+}
+
 export interface CorpStatsDto {
   corpId: number;
   corpName: string;
@@ -17,6 +37,8 @@ export interface CorpStatsDto {
   registeredMains: number;
   registeredAlts: number;
   totalRegisteredChars: number;
+  authedMembers: AuthedMainDto[];       // <-- NEU
+  unauthedMembers: UnauthedCharDto[];   // <-- NEU
 }
 
 @Injectable({ providedIn: 'root' })

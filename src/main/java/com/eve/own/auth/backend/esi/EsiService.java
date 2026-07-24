@@ -91,9 +91,21 @@ public class EsiService {
         return fetch("/characters/{id}/mining/", new Object[]{characterId}, token, etag, EsiMiningResponse[].class);
     }
 
-    // NEU: Wallet Journal (für Kopfgeld/Ratting)
     public EsiResponse<EsiJournalResponse[]> getWalletJournal(Long characterId, String token, String etag) {
         return fetch("/characters/{id}/wallet/journal/", new Object[]{characterId}, token, etag, EsiJournalResponse[].class);
+    }
+
+    public EsiIdName[] getUniverseNames(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return new EsiIdName[0];
+        try {
+            return restClient.post()
+                    .uri("/universe/names/")
+                    .body(ids)
+                    .retrieve()
+                    .body(EsiIdName[].class);
+        } catch (Exception e) {
+            return new EsiIdName[0];
+        }
     }
 
 
@@ -129,6 +141,7 @@ public class EsiService {
     }
 
     // --- Records anpassen/erweitern ---
+    public record EsiIdName(Long id, String name, String category) {}
     public record EsiOnlineResponse(Boolean online, String last_login, String last_logout, Integer logins) {}
     public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}
     public record EsiFleetMemberResponse(Long character_id, java.time.Instant join_time, String role, Long ship_type_id, Long solar_system_id) {}

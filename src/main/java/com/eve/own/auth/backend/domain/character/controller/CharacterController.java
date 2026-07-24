@@ -41,7 +41,16 @@ public class CharacterController {
 
     public record AltDto(Long id, String name, String portraitUrl, boolean isMain) {}
 
-    public record CorpStatsDto(Long corpId, String corpName, int totalEsiMembers, int registeredMains, int registeredAlts, int totalRegisteredChars) {}
+    public record AuthedAltDto(Long id, String name, String portraitUrl, boolean isMain) {}
+    public record AuthedMainDto(Long mainId, String mainName, String portraitUrl, List<AuthedAltDto> alts) {}
+    public record UnauthedCharDto(Long id, String name, String portraitUrl) {}
+
+    public record CorpStatsDto(
+            Long corpId, String corpName, int totalEsiMembers,
+            int registeredMains, int registeredAlts, int totalRegisteredChars,
+            List<AuthedMainDto> authedMembers,
+            List<UnauthedCharDto> unauthedMembers
+    ) {}
 
     @GetMapping("/alts")
     public ResponseEntity<List<AltDto>> getMyCharacters() {
@@ -68,14 +77,10 @@ public class CharacterController {
         assert charId != null;
         Character reqChar = characterRepo.findById(charId).orElseThrow();
 
-        // 1. Liste aller zu prüfenden Corps aufbauen
         List<Long> corpIdsToTrack = new ArrayList<>();
         corpIdsToTrack.add(mainCorpId);
         if (altCorpIdsStr != null && !altCorpIdsStr.isBlank()) {
-            Arrays.stream(altCorpIdsStr.split(","))
-                    .map(String::trim)
-                    .map(Long::valueOf)
-                    .forEach(corpIdsToTrack::add);
+            Arrays.stream(altCorpIdsStr.split(",")).map(String::trim).map(Long::valueOf).forEach(corpIdsToTrack::add);
         }
 
         try {
@@ -85,63 +90,83 @@ public class CharacterController {
             for (Long cId : corpIdsToTrack) {
                 int totalEsiMembers = 0;
                 String corpName = "Unknown Corp (" + cId + ")";
-
-                // 2a. ZUERST die Charaktere aus der DB laden
                 List<Character> corpCharsInDb = characterRepo.findByCorporationId(cId);
+                Long[] esiMembers = null;
 
                 try {
-                    // Den öffentlichen Corp-Namen kann jeder abfragen
                     var corpInfo = esiService.getCorporationInfo(cId);
-                    if (corpInfo != null && corpInfo.name() != null) {
-                        corpName = corpInfo.name();
-                    }
+                    if (corpInfo != null && corpInfo.name() != null) corpName = corpInfo.name();
 
-                    // 2b. Den richtigen ESI-Türöffner (Token) für diese Corp finden!
-                    // ESI verlangt für die Memberliste meistens einen Director. Wir suchen bevorzugt danach.
                     Character tokenProvider = corpCharsInDb.stream()
                             .filter(c -> c.getRoles().contains("ROLE_DIRECTOR") || c.getRoles().contains("ROLE_CEO"))
-                            .findFirst()
-                            .orElse(corpCharsInDb.stream().findFirst().orElse(null));
+                            .findFirst().orElse(corpCharsInDb.stream().findFirst().orElse(null));
 
-                    // Wenn wir jemanden aus dieser Corp haben, fragen wir mit SEINEM Token bei ESI an
                     if (tokenProvider != null) {
                         String specificCorpToken = authService.getValidAccessToken(tokenProvider);
-                        var esiMembers = esiService.getCorporationMembers(cId, specificCorpToken).data();
-                        if (esiMembers != null) {
+                        var membersResp = esiService.getCorporationMembers(cId, specificCorpToken).data();
+                        if (membersResp != null) {
+                            esiMembers = membersResp;
                             totalEsiMembers = esiMembers.length;
                         }
-                    } else {
-                        System.err.println("Wir haben noch niemanden aus Corp " + cId + " im Auth, der die Memberliste lesen darf.");
                     }
-
                 } catch (Exception e) {
                     System.err.println("ESI Daten für Corp " + cId + " konnten nicht geladen werden: " + e.getMessage());
                 }
 
-                // 2c. Mathematik für die Statistik: Mains gibt es NUR in der Hauptcorp!
-                long registeredMains = 0;
-                int totalRegisteredChars = corpCharsInDb.size();
-                int registeredAlts = 0;
+                // ==========================================
+                // 1. UNAUTHED MEMBERS FINDEN UND NAMEN LADEN
+                // ==========================================
+                List<UnauthedCharDto> unauthedMembers = new ArrayList<>();
+                if (esiMembers != null) {
+                    java.util.Set<Long> dbIds = corpCharsInDb.stream().map(Character::getId).collect(java.util.stream.Collectors.toSet());
+                    List<Long> missingIds = Arrays.stream(esiMembers).filter(id -> !dbIds.contains(id)).toList();
 
-                if (cId.equals(mainCorpId)) {
-                    // Hauptcorp: Wir zählen die einzigartigen Mains wie gewohnt
-                    registeredMains = corpCharsInDb.stream()
-                            .map(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId())
-                            .distinct()
-                            .count();
-                    registeredAlts = totalRegisteredChars - (int) registeredMains;
-                } else {
-                    // Alt-Corps: Hier gibt es keine Mains, jeder erfasste Charakter ist ein Alt!
-                    registeredMains = 0;
-                    registeredAlts = totalRegisteredChars;
+                    if (!missingIds.isEmpty()) {
+                        // In 500er Batches bei ESI anfragen (falls es eine riesige Corp ist)
+                        for (int i = 0; i < missingIds.size(); i += 500) {
+                            List<Long> batch = missingIds.subList(i, Math.min(i + 500, missingIds.size()));
+                            var names = esiService.getUniverseNames(batch);
+                            if (names != null) {
+                                for (var n : names) {
+                                    unauthedMembers.add(new UnauthedCharDto(n.id(), n.name(), "https://images.evetech.net/characters/" + n.id() + "/portrait?size=64"));
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // 2d. Fertige Statistik für diese Corp zur Liste hinzufügen
-                resultList.add(new CorpStatsDto(cId, corpName, totalEsiMembers, (int) registeredMains, registeredAlts, totalRegisteredChars));
+                // ==========================================
+                // 2. AUTHED MEMBERS NACH MAIN GRUPPIEREN
+                // ==========================================
+                List<AuthedMainDto> authedMembers = new ArrayList<>();
+                java.util.Map<Long, List<Character>> byMain = corpCharsInDb.stream()
+                        .collect(java.util.stream.Collectors.groupingBy(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId()));
+
+                for (var entry : byMain.entrySet()) {
+                    Long mainId = entry.getKey();
+                    List<Character> chars = entry.getValue();
+                    Character mainChar = chars.stream().filter(c -> c.getId().equals(mainId)).findFirst().orElse(chars.get(0));
+
+                    List<AuthedAltDto> alts = chars.stream()
+                            .filter(c -> !c.getId().equals(mainChar.getId()))
+                            .map(c -> new AuthedAltDto(c.getId(), c.getName(), "https://images.evetech.net/characters/" + c.getId() + "/portrait?size=64", false))
+                            .toList();
+
+                    authedMembers.add(new AuthedMainDto(mainId, mainChar.getName(), "https://images.evetech.net/characters/" + mainId + "/portrait?size=64", alts));
+                }
+
+                // Listen alphabetisch sortieren
+                authedMembers.sort(java.util.Comparator.comparing(AuthedMainDto::mainName, String.CASE_INSENSITIVE_ORDER));
+                unauthedMembers.sort(java.util.Comparator.comparing(UnauthedCharDto::name, String.CASE_INSENSITIVE_ORDER));
+
+                // Mathe für Stats
+                long registeredMains = cId.equals(mainCorpId) ? byMain.size() : 0;
+                int totalRegisteredChars = corpCharsInDb.size();
+                int registeredAlts = totalRegisteredChars - (int) registeredMains;
+
+                resultList.add(new CorpStatsDto(cId, corpName, totalEsiMembers, (int) registeredMains, registeredAlts, totalRegisteredChars, authedMembers, unauthedMembers));
             }
-
             return ResponseEntity.ok(resultList);
-
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(java.util.Map.of("message", "Fehler beim Laden der ESI Corp-Daten."));

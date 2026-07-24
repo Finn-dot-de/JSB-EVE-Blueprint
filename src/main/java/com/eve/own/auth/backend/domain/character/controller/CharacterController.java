@@ -9,9 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -148,5 +146,28 @@ public class CharacterController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(java.util.Map.of("message", "Fehler beim Laden der ESI Corp-Daten."));
         }
+    }
+
+    @PostMapping("/set-main/{newMainId}")
+    public ResponseEntity<?> setMainCharacter(@PathVariable Long newMainId) {
+        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+        assert charId != null;
+        Character reqChar = characterRepo.findById(charId).orElseThrow();
+        Long currentMainId = reqChar.getMainCharacterId() != null ? reqChar.getMainCharacterId() : reqChar.getId();
+
+        List<Character> allAccountChars = characterRepo.findByMainCharacterId(currentMainId);
+
+        boolean isOwnAlt = allAccountChars.stream().anyMatch(c -> c.getId().equals(newMainId));
+        if (!isOwnAlt) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", "Dieser Charakter gehört nicht zu deinem Account!"));
+        }
+
+        // Main ID für alle updaten
+        for (Character c : allAccountChars) {
+            c.setMainCharacterId(newMainId);
+        }
+        characterRepo.saveAll(allAccountChars);
+
+        return ResponseEntity.ok().build();
     }
 }

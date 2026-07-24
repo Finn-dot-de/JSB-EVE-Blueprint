@@ -31,4 +31,8 @@ export class CharacterService {
   getCorpStats(): Observable<CorpStatsDto[]> {
     return this.http.get<CorpStatsDto[]>(`${this.apiUrl}/corp-stats`);
   }
+
+  setMainCharacter(characterId: number): Observable<void> {
+    return this.http.post<void>(`${this.apiUrl}/set-main/${characterId}`, {});
+  }
 }

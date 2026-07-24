@@ -25,6 +25,8 @@
         @for (char of characters(); track char.id) {
           <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem; background-color: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: 8px;">
             <img [src]="char.portraitUrl" style="width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--border-color);">
+
+            <!-- Linker Teil: Name & ID -->
             <div style="flex: 1;">
               <div style="font-size: 1.1rem; color: var(--text-primary); font-weight: 500;">
                 {{ char.name }}
@@ -34,6 +36,13 @@
               </div>
               <div style="font-size: 0.85rem; color: var(--text-secondary);">ID: {{ char.id }}</div>
             </div>
+
+            @if (!char.isMain) {
+              <button class="btn-swap" (click)="makeMain(char)" title="Diesen Charakter zum Main machen">
+                <i class="fa-solid fa-arrow-right-arrow-left"></i>
+              </button>
+            }
+
           </div>
         }
       </div>

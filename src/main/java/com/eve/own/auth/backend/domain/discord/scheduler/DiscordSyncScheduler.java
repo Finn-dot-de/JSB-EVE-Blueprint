@@ -30,7 +30,7 @@ public class DiscordSyncScheduler {
         this.discordBotService = discordBotService;
     }
 
-    @Scheduled(fixedRate = 1800000)
+    @Scheduled(fixedRate = 600_000)
     public void syncDiscordRoles() {
         log.info("Starte Discord Role Sync...");
         List<DiscordConnection> connections = connectionRepo.findAll();

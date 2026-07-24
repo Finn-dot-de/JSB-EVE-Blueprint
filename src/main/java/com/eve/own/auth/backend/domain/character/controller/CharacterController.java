@@ -144,15 +144,27 @@ public class CharacterController {
 
                 for (var entry : byMain.entrySet()) {
                     Long mainId = entry.getKey();
-                    List<Character> chars = entry.getValue();
-                    Character mainChar = chars.stream().filter(c -> c.getId().equals(mainId)).findFirst().orElse(chars.get(0));
+                    List<Character> charsInThisCorp = entry.getValue();
 
-                    List<AuthedAltDto> alts = chars.stream()
+                    // Den echten Main-Charakter direkt aus der Datenbank laden (auch wenn der Main in einer anderen Corp ist!)
+                    Character mainChar = characterRepo.findById(mainId).orElse(charsInThisCorp.get(0));
+
+                    // Alle Chars DIESER Corp, die nicht der Main sind, sind hier die Alts
+                    List<AuthedAltDto> alts = charsInThisCorp.stream()
                             .filter(c -> !c.getId().equals(mainChar.getId()))
                             .map(c -> new AuthedAltDto(c.getId(), c.getName(), "https://images.evetech.net/characters/" + c.getId() + "/portrait?size=64", false))
                             .toList();
 
-                    authedMembers.add(new AuthedMainDto(mainId, mainChar.getName(), "https://images.evetech.net/characters/" + mainId + "/portrait?size=64", alts));
+                    // Main-Kopfzeile bauen. Wir hängen ein kleines "[Extern]" dran, wenn der Main in einer anderen Corp liegt.
+                    boolean isMainInThisCorp = charsInThisCorp.stream().anyMatch(c -> c.getId().equals(mainChar.getId()));
+                    String displayName = mainChar.getName() + (isMainInThisCorp ? "" : " [Main extern]");
+
+                    authedMembers.add(new AuthedMainDto(
+                            mainChar.getId(),
+                            displayName,
+                            "https://images.evetech.net/characters/" + mainChar.getId() + "/portrait?size=64",
+                            alts
+                    ));
                 }
 
                 // Listen alphabetisch sortieren

@@ -8,14 +8,20 @@ import com.eve.own.auth.backend.domain.character.repository.CharacterMiningRepos
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.eve.entity.InvType;
 import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
+import com.eve.own.auth.backend.domain.mining.entity.MiningTaxInvoice;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
+import com.eve.own.auth.backend.domain.mining.repository.MiningTaxInvoiceRepository;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -28,15 +34,20 @@ public class MiningController {
     private final CharacterActivityRepository activityRepo; // NEU
     private final MiningTaxRateRepository taxRateRepo;
     private final InvTypeRepository invTypeRepo;
+    private final MiningTaxInvoiceRepository invoiceRepo; // NEU
+    private final ObjectMapper objectMapper;
 
     public MiningController(CharacterRepository characterRepo, CharacterMiningRepository characterMiningRepo,
                             CharacterActivityRepository activityRepo, MiningTaxRateRepository taxRateRepo,
-                            InvTypeRepository invTypeRepo) {
+                            InvTypeRepository invTypeRepo, MiningTaxInvoiceRepository invoiceRepo,
+                            ObjectMapper objectMapper) {
         this.characterRepo = characterRepo;
         this.characterMiningRepo = characterMiningRepo;
         this.activityRepo = activityRepo;
         this.taxRateRepo = taxRateRepo;
         this.invTypeRepo = invTypeRepo;
+        this.invoiceRepo = invoiceRepo;
+        this.objectMapper = objectMapper;
     }
 
     @PostConstruct
@@ -126,7 +137,15 @@ public class MiningController {
             monthlyMining.get(month).merge(m.getTypeId(), m.getQuantity(), Long::sum);
         }
 
-        // 3. Wasserfall-Prinzip: Wir berechnen chronologisch von alt nach neu!
+        // 3. Vorhandene Snapshots aus der Datenbank laden
+        List<MiningTaxInvoice> existingInvoices = invoiceRepo.findByMainCharacterId(mainId);
+        Map<String, MiningTaxInvoice> invoiceMap = existingInvoices.stream()
+                .collect(Collectors.toMap(MiningTaxInvoice::getMonth, inv -> inv));
+
+        // Wir brauchen den aktuellen Monat, um zu wissen, was noch live berechnet werden muss
+        String currentMonthStr = YearMonth.now(ZoneOffset.UTC).toString(); // z.B. "2026-07"
+
+        // 4. Wasserfall-Prinzip: Wir berechnen chronologisch von alt nach neu!
         List<String> sortedMonths = new ArrayList<>(monthlyMining.keySet());
         Collections.sort(sortedMonths); // Alt -> Neu
 
@@ -137,47 +156,83 @@ public class MiningController {
         for (String month : sortedMonths) {
             double monthTax = 0;
             List<LedgerItemDto> details = new ArrayList<>();
-            Map<Long, Long> monthOres = monthlyMining.get(month);
 
-            for (Map.Entry<Long, Long> entry : monthOres.entrySet()) {
-                Long typeId = entry.getKey();
-                long qty = entry.getValue();
-                MiningTaxRate rate = taxRates.get(typeId);
-
-                if (rate == null) {
-                    MiningTaxRate newRate = new MiningTaxRate();
-                    newRate.setTypeId(typeId);
-                    newRate.setTaxPercentage(0.0);
-                    newRate.setCurrentJitaBuy(0.0);
-                    invTypeRepo.findById(typeId).ifPresentOrElse(t -> {
-                        newRate.setTypeName(t.getTypeName());
-                        if (t.getGroupId() == 423L) newRate.setCategory("ICE");
-                        else if (t.getGroupId() == 711L) newRate.setCategory("GAS");
-                        else if (List.of(1884L, 1920L, 1921L, 1922L, 1923L).contains(t.getGroupId())) newRate.setCategory("MOON");
-                        else newRate.setCategory("ORE");
-                    }, () -> {
-                        newRate.setTypeName("Unknown Ore (" + typeId + ")");
-                        newRate.setCategory("ORE");
+            // =========================================================
+            // A) SNAPSHOT VORHANDEN? (Monat ist eingefroren)
+            // =========================================================
+            if (invoiceMap.containsKey(month)) {
+                MiningTaxInvoice invoice = invoiceMap.get(month);
+                monthTax = invoice.getTotalTax();
+                try {
+                    details = objectMapper.readValue(invoice.getDetailsJson(), new TypeReference<>() {
                     });
-                    taxRateRepo.save(newRate);
-                    taxRates.put(typeId, newRate);
-                    rate = newRate;
+                } catch (Exception e) {
+                    System.err.println("Konnte Details für Snapshot " + month + " nicht laden.");
+                }
+            }
+            // =========================================================
+            // B) KEIN SNAPSHOT -> LIVE BERECHNEN
+            // =========================================================
+            else {
+                Map<Long, Long> monthOres = monthlyMining.get(month);
+                for (Map.Entry<Long, Long> entry : monthOres.entrySet()) {
+                    Long typeId = entry.getKey();
+                    long qty = entry.getValue();
+                    MiningTaxRate rate = taxRates.get(typeId);
+
+                    if (rate == null) {
+                        MiningTaxRate newRate = new MiningTaxRate();
+                        newRate.setTypeId(typeId);
+                        newRate.setTaxPercentage(0.0);
+                        newRate.setCurrentJitaBuy(0.0);
+                        invTypeRepo.findById(typeId).ifPresentOrElse(t -> {
+                            newRate.setTypeName(t.getTypeName());
+                            if (t.getGroupId() == 423L) newRate.setCategory("ICE");
+                            else if (t.getGroupId() == 711L) newRate.setCategory("GAS");
+                            else if (List.of(1884L, 1920L, 1921L, 1922L, 1923L).contains(t.getGroupId())) newRate.setCategory("MOON");
+                            else newRate.setCategory("ORE");
+                        }, () -> {
+                            newRate.setTypeName("Unknown Ore (" + typeId + ")");
+                            newRate.setCategory("ORE");
+                        });
+                        taxRateRepo.save(newRate);
+                        taxRates.put(typeId, newRate);
+                        rate = newRate;
+                    }
+
+                    double jitaBuy = rate.getCurrentJitaBuy() != null ? rate.getCurrentJitaBuy() : 0.0;
+                    double taxPct = rate.getTaxPercentage() != null ? rate.getTaxPercentage() : 0.0;
+
+                    double taxForThisOre = (qty * jitaBuy) * (taxPct / 100.0);
+                    double volume = qty * typeVolumes.getOrDefault(typeId, 0.0);
+
+                    monthTax += taxForThisOre;
+                    details.add(new LedgerItemDto(typeId, rate.getTypeName(), rate.getCategory(), qty, volume, jitaBuy, taxForThisOre));
                 }
 
-                double jitaBuy = rate.getCurrentJitaBuy() != null ? rate.getCurrentJitaBuy() : 0.0;
-                double taxPct = rate.getTaxPercentage() != null ? rate.getTaxPercentage() : 0.0;
+                details.sort((a, b) -> Double.compare(b.taxToPay(), a.taxToPay()));
 
-                double taxForThisOre = (qty * jitaBuy) * (taxPct / 100.0);
-                double volume = qty * typeVolumes.getOrDefault(typeId, 0.0);
-
-                monthTax += taxForThisOre;
-                details.add(new LedgerItemDto(typeId, rate.getTypeName(), rate.getCategory(), qty, volume, jitaBuy, taxForThisOre));
+                // =========================================================
+                // C) WENN DER MONAT VERGANGEN IST -> EINFRIEREN!
+                // =========================================================
+                if (!month.equals(currentMonthStr)) {
+                    MiningTaxInvoice newInvoice = new MiningTaxInvoice();
+                    newInvoice.setMainCharacterId(mainId);
+                    newInvoice.setMonth(month);
+                    newInvoice.setTotalTax(monthTax);
+                    try {
+                        newInvoice.setDetailsJson(objectMapper.writeValueAsString(details));
+                    } catch (Exception e) {
+                        newInvoice.setDetailsJson("[]");
+                    }
+                    invoiceRepo.save(newInvoice);
+                    invoiceMap.put(month, newInvoice); // Ab sofort ist es ein Snapshot
+                }
             }
 
-            details.sort((a, b) -> Double.compare(b.taxToPay(), a.taxToPay()));
             totalLifetimeTax += monthTax;
 
-            // Rechnungen mit dem vorhandenen Geld "bezahlen"
+            // Rechnungen mit dem vorhandenen Geld "bezahlen" (Wasserfall)
             double paidForThisMonth = 0.0;
             if (remainingMoney >= monthTax) {
                 paidForThisMonth = monthTax;
@@ -192,7 +247,6 @@ public class MiningController {
         }
 
         resultMonths.sort((a, b) -> b.month().compareTo(a.month()));
-
         double currentBalance = totalLifetimePaid - totalLifetimeTax;
 
         return ResponseEntity.ok(new UserLedgerResponse(totalLifetimeTax, totalLifetimePaid, currentBalance, resultMonths));

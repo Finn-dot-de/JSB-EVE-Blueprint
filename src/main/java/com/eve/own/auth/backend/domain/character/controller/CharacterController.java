@@ -119,7 +119,12 @@ public class CharacterController {
                 List<UnauthedCharDto> unauthedMembers = new ArrayList<>();
                 if (esiMembers != null) {
                     java.util.Set<Long> dbIds = corpCharsInDb.stream().map(Character::getId).collect(java.util.stream.Collectors.toSet());
-                    List<Long> missingIds = Arrays.stream(esiMembers).filter(id -> !dbIds.contains(id)).toList();
+
+                    List<Long> missingIds = Arrays.stream(esiMembers)
+                            .filter(Objects::nonNull)
+                            .filter(id -> !dbIds.contains(id))
+                            .distinct()
+                            .toList();
 
                     if (!missingIds.isEmpty()) {
                         for (int i = 0; i < missingIds.size(); i += 500) {
@@ -131,8 +136,6 @@ public class CharacterController {
                                     unauthedMembers.add(new UnauthedCharDto(n.id(), n.name(), "https://images.evetech.net/characters/" + n.id() + "/portrait?size=64"));
                                 }
                             } else {
-                                // FALLBACK: Wenn die ESI-Bulk-Abfrage abstürzt (z.B. wegen eines gelöschten Chars),
-                                // holen wir die Namen pfeilschnell asynchron (parallel) als Einzelabfragen!
                                 List<UnauthedCharDto> fallbackResolved = batch.parallelStream().map(id -> {
                                     try {
                                         var charData = esiService.getCharacter(id, null).data();

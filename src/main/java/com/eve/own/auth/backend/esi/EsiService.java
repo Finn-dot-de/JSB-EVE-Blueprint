@@ -97,12 +97,15 @@ public class EsiService {
 
     public EsiIdName[] getUniverseNames(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return new EsiIdName[0];
+
+        Long[] requestBody = ids.toArray(new Long[0]);
+
         try {
             return restClient.post()
                     .uri("/universe/names/")
                     .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                     .accept(org.springframework.http.MediaType.APPLICATION_JSON)
-                    .body(ids)
+                    .body(requestBody) // <-- Hier übergeben wir das saubere Array
                     .retrieve()
                     .body(EsiIdName[].class);
         } catch (Exception e) {

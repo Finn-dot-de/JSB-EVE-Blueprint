@@ -32,8 +32,17 @@ export interface MiningTaxRate {
   typeId: number;
   typeName: string;
   category: string;
-  taxPercentage: number; // NEU: Prozent statt ISK
-  currentJitaBuy: number; // NEU: Jita Preis
+  taxPercentage: number;
+  currentJitaBuy: number;
+}
+
+export interface AdminLedgerSummaryDto {
+  mainId: number;
+  mainName: string;
+  portraitUrl: string;
+  totalTax: number;
+  totalPaid: number;
+  currentBalance: number;
 }
 
 @Injectable({
@@ -62,6 +71,10 @@ export class MiningService {
   // FIX: Sendet jetzt taxPercentage
   saveBulkTax(category: string, taxPercentage: number): Observable<void> {
     return this.http.post<void>(`${this.apiUrl}/taxes/bulk?category=${category}&taxPercentage=${taxPercentage}`, {});
+  }
+
+  getAdminLedgers(): Observable<AdminLedgerSummaryDto[]> {
+    return this.http.get<AdminLedgerSummaryDto[]>(`${this.apiUrl}/admin/ledgers`);
   }
 
 }

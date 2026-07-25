@@ -5,9 +5,12 @@
 
   <div class="tabs">
     <button class="tab-btn" [class.active]="activeTab() === 'USER'" (click)="setTab('USER')">
-      <i class="fa-solid fa-pickaxe"></i> Meine Rechnung
+      <i class="fa-solid fa-hammer"></i> Meine Rechnung
     </button>
     @if (isLeadership) {
+      <button class="tab-btn" [class.active]="activeTab() === 'LEDGERS'" (click)="setTab('LEDGERS')">
+        <i class="fa-solid fa-users"></i> Bilanzen (Admin)
+      </button>
       <button class="tab-btn" [class.active]="activeTab() === 'ADMIN'" (click)="setTab('ADMIN')">
         <i class="fa-solid fa-scale-balanced"></i> Steuersätze (Admin)
       </button>
@@ -133,10 +136,57 @@
   }
 
   <!-- ======================== ADMIN ANSICHT ======================== -->
-  @if (activeTab() === 'ADMIN' && isLeadership) {
-    <!-- ... (Admin Ansicht bleibt exakt gleich wie vorher) ... -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+  @if (activeTab() === 'LEDGERS' && isLeadership) {
+    <div class="surface-panel" style="margin-bottom: 2rem;">
+      <h3 style="margin-top: 0; color: var(--text-primary);"><i class="fa-solid fa-users"></i> Account-Bilanzen (Schulden & Guthaben)</h3>
 
+      @if (loadingAdminLedgers()) {
+        <div class="loading-container"><div class="loading-spinner"></div></div>
+      } @else {
+        <div style="max-height: 500px; overflow-y: auto; padding-right: 5px;">
+          <table class="eve-table">
+            <thead style="position: sticky; top: 0; background-color: var(--bg-surface); z-index: 1;">
+            <tr>
+              <th>Pilot (Main)</th>
+              <th style="text-align: right;">Erzeugte Steuern</th>
+              <th style="text-align: right;">Bezahlt</th>
+              <th style="text-align: right;">Aktueller Saldo</th>
+            </tr>
+            </thead>
+            <tbody>
+              @for (pilot of adminLedgers(); track pilot.mainId) {
+                <tr>
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <img [src]="pilot.portraitUrl" style="width: 32px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <span style="font-weight: 500;">{{ pilot.mainName }}</span>
+                    </div>
+                  </td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIsk(pilot.totalTax) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIsk(pilot.totalPaid) }}</td>
+                  <td style="text-align: right; font-weight: 700; font-size: 1.05rem;"
+                      [style.color]="pilot.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
+                    @if (pilot.currentBalance >= 0) {
+                      + {{ formatIsk(pilot.currentBalance) }}
+                    } @else {
+                      {{ formatIsk(pilot.currentBalance) }}
+                    }
+                  </td>
+                </tr>
+              }
+              @if (adminLedgers().length === 0) {
+                <tr><td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Keine Bilanzen gefunden.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ======================== ADMIN ANSICHT (STEUERSÄTZE) ======================== -->
+  @if (activeTab() === 'ADMIN' && isLeadership) {
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
       <!-- Box 1: Dropdown für einzelnes Erz -->
       <div class="surface-panel">
         <h3 style="margin-top: 0; color: var(--accent-color);"><i class="fa-solid fa-list"></i> Steuersatz festlegen</h3>
@@ -181,7 +231,6 @@
           <button class="btn-primary" style="background-color: #ff3366;" (click)="saveBulkTax()">Ausführen</button>
         </div>
       </div>
-
     </div>
 
     <!-- Tabelle der erfassten Erze -->

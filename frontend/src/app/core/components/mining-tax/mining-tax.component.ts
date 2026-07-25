@@ -5,7 +5,7 @@ import {
   MiningService,
   MiningTaxRate,
   LedgerItemDto,
-  UserLedgerResponse
+  UserLedgerResponse, AdminLedgerSummaryDto
 } from '../../services/mining.service';
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
@@ -24,14 +24,14 @@ export class MiningTaxComponent implements OnInit {
   private toastService = inject(ToastService);
   private confirmService = inject(ConfirmService);
 
-  activeTab = signal<'USER' | 'ADMIN'>('USER');
+  adminLedgers = signal<AdminLedgerSummaryDto[]>([]);
+  loadingAdminLedgers = signal(false);
+
+  activeTab = signal<'USER' | 'ADMIN' | 'LEDGERS'>('USER');
 
   myLedgerData = signal<UserLedgerResponse | null>(null);
-
   myLedger = computed(() => this.myLedgerData()?.months || []);
-
   loadingLedger = signal(true);
-
   selectedMonthIndex = signal<number>(0);
 
   currentMonthLedger = computed(() => {
@@ -58,10 +58,15 @@ export class MiningTaxComponent implements OnInit {
 
   ngOnInit() { this.loadUserLedger(); }
 
-  setTab(tab: 'USER' | 'ADMIN') {
+  setTab(tab: 'USER' | 'ADMIN' | 'LEDGERS') {
     this.activeTab.set(tab);
-    if (tab === 'ADMIN') this.loadTaxRates();
-    else this.loadUserLedger();
+    if (tab === 'ADMIN') {
+      this.loadTaxRates();
+    } else if (tab === 'LEDGERS') {
+      this.loadAdminLedgers();
+    } else {
+      this.loadUserLedger();
+    }
   }
 
   loadUserLedger() {
@@ -93,12 +98,20 @@ export class MiningTaxComponent implements OnInit {
     return details.reduce((sum, item) => sum + item.volume, 0);
   }
 
-  // --- REST BLEIBT GLEICH ---
+  // --- ADMIN LADEN ---
   loadTaxRates() {
     this.loadingTaxes.set(true);
     this.miningService.getTaxRates().subscribe({
       next: (data) => { this.taxRates.set(data); this.loadingTaxes.set(false); },
       error: () => this.loadingTaxes.set(false)
+    });
+  }
+
+  loadAdminLedgers() {
+    this.loadingAdminLedgers.set(true);
+    this.miningService.getAdminLedgers().subscribe({
+      next: (data) => { this.adminLedgers.set(data); this.loadingAdminLedgers.set(false); },
+      error: () => this.loadingAdminLedgers.set(false)
     });
   }
 

@@ -287,4 +287,74 @@ public class MiningController {
         taxRateRepo.saveAll(rates);
         return ResponseEntity.ok().build();
     }
+
+    // NEU: Admin Statistik Wrapper
+    public record AdminLedgerSummaryDto(Long mainId, String mainName, String portraitUrl, double totalTax, double totalPaid, double currentBalance) {}
+
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN')")
+    @GetMapping("/admin/ledgers")
+    public ResponseEntity<List<AdminLedgerSummaryDto>> getAllLedgersSummary() {
+        List<Character> allChars = characterRepo.findAll();
+        // Alle Charaktere nach Main-Charakter gruppieren
+        Map<Long, List<Character>> charsByMain = allChars.stream()
+                .collect(Collectors.groupingBy(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId()));
+
+        List<CharacterActivity> taxPayments = activityRepo.findAll().stream()
+                .filter(a -> "TAX_PAYMENT".equals(a.getActivityType()))
+                .toList();
+
+        List<MiningTaxInvoice> allInvoices = invoiceRepo.findAll();
+        List<CharacterMining> allMining = characterMiningRepo.findAll();
+        Map<Long, MiningTaxRate> taxRates = taxRateRepo.findAll().stream().collect(Collectors.toMap(MiningTaxRate::getTypeId, t -> t));
+        String currentMonthStr = YearMonth.now(ZoneOffset.UTC).toString();
+
+        List<AdminLedgerSummaryDto> result = new ArrayList<>();
+
+        for (Map.Entry<Long, List<Character>> entry : charsByMain.entrySet()) {
+            Long mainId = entry.getKey();
+            List<Character> alts = entry.getValue();
+            Character mainChar = characterRepo.findById(mainId).orElse(alts.get(0));
+            List<Long> accountIds = alts.stream().map(Character::getId).toList();
+
+            // 1. Alle Zahlungen dieses Accounts summieren
+            double totalPaid = taxPayments.stream()
+                    .filter(a -> accountIds.contains(a.getCharacterId()) && a.getValue() != null)
+                    .mapToDouble(CharacterActivity::getValue)
+                    .sum();
+
+            // 2. Alle fixen Snapshots (vergangene Monate) summieren
+            double totalTax = allInvoices.stream()
+                    .filter(i -> i.getMainCharacterId().equals(mainId))
+                    .mapToDouble(MiningTaxInvoice::getTotalTax)
+                    .sum();
+
+            // 3. Den aktuellen (Live) Monat summieren
+            double liveTax = allMining.stream()
+                    .filter(m -> accountIds.contains(m.getCharacterId()))
+                    .filter(m -> m.getDate() != null && m.getDate().startsWith(currentMonthStr))
+                    .mapToDouble(m -> {
+                        MiningTaxRate rate = taxRates.get(m.getTypeId());
+                        if (rate == null) return 0.0;
+                        double jita = rate.getCurrentJitaBuy() != null ? rate.getCurrentJitaBuy() : 0.0;
+                        double pct = rate.getTaxPercentage() != null ? rate.getTaxPercentage() : 0.0;
+                        return (m.getQuantity() * jita) * (pct / 100.0);
+                    }).sum();
+
+            totalTax += liveTax;
+            double balance = totalPaid - totalTax;
+
+            result.add(new AdminLedgerSummaryDto(
+                    mainId,
+                    mainChar.getName(),
+                    "https://images.evetech.net/characters/" + mainId + "/portrait?size=64",
+                    totalTax,
+                    totalPaid,
+                    balance
+            ));
+        }
+
+        result.sort(Comparator.comparingDouble(AdminLedgerSummaryDto::currentBalance));
+
+        return ResponseEntity.ok(result);
+    }
 }

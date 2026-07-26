@@ -54,7 +54,7 @@ public class AssetSyncService {
 
     @Transactional
     public void replaceCharacterActivities(Long characterId, List<CharacterActivity> activities) {
-        activityRepo.deleteByCharacterId(characterId);
+        activityRepo.deleteSyncedByCharacterId(characterId);
         activityRepo.saveAll(activities);
         log.info("Aktivitäten-Snapshot für Charakter {} aktualisiert: {} Einträge.", characterId, activities.size());
     }

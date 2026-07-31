@@ -52,6 +52,9 @@ public class AuthService {
     @Value("${eve.sso.allowed-corp-id}")
     private Long allowedCorpId;
 
+    @Value("${eve.alt-corp-ids:}")
+    private String altCorpIdsStr;
+
     public AuthService(RestClient.Builder builder, EsiService esiService,
                        CharacterRepository characterRepo, CorporationRepository corpRepo,
                        AllianceRepository allianceRepo, ObjectMapper objectMapper,
@@ -119,11 +122,23 @@ public class AuthService {
 
     private Corporation syncCorporationAndAlliance(Long characterId, Long loggedInMainId) {
         var esiChar = esiService.getCharacter(characterId, null).data();
+        Long charCorpId = esiChar.corporation_id();
 
-        // Sicherheits-Check
-        if (loggedInMainId == null && !esiChar.corporation_id().equals(allowedCorpId)) {
-            throw new SecurityException("Zugriff verweigert...");
+        // Lade Alt-Corps in eine Liste
+        java.util.List<Long> allowedCorps = new java.util.ArrayList<>();
+        allowedCorps.add(allowedCorpId);
+
+        if (altCorpIdsStr != null && !altCorpIdsStr.isBlank()) {
+            java.util.Arrays.stream(altCorpIdsStr.split(","))
+                    .map(String::trim)
+                    .map(Long::valueOf)
+                    .forEach(allowedCorps::add);
         }
+
+        // Sicherheits-Check gegen Main- UND Alt-Corps
+        // if (loggedInMainId == null && !allowedCorps.contains(charCorpId)) {
+        //     throw new SecurityException("Zugriff verweigert...");
+        // }
 
         var esiCorp = esiService.getCorporation(esiChar.corporation_id(), null).data();
 
@@ -168,11 +183,14 @@ public class AuthService {
 
     private Character syncCharacterRoles(Character character, String accessToken) {
         java.util.Set<String> calculatedRoles = new java.util.HashSet<>();
-        calculatedRoles.add("ROLE_USER");
+
 
         if (character.getCorporation().getId().equals(allowedCorpId)) {
+            calculatedRoles.add("ROLE_USER");
             calculatedRoles.add("ROLE_MEMBER");
             calculatedRoles.add("ROLE_MARAUDERS");
+        } else {
+            calculatedRoles.add("ROLE_GUEST");
         }
 
         // --- SPEZIAL-ROLLEN RETTEN ---

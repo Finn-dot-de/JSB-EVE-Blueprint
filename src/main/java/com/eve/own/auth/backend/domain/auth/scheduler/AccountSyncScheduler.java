@@ -197,7 +197,7 @@ public class AccountSyncScheduler {
         if (isMain && !currentCorpId.equals(MY_MAIN_CORP_ID)) {
             c.setRoles(new java.util.HashSet<>());
             characterRepo.save(c);
-            log.info("Sicherheits-Kick: Main-Charakter {} hat die Main-Corp verlassen. Alle Rechte entzogen.", c.getName());
+            log.info("Sicherheits-Kick: Main-Charakter {} hat die Main-Corp verlassen. Alle Rechte entzogen. {}", c.getName(), currentCorpId);
             return false;
         }
         return true;

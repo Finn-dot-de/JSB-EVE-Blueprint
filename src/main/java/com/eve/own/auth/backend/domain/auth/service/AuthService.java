@@ -76,19 +76,10 @@ public class AuthService {
     // HAUPT-ABLAUF FÜR DEN LOGIN
     // =================================================================================
     public Character processEveLogin(String code, Long loggedInMainId) throws Exception {
-        // 1. Token generieren
         TokenResponse tokenResponse = exchangeCodeForToken(code);
-
-        // 2. JWT entschlüsseln
         EveJwtPayload payload = decodeEveJwt(tokenResponse.access_token());
-
-        // 3. Corporation & Alliance aktualisieren
-        Corporation corp = syncCorporationAndAlliance(payload.characterId(), loggedInMainId);
-
-        // 4. Charakter anlegen / updaten
+        Corporation corp = syncCorporationAndAlliance(payload.characterId());
         Character character = saveOrUpdateCharacter(payload, corp, tokenResponse, loggedInMainId);
-
-        // 5. Rollen kalkulieren & speichern
         return syncCharacterRoles(character, tokenResponse.access_token());
     }
 
@@ -120,26 +111,20 @@ public class AuthService {
         return new EveJwtPayload(characterId, characterName);
     }
 
-    private Corporation syncCorporationAndAlliance(Long characterId, Long loggedInMainId) {
-        var esiChar = esiService.getCharacter(characterId, null).data();
-        Long charCorpId = esiChar.corporation_id();
-
-        // Lade Alt-Corps in eine Liste
+    private java.util.List<Long> getAllowedCorps() {
         java.util.List<Long> allowedCorps = new java.util.ArrayList<>();
         allowedCorps.add(allowedCorpId);
-
         if (altCorpIdsStr != null && !altCorpIdsStr.isBlank()) {
-            java.util.Arrays.stream(altCorpIdsStr.split(","))
+            Arrays.stream(altCorpIdsStr.split(","))
                     .map(String::trim)
                     .map(Long::valueOf)
                     .forEach(allowedCorps::add);
         }
+        return allowedCorps;
+    }
 
-        // Sicherheits-Check gegen Main- UND Alt-Corps
-        // if (loggedInMainId == null && !allowedCorps.contains(charCorpId)) {
-        //     throw new SecurityException("Zugriff verweigert...");
-        // }
-
+    private Corporation syncCorporationAndAlliance(Long characterId) {
+        var esiChar = esiService.getCharacter(characterId, null).data();
         var esiCorp = esiService.getCorporation(esiChar.corporation_id(), null).data();
 
         Alliance alliance = null;
@@ -166,12 +151,10 @@ public class AuthService {
         character.setName(payload.characterName());
         character.setCorporation(corp);
 
-        // Verschlüsselung
         character.setAccessToken(encryptionService.encrypt(tokenResponse.access_token()));
         character.setRefreshToken(encryptionService.encrypt(tokenResponse.refresh_token()));
         character.setTokenExpiry(Instant.now().plusSeconds(tokenResponse.expires_in()));
 
-        // Main/Alt Zuordnung
         if (loggedInMainId != null) {
             character.setMainCharacterId(loggedInMainId);
         } else if (character.getMainCharacterId() == null) {
@@ -184,12 +167,16 @@ public class AuthService {
     private Character syncCharacterRoles(Character character, String accessToken) {
         java.util.Set<String> calculatedRoles = new java.util.HashSet<>();
 
-
-        if (character.getCorporation().getId().equals(allowedCorpId)) {
+        // Prüfen, ob der Charakter in einer der erlaubten Corps (Main oder Alt) ist
+        if (getAllowedCorps().contains(character.getCorporation().getId())) {
             calculatedRoles.add("ROLE_USER");
             calculatedRoles.add("ROLE_MEMBER");
-            calculatedRoles.add("ROLE_MARAUDERS");
+            // Marauders Rolle gibt es nur für die Main-Corp
+            if (character.getCorporation().getId().equals(allowedCorpId)) {
+                calculatedRoles.add("ROLE_MARAUDERS");
+            }
         } else {
+            // Wenn der Charakter (noch) in gar keiner unserer Corps ist -> Gast
             calculatedRoles.add("ROLE_GUEST");
         }
 
@@ -206,19 +193,16 @@ public class AuthService {
         try {
             var titlesResp = esiService.getCharacterTitles(character.getId(), accessToken, null);
             if (titlesResp.data() != null && titlesResp.data().length > 0) {
-
                 List<TitleRoleMapping> existingMappings = titleRepo.findByCorporationId(character.getCorporation().getId());
 
                 for (var esiTitle : titlesResp.data()) {
                     String cleanName = esiTitle.name().replaceAll("<[^>]*>", "");
-
                     var existingOpt = existingMappings.stream()
                             .filter(m -> m.getTitleId().equals(esiTitle.title_id()))
                             .findFirst();
 
                     if (existingOpt.isEmpty()) {
                         String autoRole = "ROLE_" + cleanName.toUpperCase().replaceAll("[^A-Z0-9]+", "_");
-
                         TitleRoleMapping newMapping = new TitleRoleMapping();
                         newMapping.setCorporationId(character.getCorporation().getId());
                         newMapping.setTitleId(esiTitle.title_id());
@@ -227,7 +211,6 @@ public class AuthService {
 
                         titleRepo.save(newMapping);
                         existingMappings.add(newMapping);
-
                         calculatedRoles.add(autoRole);
                     } else {
                         TitleRoleMapping existing = existingOpt.get();
@@ -245,16 +228,11 @@ public class AuthService {
             System.err.println("Konnte Titel beim Login für " + character.getName() + " nicht laden: " + e.getMessage());
         }
 
-        // --- SPEZIAL-ROLLEN WIEDER HINZUFÜGEN ---
         calculatedRoles.addAll(retainedSpecialRoles);
         character.setRoles(calculatedRoles);
 
         return characterRepo.save(character);
     }
-
-    // =================================================================================
-    // TOKEN REFRESH & RECORDS
-    // =================================================================================
 
     record TokenResponse(String access_token, String refresh_token, Integer expires_in) {}
     record EveJwtPayload(Long characterId, String characterName) {}

@@ -17,6 +17,7 @@ import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
 import com.eve.own.auth.backend.esi.EsiService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -39,13 +40,16 @@ public class AccountSyncScheduler {
     private final SystemRoleRepository systemRoleRepo;
     private final MiningTaxRateRepository taxRateRepo;
 
-    private static final Long MY_MAIN_CORP_ID = 98378388L;
+    private final Long mainCorpId;
+    private final String altCorpIdsStr;
 
     public AccountSyncScheduler(AuthService authService, EsiService esiService,
                                 CharacterRepository characterRepo, CharacterStatsRepository statsRepo,
                                 AssetSyncService assetSyncService, InvTypeRepository invTypeRepo,
                                 CorporationRepository corpRepo, TitleRoleMappingRepository titleRepo,
-                                SystemRoleRepository systemRoleRepo, MiningTaxRateRepository taxRateRepo) {
+                                SystemRoleRepository systemRoleRepo, MiningTaxRateRepository taxRateRepo,
+                                @Value("${eve.sso.allowed-corp-id}") Long mainCorpId,
+                                @Value("${eve.alt-corp-ids:}") String altCorpIdsStr) {
         this.authService = authService;
         this.esiService = esiService;
         this.characterRepo = characterRepo;
@@ -56,6 +60,20 @@ public class AccountSyncScheduler {
         this.titleRepo = titleRepo;
         this.systemRoleRepo = systemRoleRepo;
         this.taxRateRepo = taxRateRepo;
+        this.mainCorpId = mainCorpId;
+        this.altCorpIdsStr = altCorpIdsStr;
+    }
+
+    private List<Long> getAllowedCorps() {
+        List<Long> allowedCorps = new ArrayList<>();
+        allowedCorps.add(mainCorpId);
+        if (altCorpIdsStr != null && !altCorpIdsStr.isBlank()) {
+            Arrays.stream(altCorpIdsStr.split(","))
+                    .map(String::trim)
+                    .map(Long::valueOf)
+                    .forEach(allowedCorps::add);
+        }
+        return allowedCorps;
     }
 
     @Scheduled(fixedRate = 3600000)
@@ -66,14 +84,12 @@ public class AccountSyncScheduler {
 
         List<Long> ids = rates.stream().map(MiningTaxRate::getTypeId).toList();
         var prices = esiService.getFuzzworkPrices(ids);
-
         List<MiningTaxRate> zeroPriceRates = new ArrayList<>();
 
         if (prices != null && !prices.isEmpty()) {
             for (MiningTaxRate rate : rates) {
                 var priceData = prices.get(String.valueOf(rate.getTypeId()));
                 Double currentPrice = 0.0;
-
                 if (priceData != null) {
                     if (priceData.buy() != null && priceData.buy().max() != null && priceData.buy().max() > 0) {
                         currentPrice = priceData.buy().max();
@@ -81,7 +97,6 @@ public class AccountSyncScheduler {
                         currentPrice = priceData.sell().min();
                     }
                 }
-
                 if (currentPrice > 0) {
                     rate.setCurrentJitaBuy(currentPrice);
                 } else {
@@ -92,28 +107,21 @@ public class AccountSyncScheduler {
             zeroPriceRates.addAll(rates);
         }
 
-        // ==========================================================
-        // FALLBACK: Komprimierte Varianten für Erze mit 0 ISK suchen
-        // ==========================================================
         if (!zeroPriceRates.isEmpty()) {
             Map<Long, MiningTaxRate> compressedIdToRateMap = new HashMap<>();
             List<Long> compressedIds = new ArrayList<>();
-
             for (MiningTaxRate rate : zeroPriceRates) {
                 String name = rate.getTypeName();
-
                 Optional<InvType> compOpt = invTypeRepo.findByTypeNameIgnoreCase("Compressed " + name);
                 if (compOpt.isEmpty()) {
                     compOpt = invTypeRepo.findByTypeNameIgnoreCase("Batch Compressed " + name);
                 }
-
                 if (compOpt.isPresent()) {
                     Long compId = compOpt.get().getTypeId();
                     compressedIds.add(compId);
                     compressedIdToRateMap.put(compId, rate);
                 }
             }
-
             if (!compressedIds.isEmpty()) {
                 var compPrices = esiService.getFuzzworkPrices(compressedIds);
                 if (compPrices != null) {
@@ -126,10 +134,8 @@ public class AccountSyncScheduler {
                             } else if (priceData.sell() != null && priceData.sell().min() != null && priceData.sell().min() > 0) {
                                 currentCompPrice = priceData.sell().min();
                             }
-
                             if (currentCompPrice > 0) {
                                 MiningTaxRate rate = compressedIdToRateMap.get(compId);
-                                // PREIS 1:1 ÜBERNEHMEN (Ohne Teiler)
                                 rate.setCurrentJitaBuy(currentCompPrice);
                             }
                         }
@@ -137,7 +143,6 @@ public class AccountSyncScheduler {
                 }
             }
         }
-
         taxRateRepo.saveAll(rates);
         log.info("Jita Preise erfolgreich synchronisiert (inkl. Compressed-Fallback 1:1).");
     }
@@ -159,6 +164,7 @@ public class AccountSyncScheduler {
     private void processSingleCharacter(Character c) {
         boolean isStillMember = performLeaverCheck(c);
         if (!isStillMember) return;
+
         syncCorporationFaction(c);
         String token = authService.getValidAccessToken(c);
         syncStats(c, token);
@@ -171,7 +177,9 @@ public class AccountSyncScheduler {
     private boolean performLeaverCheck(Character c) {
         var charPublicInfo = esiService.getCharacter(c.getId(), null).data();
         if (charPublicInfo == null) return true;
+
         Long currentCorpId = charPublicInfo.corporation_id();
+
         if (!currentCorpId.equals(c.getCorporation().getId())) {
             log.warn("Charakter {} hat die Corp gewechselt! Neu: {}", c.getName(), currentCorpId);
             Corporation newCorp = corpRepo.findById(currentCorpId).orElseGet(() -> {
@@ -193,13 +201,20 @@ public class AccountSyncScheduler {
             c.setCorporation(newCorp);
             characterRepo.save(c);
         }
+
         boolean isMain = c.getMainCharacterId() == null || c.getMainCharacterId().equals(c.getId());
-        if (isMain && !currentCorpId.equals(MY_MAIN_CORP_ID)) {
-            c.setRoles(new java.util.HashSet<>());
+
+        // NEU: Downgrade auf ROLE_GUEST statt komplettem Rauswurf, wenn er in keiner zugelassenen Corp ist
+        if (isMain && !getAllowedCorps().contains(currentCorpId)) {
+            Set<String> guestRoles = new HashSet<>();
+            guestRoles.add("ROLE_GUEST");
+            c.setRoles(guestRoles);
             characterRepo.save(c);
-            log.info("Sicherheits-Kick: Main-Charakter {} hat die Main-Corp verlassen. Alle Rechte entzogen. {}", c.getName(), currentCorpId);
+
+            log.info("Sicherheits-Kick: Main-Charakter {} ist nicht in einer autorisierten Corp (ESI sagt: {}). Rechte auf ROLE_GUEST gesetzt.", c.getName(), currentCorpId);
             return false;
         }
+
         return true;
     }
 
@@ -221,11 +236,13 @@ public class AccountSyncScheduler {
         CharacterStats stats = statsRepo.findById(c.getId()).orElse(new CharacterStats());
         stats.setCharacterId(c.getId());
         stats.setLastUpdated(Instant.now());
+
         var walletResp = esiService.getWalletBalance(c.getId(), token, stats.getWalletEtag());
         if (walletResp.data() != null) {
             stats.setWalletBalance(walletResp.data());
             stats.setWalletEtag(walletResp.etag());
         }
+
         var skillResp = esiService.getSkills(c.getId(), token, stats.getSkillsEtag());
         if (skillResp.data() != null) {
             stats.setSkillPoints(skillResp.data().total_sp());
@@ -289,6 +306,7 @@ public class AccountSyncScheduler {
                 double itemVolume = typeVolumes.getOrDefault(m.type_id(), 0.0);
                 totalVolumeM3 += m.quantity() * itemVolume;
             }
+
             CharacterActivity miningActivity = new CharacterActivity();
             miningActivity.setCharacterId(c.getId());
             miningActivity.setActivityType("MINING_VOLUME");
@@ -301,6 +319,7 @@ public class AccountSyncScheduler {
         if (journalResp.data() != null) {
             double totalBounty = 0.0;
             long bountyTicks = 0;
+
             for (var j : journalResp.data()) {
                 if ("bounty_prizes".equals(j.ref_type()) && j.amount() != null) {
                     totalBounty += j.amount();
@@ -308,7 +327,7 @@ public class AccountSyncScheduler {
                 }
 
                 if ("player_donation".equals(j.ref_type()) && j.amount() != null && j.amount() < 0) {
-                    if (j.second_party_id() != null && j.second_party_id().equals(MY_MAIN_CORP_ID)) {
+                    if (j.second_party_id() != null && j.second_party_id().equals(mainCorpId)) {
                         if (j.reason() != null) {
                             String r = j.reason().toLowerCase();
                             if (r.contains("steuer") || r.contains("mining") || r.contains("tax")) {
@@ -323,6 +342,7 @@ public class AccountSyncScheduler {
                     }
                 }
             }
+
             CharacterActivity pveActivity = new CharacterActivity();
             pveActivity.setCharacterId(c.getId());
             pveActivity.setActivityType("PVE_ISK");
@@ -345,20 +365,29 @@ public class AccountSyncScheduler {
 
     private void syncTitlesAndRoles(Character c, String token) {
         var titlesResp = esiService.getCharacterTitles(c.getId(), token, null);
-        java.util.Set<String> calculatedRoles = new java.util.HashSet<>();
-        calculatedRoles.add("ROLE_USER");
-        if (c.getCorporation().getId().equals(MY_MAIN_CORP_ID)) {
+        Set<String> calculatedRoles = new HashSet<>();
+
+        // NEU: Rolle entsprechend der Corporation (Main, Alt oder Extern)
+        if (getAllowedCorps().contains(c.getCorporation().getId())) {
+            calculatedRoles.add("ROLE_USER");
             calculatedRoles.add("ROLE_MEMBER");
-            calculatedRoles.add("ROLE_MARAUDERS_ASSOCIATED");
+            if (c.getCorporation().getId().equals(mainCorpId)) {
+                calculatedRoles.add("ROLE_MARAUDERS_ASSOCIATED");
+            }
+        } else {
+            calculatedRoles.add("ROLE_GUEST");
         }
+
         List<String> specialRolesInDb = systemRoleRepo.findByIsSpecialTrue().stream().map(SystemRole::getRoleName).toList();
-        java.util.Set<String> retainedSpecialRoles = c.getRoles().stream().filter(specialRolesInDb::contains).collect(Collectors.toSet());
+        Set<String> retainedSpecialRoles = c.getRoles().stream().filter(specialRolesInDb::contains).collect(Collectors.toSet());
 
         if (titlesResp.data() != null && titlesResp.data().length > 0) {
             List<TitleRoleMapping> existingMappings = titleRepo.findByCorporationId(c.getCorporation().getId());
+
             for (var esiTitle : titlesResp.data()) {
                 String cleanName = esiTitle.name().replaceAll("<[^>]*>", "");
                 var existingOpt = existingMappings.stream().filter(m -> m.getTitleId().equals(esiTitle.title_id())).findFirst();
+
                 if (existingOpt.isEmpty()) {
                     String autoRole = "ROLE_" + cleanName.toUpperCase().replaceAll("[^A-Z0-9]+", "_");
                     TitleRoleMapping newMapping = new TitleRoleMapping();
@@ -384,6 +413,7 @@ public class AccountSyncScheduler {
         calculatedRoles.addAll(retainedSpecialRoles);
         c.setRoles(calculatedRoles);
         characterRepo.save(c);
+
         log.info("Rollen für {}: {}", c.getName(), calculatedRoles);
     }
 }

@@ -16,6 +16,8 @@ public class EsiConfig {
         return RestClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("User-Agent", "EveOwnAuth-Tool (deine@email.com)")
+
+                .defaultHeader("Cache-Control", "no-cache")
                 .build();
     }
 }

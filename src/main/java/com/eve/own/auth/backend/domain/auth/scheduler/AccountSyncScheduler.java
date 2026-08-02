@@ -39,6 +39,7 @@ public class AccountSyncScheduler {
     private final TitleRoleMappingRepository titleRepo;
     private final SystemRoleRepository systemRoleRepo;
     private final MiningTaxRateRepository taxRateRepo;
+    private final com.eve.own.auth.backend.domain.assets.service.AssetLocationService assetLocationService;
 
     private final Long mainCorpId;
     private final String altCorpIdsStr;
@@ -48,6 +49,7 @@ public class AccountSyncScheduler {
                                 AssetSyncService assetSyncService, InvTypeRepository invTypeRepo,
                                 CorporationRepository corpRepo, TitleRoleMappingRepository titleRepo,
                                 SystemRoleRepository systemRoleRepo, MiningTaxRateRepository taxRateRepo,
+                                com.eve.own.auth.backend.domain.assets.service.AssetLocationService assetLocationService,
                                 @Value("${eve.sso.allowed-corp-id}") Long mainCorpId,
                                 @Value("${eve.alt-corp-ids:}") String altCorpIdsStr) {
         this.authService = authService;
@@ -60,6 +62,7 @@ public class AccountSyncScheduler {
         this.titleRepo = titleRepo;
         this.systemRoleRepo = systemRoleRepo;
         this.taxRateRepo = taxRateRepo;
+        this.assetLocationService = assetLocationService;
         this.mainCorpId = mainCorpId;
         this.altCorpIdsStr = altCorpIdsStr;
     }
@@ -267,18 +270,30 @@ public class AccountSyncScheduler {
 
     private void syncAssets(Character c, String token) {
         var esiAssets = esiService.getAllAssets(c.getId(), token);
-        if (!esiAssets.isEmpty()) {
-            List<CharacterAsset> mappedAssets = esiAssets.stream().map(ea -> {
-                CharacterAsset a = new CharacterAsset();
-                a.setItemId(ea.item_id());
-                a.setCharacterId(c.getId());
-                a.setTypeId(ea.type_id());
-                a.setLocationId(ea.location_id());
-                a.setQuantity(ea.quantity() != null ? ea.quantity() : 1);
-                return a;
-            }).collect(Collectors.toList());
-            assetSyncService.replaceCharacterAssets(c.getId(), mappedAssets);
+        if (esiAssets.isEmpty()) return;
+
+        // item_id -> location_id, damit wir die Container-Kette hochlaufen koennen.
+        // Beispiel: Modul liegt in Container, Container liegt in Schiff, Schiff steht in Citadel.
+        Map<Long, Long> itemToLocation = new HashMap<>();
+        for (var ea : esiAssets) {
+            if (ea.item_id() != null) itemToLocation.put(ea.item_id(), ea.location_id());
         }
+
+        List<CharacterAsset> mappedAssets = esiAssets.stream().map(ea -> {
+            CharacterAsset a = new CharacterAsset();
+            a.setItemId(ea.item_id());
+            a.setCharacterId(c.getId());
+            a.setTypeId(ea.type_id());
+            a.setLocationId(ea.location_id());
+            a.setRootLocationId(assetLocationService.resolveRootLocation(itemToLocation, ea.location_id()));
+            a.setLocationFlag(ea.location_flag());
+            a.setLocationType(ea.location_type());
+            a.setSingleton(ea.is_singleton());
+            a.setQuantity(ea.quantity() != null ? ea.quantity() : 1);
+            return a;
+        }).collect(Collectors.toList());
+
+        assetSyncService.replaceCharacterAssets(c.getId(), mappedAssets);
     }
 
     private void syncActivities(Character c, String token) {
@@ -370,6 +385,7 @@ public class AccountSyncScheduler {
         // NEU: Rolle entsprechend der Corporation (Main, Alt oder Extern)
         if (getAllowedCorps().contains(c.getCorporation().getId())) {
             calculatedRoles.add("ROLE_USER");
+            calculatedRoles.add("ROLE_MEMBER");
             if (c.getCorporation().getId().equals(mainCorpId)) {
                 calculatedRoles.add("ROLE_MARAUDERS_ASSOCIATED");
             }

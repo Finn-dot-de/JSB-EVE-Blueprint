@@ -5,15 +5,15 @@ services:
     restart: unless-stopped
     profiles: ["dev", "prod"]
     environment:
-      POSTGRES_DB: eve_own_auth
-      POSTGRES_USER: eve_user
-      POSTGRES_PASSWORD: secret_password
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5434:5432"
     volumes:
       - ./pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eve_user -d eve_own_auth"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,9 +30,9 @@ services:
     environment:
       - PG_HOST=postgres
       - PG_PORT=5432
-      - PG_DB=eve_own_auth
-      - PG_USER=eve_user
-      - PG_PASS=secret_password
+      - PG_DB=${DB_NAME}
+      - PG_USER=${DB_USER}
+      - PG_PASS=${DB_PASSWORD}
       - FORCE_SDE_UPDATE=false
 
   backend:
@@ -50,10 +50,28 @@ services:
     env_file:
       - .env
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/eve_own_auth
-      - SPRING_DATASOURCE_USERNAME=eve_user
-      - SPRING_DATASOURCE_PASSWORD=secret_password
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${DB_NAME}
+      - SPRING_DATASOURCE_USERNAME=${DB_USER}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+
+  # ==========================================
+  # Der Go Token-Sync Worker
+  # ==========================================
+  go-eve-sync-worker:
+    build:
+      context: ./eve-sync-worker
+      dockerfile: Dockerfile
+    container_name: eve_eve-sync-worker
+    restart: unless-stopped
+    profiles: [ "dev", "prod" ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DB_DSN=host=postgres port=5432 user=${DB_USER} password=${DB_PASSWORD} dbname=${DB_NAME} sslmode=disable
 
   frontend-dev:
     build:
@@ -84,16 +102,15 @@ services:
     expose:
       - "80"
 
-  # --- NEU: Der Nginx Proxy Manager ---
   nginx-proxy-manager:
     image: 'jc21/nginx-proxy-manager:latest'
     container_name: nginx-proxy-manager
     restart: unless-stopped
     profiles: ["prod"]
     ports:
-      - "80:80"     # HTTP (Für Let's Encrypt und Weiterleitungen)
-      - "443:443"   # HTTPS (Das SSL-Zertifikat)
-      - "81:81"     # Das Admin-Interface
+      - "80:80"
+      - "443:443"
+      - "81:81"
     volumes:
       - ./npm/data:/data
       - ./npm/letsencrypt:/etc/letsencrypt

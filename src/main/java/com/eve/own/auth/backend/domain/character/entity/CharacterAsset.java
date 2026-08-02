@@ -6,7 +6,10 @@ import lombok.Setter;
 
 @Entity
 @Table(name = "character_assets", indexes = {
-        @Index(name = "idx_asset_char_id", columnList = "character_id")
+        @Index(name = "idx_asset_char_id", columnList = "character_id"),
+        @Index(name = "idx_asset_type_id", columnList = "type_id"),
+        @Index(name = "idx_asset_root_location", columnList = "root_location_id"),
+        @Index(name = "idx_asset_type_char", columnList = "type_id, character_id")
 })
 @Getter
 @Setter
@@ -22,8 +25,38 @@ public class CharacterAsset {
     @Column(name = "type_id", nullable = false)
     private Long typeId;
 
+    /**
+     * Direkter Parent laut ESI. Kann eine Station, eine Struktur, ein Sonnensystem
+     * ODER die item_id eines Containers / Schiffes sein.
+     */
     @Column(name = "location_id")
     private Long locationId;
+
+    /**
+     * Aufgeloester "echter" Aufbewahrungsort (Station / Struktur / System).
+     * Wird beim Sync durch Hochlaufen der Container-Kette ermittelt,
+     * damit die Suche spaeter nicht rekursiv joinen muss.
+     */
+    @Column(name = "root_location_id")
+    private Long rootLocationId;
+
+    /**
+     * ESI location_flag, z.B. Hangar, ShipHangar, AssetSafety, Deliveries ...
+     */
+    @Column(name = "location_flag", length = 64)
+    private String locationFlag;
+
+    /**
+     * ESI location_type: station | solar_system | item | other
+     */
+    @Column(name = "location_type", length = 32)
+    private String locationType;
+
+    /**
+     * true = einzelnes, "zusammengebautes" Item (z.B. ein gefittetes Schiff)
+     */
+    @Column(name = "is_singleton")
+    private Boolean singleton;
 
     private Integer quantity;
 }

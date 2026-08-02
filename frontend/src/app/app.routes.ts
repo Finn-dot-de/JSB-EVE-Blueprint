@@ -57,4 +57,9 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/mining-tax/mining-tax.component').then(m => m.MiningTaxComponent)
   },
+  {
+    path: 'corp/assets',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/asset-audit/asset-audit.component').then(m => m.AssetAuditComponent)
+  },
 ];

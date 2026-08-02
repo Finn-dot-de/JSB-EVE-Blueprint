@@ -130,6 +130,15 @@ public class EsiService {
         return fetch("/corporations/{id}/members/", new Object[]{corpId}, token, null, Long[].class);
     }
 
+    /**
+     * Loest den Namen einer Upwell-Struktur auf.
+     * Benoetigt den Scope esi-universe.read_structures.v1 UND Docking-Access
+     * des Token-Charakters. Ohne Access antwortet ESI mit 403.
+     */
+    public EsiStructureResponse getStructureInfo(Long structureId, String token) {
+        return fetch("/universe/structures/{id}/", new Object[]{structureId}, token, null, EsiStructureResponse.class).data();
+    }
+
     public java.util.Map<String, FuzzworkPrice> getFuzzworkPrices(List<Long> typeIds) {
         if (typeIds == null || typeIds.isEmpty()) return java.util.Map.of();
         String typesParam = typeIds.stream().map(String::valueOf).collect(Collectors.joining(","));
@@ -158,7 +167,9 @@ public class EsiService {
     public record EsiJournalResponse(Long id, String date, String ref_type, Double amount, Long second_party_id, String reason) {}
     public record EsiLpResponse(Long corporation_id, Integer loyalty_points) {}
     public record SkillResponse(Long total_sp, Integer unallocated_sp) {}
-    public record EsiAssetResponse(Long item_id, Long type_id, Long location_id, Integer quantity, Boolean is_singleton) {}
+    public record EsiAssetResponse(Long item_id, Long type_id, Long location_id, Integer quantity,
+                                   Boolean is_singleton, String location_flag, String location_type) {}
+    public record EsiStructureResponse(String name, Long owner_id, Long solar_system_id, Long type_id) {}
     public record EsiCharacterResponse(String name, Long corporation_id) {}
     public record EsiCorporationResponse(String name, String ticker, Long alliance_id, Long faction_id) {}
     public record EsiAllianceResponse(String name, String ticker) {}

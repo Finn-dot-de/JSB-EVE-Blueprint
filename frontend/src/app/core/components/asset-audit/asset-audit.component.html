@@ -1,0 +1,634 @@
+<div class="roles-container">
+  <div class="section-divider">
+    <span>Asset Audit</span>
+  </div>
+
+  @if (!isLeadership) {
+    <div class="surface-panel text-center" style="padding: 4rem; color: var(--text-secondary);">
+      <i class="fa-solid fa-lock fa-3x" style="margin-bottom: 1rem; opacity: 0.5;"></i>
+      <p>Diese Auswertung ist der Fuehrungsebene vorbehalten.</p>
+    </div>
+  } @else {
+
+    <div class="tabs">
+      <button class="tab-btn" [class.active]="activeTab() === 'OVERVIEW'" (click)="setTab('OVERVIEW')">
+        <i class="fa-solid fa-chart-pie"></i> Uebersicht
+      </button>
+      <button class="tab-btn" [class.active]="activeTab() === 'SEARCH'" (click)="setTab('SEARCH')">
+        <i class="fa-solid fa-magnifying-glass"></i> Detailsuche
+      </button>
+    </div>
+
+    <!-- ============================================================
+         UEBERSICHT
+         ============================================================ -->
+    @if (activeTab() === 'OVERVIEW') {
+      @if (loadingSummary()) {
+        <div class="loading-container"><div class="loading-spinner"></div></div>
+      } @else if (summary(); as s) {
+        <div class="kpi-grid">
+          <div class="kpi-card accent">
+            <div class="kpi-label">Gesamtwert (Jita Buy)</div>
+            <div class="kpi-value">{{ formatIsk(s.totalValue) }}</div>
+            <div class="kpi-sub">{{ formatIskFull(s.totalValue) }}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Item-Stacks</div>
+            <div class="kpi-value">{{ formatNumber(s.totalStacks) }}</div>
+            <div class="kpi-sub">{{ formatNumber(s.totalItems) }} Einzelitems</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Verschiedene Typen</div>
+            <div class="kpi-value">{{ formatNumber(s.distinctTypes) }}</div>
+            <div class="kpi-sub">im Bestand</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Erfasste Charaktere</div>
+            <div class="kpi-value">{{ formatNumber(s.trackedCharacters) }}</div>
+            <div class="kpi-sub">mit gueltigem Token</div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="surface-panel">
+            <h3 class="panel-title"><i class="fa-solid fa-building"></i> Wert je Corporation</h3>
+            @for (row of s.valueByCorporation; track $index) {
+              <div class="bar-row">
+                <div class="bar-label">{{ row.name }}</div>
+                <div class="bar-track">
+                  <div class="bar-fill" [style.width]="barWidth(row.value, maxValue(s.valueByCorporation))"></div>
+                </div>
+                <div class="bar-value">{{ formatIsk(row.value) }}</div>
+              </div>
+            }
+            @if (s.valueByCorporation.length === 0) {
+              <p class="empty-hint">Keine Daten.</p>
+            }
+          </div>
+
+          <div class="surface-panel">
+            <h3 class="panel-title"><i class="fa-solid fa-layer-group"></i> Wert je Kategorie</h3>
+            <div class="scroll-box">
+              @for (row of s.valueByCategory; track $index) {
+                <div class="bar-row">
+                  <div class="bar-label">{{ row.name }}</div>
+                  <div class="bar-track">
+                    <div class="bar-fill green" [style.width]="barWidth(row.value, maxValue(s.valueByCategory))"></div>
+                  </div>
+                  <div class="bar-value">{{ formatIsk(row.value) }}</div>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          <div class="surface-panel">
+            <h3 class="panel-title"><i class="fa-solid fa-gem"></i> Wertvollste Bestaende</h3>
+            <table class="eve-table">
+              <thead>
+              <tr>
+                <th>Item</th>
+                <th style="text-align: right;">Menge</th>
+                <th style="text-align: right;">Besitzer</th>
+                <th style="text-align: right;">Wert</th>
+              </tr>
+              </thead>
+              <tbody>
+                @for (t of s.topTypes; track $index) {
+                  <tr class="clickable" (click)="openHolders(t.typeId, t.typeName)">
+                    <td>
+                      <div class="item-cell">
+                        <img [src]="t.iconUrl" (error)="onImgError($event)" [alt]="t.typeName" loading="lazy">
+                        <div>
+                          <div class="item-name">{{ t.typeName }}</div>
+                          <div class="item-group">{{ t.groupName }}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style="text-align: right;">{{ formatNumber(t.quantity) }}</td>
+                    <td style="text-align: right; color: var(--text-secondary);">{{ t.holders }}</td>
+                    <td style="text-align: right; font-weight: 600; color: #00dfa2;">{{ formatIsk(t.value) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <div class="surface-panel">
+            <h3 class="panel-title"><i class="fa-solid fa-trophy"></i> Groesste Vermoegen</h3>
+            <table class="eve-table">
+              <thead>
+              <tr>
+                <th>Account</th>
+                <th style="text-align: right;">Stacks</th>
+                <th style="text-align: right;">Wert</th>
+              </tr>
+              </thead>
+              <tbody>
+                @for (h of s.topHolders; track $index) {
+                  <tr class="clickable" (click)="openMember(h.mainId)">
+                    <td>
+                      <div class="item-cell">
+                        <img [src]="h.portraitUrl" (error)="onPortraitError($event)" [alt]="h.mainName" class="portrait" loading="lazy">
+                        <div>
+                          <div class="item-name">{{ h.mainName }}</div>
+                          <div class="item-group">{{ h.corporationName }}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style="text-align: right; color: var(--text-secondary);">{{ formatNumber(h.stacks) }}</td>
+                    <td style="text-align: right; font-weight: 600; color: #00dfa2;">{{ formatIsk(h.value) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="surface-panel">
+          <div class="panel-header">
+            <h3 class="panel-title"><i class="fa-solid fa-map-location-dot"></i> Verteilung nach Region</h3>
+            @if (isAdmin) {
+              <button class="btn-ghost" (click)="resolveLocations()" title="Unbenannte Stationen/Strukturen erneut aufloesen">
+                <i class="fa-solid fa-rotate"></i> Standorte aufloesen
+              </button>
+            }
+          </div>
+          @for (row of s.topRegions; track $index) {
+            <div class="bar-row">
+              <div class="bar-label">{{ row.name }}</div>
+              <div class="bar-track">
+                <div class="bar-fill orange" [style.width]="barWidth(row.value, maxValue(s.topRegions))"></div>
+              </div>
+              <div class="bar-value">{{ formatIsk(row.value) }}</div>
+            </div>
+          }
+          @if (s.topRegions.length === 0) {
+            <p class="empty-hint">
+              Noch keine Standorte aufgeloest. Der Scheduler holt das alle 30 Minuten nach.
+            </p>
+          }
+        </div>
+      }
+    }
+
+    <!-- ============================================================
+         DETAILSUCHE (Einklappbare Filter & Sticky Header)
+         ============================================================ -->
+    @if (activeTab() === 'SEARCH') {
+      <div class="surface-panel filter-panel">
+        <div class="filter-row" style="align-items: center;">
+          <div class="form-group typeahead-wrapper" style="flex: 2">
+            <input type="text" [ngModel]="f.q" (ngModelChange)="onTypeAhead($event)"
+                   (keyup.enter)="runSearch()" placeholder="Schnellsuche (Item, Pilot, Standort)...">
+            @if (f.typeId) {
+              <button class="chip-clear" (click)="clearTypeFilter()" title="Typ-Filter entfernen">
+                <i class="fa-solid fa-xmark"></i> Typ fixiert
+              </button>
+            }
+            @if (showSuggestions() && suggestions().length > 0) {
+              <div class="suggestions">
+                @for (s of suggestions(); track $index) {
+                  <div class="suggestion" (click)="pickSuggestion(s)">
+                    <img [src]="s.iconUrl" (error)="onImgError($event)" [alt]="s.typeName" loading="lazy">
+                    <div class="suggestion-text">
+                      <span class="item-name">{{ s.typeName }}</span>
+                      <span class="item-group">{{ s.groupName }}</span>
+                    </div>
+                    <span class="suggestion-qty">{{ formatNumber(s.totalQuantity) }}x</span>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+
+          <div class="filter-actions" style="margin-left: auto;">
+            <button class="btn-ghost" (click)="showAdvancedFilters.set(!showAdvancedFilters())">
+              <i class="fa-solid" [ngClass]="showAdvancedFilters() ? 'fa-filter-circle-xmark' : 'fa-filter'"></i>
+              {{ showAdvancedFilters() ? 'Filter verbergen' : 'Erweiterte Filter' }}
+            </button>
+            <button class="btn-primary" (click)="runSearch()">
+              <i class="fa-solid fa-magnifying-glass"></i> Suchen
+            </button>
+          </div>
+        </div>
+
+        @if (showAdvancedFilters()) {
+          <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-top: 0.5rem; display: flex; flex-direction: column; gap: 1rem;">
+            <div class="filter-row">
+              <div class="form-group">
+                <label>Kategorie</label>
+                <select [(ngModel)]="f.categoryId" (ngModelChange)="onCategoryChange()">
+                  <option [ngValue]="null">Alle</option>
+                  @for (c of filters()?.categories ?? []; track $index) {
+                    <option [ngValue]="c.id">{{ c.name }}</option>
+                  }
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Gruppe</label>
+                <select [(ngModel)]="f.groupId" (ngModelChange)="runSearch()">
+                  <option [ngValue]="null">Alle</option>
+                  @for (g of filters()?.groups ?? []; track $index) {
+                    <option [ngValue]="g.id">{{ g.name }}</option>
+                  }
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Account</label>
+                <select [(ngModel)]="f.mainId" (ngModelChange)="runSearch()">
+                  <option [ngValue]="null">Alle</option>
+                  @for (m of filters()?.mains ?? []; track $index) {
+                    <option [ngValue]="m.id">{{ m.name }}</option>
+                  }
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Corporation</label>
+                <select [(ngModel)]="f.corporationId" (ngModelChange)="runSearch()">
+                  <option [ngValue]="null">Alle</option>
+                  @for (c of filters()?.corporations ?? []; track $index) {
+                    <option [ngValue]="c.id">{{ c.name }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+            <div class="filter-row">
+              <div class="form-group">
+                <label>Standort</label>
+                <select [(ngModel)]="f.locationId" (ngModelChange)="runSearch()">
+                  <option [ngValue]="null">Alle</option>
+                  @for (l of filters()?.locations ?? []; track $index) {
+                    <option [ngValue]="l.id">{{ l.name }}</option>
+                  }
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Region</label>
+                <select [(ngModel)]="f.regionName" (ngModelChange)="runSearch()">
+                  <option [ngValue]="null">Alle</option>
+                  @for (r of filters()?.regions ?? []; track $index) {
+                    <option [ngValue]="r">{{ r }}</option>
+                  }
+                </select>
+              </div>
+              <div class="form-group small">
+                <label>Min. Menge</label>
+                <input type="number" [(ngModel)]="f.minQuantity" (keyup.enter)="runSearch()" placeholder="0">
+              </div>
+              <div class="form-group small">
+                <label>Min. Wert (ISK)</label>
+                <input type="number" [(ngModel)]="f.minValue" (keyup.enter)="runSearch()" placeholder="0">
+              </div>
+            </div>
+
+            <div class="filter-row bottom" style="justify-content: flex-end;">
+              <label class="toggle" style="margin-right: 1rem;">
+                <input type="checkbox" [(ngModel)]="f.shipsOnly" (ngModelChange)="runSearch()">
+                <span>Nur Schiffe</span>
+              </label>
+              <label class="toggle" style="margin-right: auto;">
+                <input type="checkbox" [checked]="grouped()" (change)="toggleGrouped()">
+                <span>Nach Account gruppieren</span>
+              </label>
+              <button class="btn-ghost" (click)="resetFilters()">
+                <i class="fa-solid fa-eraser"></i> Zuruecksetzen
+              </button>
+              <button class="btn-ghost" (click)="exportCsv()">
+                <i class="fa-solid fa-file-csv"></i> CSV Export
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="result-header">
+        <span><strong>{{ formatNumber(currentTotal()) }}</strong> Treffer</span>
+        <span class="result-value">Gesamtwert der Auswahl: <strong>{{ formatIsk(grandTotal()) }}</strong></span>
+      </div>
+
+      @if (loadingSearch()) {
+        <div class="loading-container"><div class="loading-spinner"></div></div>
+      } @else {
+        <!-- GRUPPIERTE ANSICHT -->
+        @if (grouped()) {
+          @if (groupedResult(); as res) {
+            <div class="surface-panel" style="padding: 0; overflow: hidden;">
+              <div class="table-wrapper">
+                <table class="eve-table">
+                  <thead class="sticky-head">
+                  <tr>
+                    <th class="sortable" (click)="sortBy('typeName')">Item <i [class]="sortIcon('typeName')"></i></th>
+                    <th class="sortable" (click)="sortBy('mainName')">Account <i [class]="sortIcon('mainName')"></i></th>
+                    <th class="sortable" (click)="sortBy('corporationName')">Corp <i [class]="sortIcon('corporationName')"></i></th>
+                    <th style="text-align: right;" class="sortable" (click)="sortBy('quantity')">Menge <i [class]="sortIcon('quantity')"></i></th>
+                    <th style="text-align: right;">Orte</th>
+                    <th style="text-align: right;" class="sortable" (click)="sortBy('value')">Wert <i [class]="sortIcon('value')"></i></th>
+                    <th style="text-align: right;">Aktion</th>
+                  </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of res.content; track $index) {
+                      <tr>
+                        <td>
+                          <div class="item-cell">
+                            <img [src]="typeIcon(row.typeId)" (error)="onImgError($event)" [alt]="row.typeName" loading="lazy">
+                            <div>
+                              <div class="item-name">{{ row.typeName }}</div>
+                              <div class="item-group">{{ row.groupName }} &middot; {{ row.categoryName }}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td><a class="link" (click)="openMember(row.mainId)">{{ row.mainName }}</a></td>
+                        <td style="color: var(--text-secondary);">{{ row.corporationName }}</td>
+                        <td style="text-align: right; font-weight: 500;">{{ formatNumber(row.quantity) }}</td>
+                        <td style="text-align: right; color: var(--text-secondary);">{{ row.locationCount }}</td>
+                        <td style="text-align: right; font-weight: 600; color: #00dfa2;" [title]="formatIskFull(row.totalValue)">
+                          {{ formatIsk(row.totalValue) }}
+                        </td>
+                        <td style="text-align: right;">
+                          <button class="btn-icon" (click)="openHolders(row.typeId, row.typeName)" title="Alle Besitzer anzeigen">
+                            <i class="fa-solid fa-users-viewfinder"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                    @if (res.content.length === 0) {
+                      <tr><td colspan="7" class="empty-cell">Keine Treffer fuer diese Filter.</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+        }
+
+        <!-- FLACHE ANSICHT -->
+        @if (!grouped()) {
+          @if (flatResult(); as res) {
+            <div class="surface-panel" style="padding: 0; overflow: hidden;">
+              <div class="table-wrapper">
+                <table class="eve-table">
+                  <thead class="sticky-head">
+                  <tr>
+                    <th class="sortable" (click)="sortBy('typeName')">Item <i [class]="sortIcon('typeName')"></i></th>
+                    <th class="sortable" (click)="sortBy('characterName')">Charakter <i [class]="sortIcon('characterName')"></i></th>
+                    <th class="sortable" (click)="sortBy('locationName')">Standort <i [class]="sortIcon('locationName')"></i></th>
+                    <th>Hangar</th>
+                    <th style="text-align: right;" class="sortable" (click)="sortBy('quantity')">Menge <i [class]="sortIcon('quantity')"></i></th>
+                    <th style="text-align: right;" class="sortable" (click)="sortBy('value')">Wert <i [class]="sortIcon('value')"></i></th>
+                  </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of res.content; track $index) {
+                      <tr>
+                        <td>
+                          <div class="item-cell">
+                            <img [src]="typeIcon(row.typeId)" (error)="onImgError($event)" [alt]="row.typeName" loading="lazy">
+                            <div>
+                              <div class="item-name">{{ row.typeName }}</div>
+                              <div class="item-group">{{ row.groupName }}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div class="item-name">{{ row.characterName }}</div>
+                          <div class="item-group">Account: {{ row.mainName }}</div>
+                        </td>
+                        <td>
+                          <div class="item-name">{{ row.locationName }}</div>
+                          <div class="item-group">
+                            @if (row.systemName) { {{ row.systemName }} }
+                            @if (row.regionName) { &middot; {{ row.regionName }} }
+                          </div>
+                        </td>
+                        <td><span class="badge flag">{{ row.locationFlag || '-' }}</span></td>
+                        <td style="text-align: right; font-weight: 500;">{{ formatNumber(row.quantity) }}</td>
+                        <td style="text-align: right; font-weight: 600; color: #00dfa2;" [title]="formatIskFull(row.totalValue)">
+                          {{ formatIsk(row.totalValue) }}
+                        </td>
+                      </tr>
+                    }
+                    @if (res.content.length === 0) {
+                      <tr><td colspan="6" class="empty-cell">Keine Treffer fuer diese Filter.</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+        }
+
+        <!-- Pagination -->
+        @if (currentPages() > 1) {
+          <div class="pagination">
+            <button class="nav-arrow" (click)="prevPage()" [disabled]="(f.page ?? 0) === 0">
+              <i class="fa-solid fa-chevron-left"></i>
+            </button>
+            <span>Seite {{ (f.page ?? 0) + 1 }} von {{ currentPages() }}</span>
+            <button class="nav-arrow" (click)="nextPage()" [disabled]="(f.page ?? 0) + 1 >= currentPages()">
+              <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        }
+      }
+    }
+
+    <!-- ============================================================
+         MODALS (Wer hat das? & Member-Detail)
+         ============================================================ -->
+    @if (showHoldersModal()) {
+      <div class="modal-overlay" (click)="closeModals()">
+        <div class="surface-panel modal-content large-modal" (click)="$event.stopPropagation()">
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
+            <button class="btn-icon" (click)="closeModals()"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+
+          @if (loadingHolders()) {
+            <div class="loading-container"><div class="loading-spinner"></div></div>
+          } @else if (holders(); as h) {
+            <div class="holder-header" style="margin-bottom: 1.5rem;">
+              <img [src]="h.iconUrl" (error)="onImgError($event)" [alt]="h.typeName" class="big-icon">
+              <div class="holder-title">
+                <h2>{{ h.typeName }}</h2>
+                <div class="item-group">{{ h.groupName }}</div>
+              </div>
+              <div class="holder-stats">
+                <div>
+                  <div class="kpi-label">Gesamtmenge</div>
+                  <div class="kpi-value small">{{ formatNumber(h.totalQuantity) }}</div>
+                </div>
+                <div>
+                  <div class="kpi-label">Gesamtwert</div>
+                  <div class="kpi-value small green">{{ formatIsk(h.totalValue) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="max-height: 500px; overflow-y: auto; padding-right: 5px;">
+              @for (holder of h.holders; track $index) {
+                <div class="holder-row" (click)="toggleHolder(holder.mainId)">
+                  <i class="chevron" [class.open]="isHolderExpanded(holder.mainId)"
+                     [ngClass]="isHolderExpanded(holder.mainId) ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
+                  <img [src]="holder.portraitUrl" (error)="onPortraitError($event)" [alt]="holder.mainName" class="portrait">
+                  <div class="holder-name">
+                    <div class="item-name">{{ holder.mainName }}</div>
+                    <div class="item-group">{{ holder.corporationName }}</div>
+                  </div>
+                  <div class="holder-qty">{{ formatNumber(holder.totalQuantity) }}x</div>
+                  <div class="holder-value">{{ formatIsk(holder.totalValue) }}</div>
+                </div>
+                @if (isHolderExpanded(holder.mainId)) {
+                  <div class="holder-detail">
+                    @for (ch of holder.characters; track $index) {
+                      <div class="char-block">
+                        <div class="char-head">
+                          <img [src]="ch.portraitUrl" (error)="onPortraitError($event)" [alt]="ch.characterName" class="portrait small">
+                          <span>{{ ch.characterName }}</span>
+                          <span class="char-qty">{{ formatNumber(ch.quantity) }}x</span>
+                        </div>
+                        <table class="eve-table compact">
+                          <tbody>
+                            @for (loc of ch.locations; track $index) {
+                              <tr>
+                                <td>
+                                  <i class="fa-solid fa-location-dot" style="color: var(--accent-color); margin-right: 8px;"></i>
+                                  {{ loc.locationName }}
+                                </td>
+                                <td style="color: var(--text-secondary);">
+                                  @if (loc.systemName) { {{ loc.systemName }} }
+                                  @if (loc.regionName) { &middot; {{ loc.regionName }} }
+                                </td>
+                                <td><span class="badge flag">{{ loc.locationFlag || '-' }}</span></td>
+                                <td style="text-align: right; font-weight: 500;">{{ formatNumber(loc.quantity) }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                  </div>
+                }
+              }
+              @if (h.holders.length === 0) {
+                <p class="empty-hint" style="text-align: center;">Niemand besitzt diesen Gegenstand.</p>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    @if (showMemberModal()) {
+      <div class="modal-overlay" (click)="closeModals()">
+        <div class="surface-panel modal-content large-modal" (click)="$event.stopPropagation()">
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
+            <button class="btn-icon" (click)="closeModals()"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+
+          @if (loadingMember()) {
+            <div class="loading-container"><div class="loading-spinner"></div></div>
+          } @else if (memberDetail(); as m) {
+            <div class="holder-header" style="margin-bottom: 1.5rem;">
+              <img [src]="m.portraitUrl" (error)="onPortraitError($event)" [alt]="m.mainName" class="big-icon portrait">
+              <div class="holder-title">
+                <h2>{{ m.mainName }}</h2>
+                <div class="item-group">{{ m.corporationName }}</div>
+              </div>
+              <div class="holder-stats">
+                <div>
+                  <div class="kpi-label">Stacks</div>
+                  <div class="kpi-value small">{{ formatNumber(m.totalStacks) }}</div>
+                </div>
+                <div>
+                  <div class="kpi-label">Gesamtwert</div>
+                  <div class="kpi-value small green" [title]="formatIskFull(m.totalValue)">{{ formatIsk(m.totalValue) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="max-height: 500px; overflow-y: auto; padding-right: 5px;">
+              <div class="two-col" style="margin-bottom: 1.5rem;">
+                <div style="background-color: rgba(0,0,0,0.2); padding: 1rem; border-radius: 6px; border: 1px solid var(--border-color);">
+                  <h3 class="panel-title"><i class="fa-solid fa-layer-group"></i> Nach Kategorie</h3>
+                  <div class="scroll-box">
+                    @for (row of m.byCategory; track $index) {
+                      <div class="bar-row">
+                        <div class="bar-label">{{ row.name }}</div>
+                        <div class="bar-track">
+                          <div class="bar-fill green" [style.width]="barWidth(row.value, maxValue(m.byCategory))"></div>
+                        </div>
+                        <div class="bar-value">{{ formatIsk(row.value) }}</div>
+                      </div>
+                    }
+                  </div>
+                </div>
+
+                <div style="background-color: rgba(0,0,0,0.2); padding: 1rem; border-radius: 6px; border: 1px solid var(--border-color);">
+                  <h3 class="panel-title"><i class="fa-solid fa-warehouse"></i> Nach Standort</h3>
+                  <div class="scroll-box">
+                    <table class="eve-table compact">
+                      <tbody>
+                        @for (loc of m.byLocation; track $index) {
+                          <tr>
+                            <td>
+                              <div class="item-name">{{ loc.locationName }}</div>
+                              <div class="item-group">
+                                @if (loc.systemName) { {{ loc.systemName }} }
+                                @if (loc.regionName) { &middot; {{ loc.regionName }} }
+                              </div>
+                            </td>
+                            <td style="text-align: right; color: var(--text-secondary);">{{ formatNumber(loc.stacks) }} Stacks</td>
+                            <td style="text-align: right; font-weight: 600; color: #00dfa2;">{{ formatIsk(loc.value) }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 class="panel-title"><i class="fa-solid fa-gem"></i> Wertvollste Items</h3>
+                <table class="eve-table">
+                  <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th style="text-align: right;">Menge</th>
+                    <th style="text-align: right;">Orte</th>
+                    <th style="text-align: right;">Wert</th>
+                  </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of m.topItems; track $index) {
+                      <tr class="clickable" (click)="openHolders(row.typeId, row.typeName)">
+                        <td>
+                          <div class="item-cell">
+                            <img [src]="typeIcon(row.typeId)" (error)="onImgError($event)" [alt]="row.typeName" loading="lazy">
+                            <div>
+                              <div class="item-name">{{ row.typeName }}</div>
+                              <div class="item-group">{{ row.groupName }}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style="text-align: right;">{{ formatNumber(row.quantity) }}</td>
+                        <td style="text-align: right; color: var(--text-secondary);">{{ row.locationCount }}</td>
+                        <td style="text-align: right; font-weight: 600; color: #00dfa2;">{{ formatIsk(row.totalValue) }}</td>
+                      </tr>
+                    }
+                    @if (m.topItems.length === 0) {
+                      <tr><td colspan="4" class="empty-cell">Keine Assets erfasst.</td></tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+  }
+</div>

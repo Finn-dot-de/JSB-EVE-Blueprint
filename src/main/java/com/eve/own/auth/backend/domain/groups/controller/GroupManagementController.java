@@ -50,7 +50,7 @@ public class GroupManagementController {
 
             // 2. Token holen und ESI nach ALLEN Titeln der Corp fragen
             String token = authService.getValidAccessToken(tokenProvider);
-            var esiTitles = esiService.getCorporationTitles(corpId, token, null).data();
+            var esiTitles = esiService.getCorporationTitles(corpId, token).data();
 
             // 3. Bestehende Mappings aus der Datenbank holen
             List<TitleRoleMapping> existingMappings = mappingRepo.findByCorporationId(corpId);

@@ -21,8 +21,7 @@ public class CharacterStats {
     @Column(name = "rat_kills")
     private Long ratKills;
 
-    private String walletEtag;
-    private String skillsEtag;
+    // ETags liegen jetzt zentral in esi_etags, nicht mehr an der Fachentitaet.
 
     private Instant lastUpdated;
 }

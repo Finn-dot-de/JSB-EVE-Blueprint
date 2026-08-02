@@ -19,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class AuthService {
 
     private final RestClient restClient;
@@ -124,17 +126,27 @@ public class AuthService {
     }
 
     private Corporation syncCorporationAndAlliance(Long characterId) {
-        var esiChar = esiService.getCharacter(characterId, null).data();
-        var esiCorp = esiService.getCorporation(esiChar.corporation_id(), null).data();
+        // Beim Login sind die Daten Pflicht - ohne sie laesst sich kein Account anlegen.
+        var esiChar = esiService.getCharacter(characterId).data();
+        if (esiChar == null) {
+            throw new IllegalStateException("ESI lieferte keine Charakterdaten fuer " + characterId);
+        }
+
+        var esiCorp = esiService.getCorporation(esiChar.corporation_id()).data();
+        if (esiCorp == null) {
+            throw new IllegalStateException("ESI lieferte keine Corp-Daten fuer " + esiChar.corporation_id());
+        }
 
         Alliance alliance = null;
         if (esiCorp.alliance_id() != null) {
-            var esiAlliance = esiService.getAlliance(esiCorp.alliance_id(), null).data();
-            alliance = new Alliance();
-            alliance.setId(esiCorp.alliance_id());
-            alliance.setName(esiAlliance.name());
-            alliance.setTicker(esiAlliance.ticker());
-            allianceRepo.save(alliance);
+            var esiAlliance = esiService.getAlliance(esiCorp.alliance_id()).data();
+            if (esiAlliance != null) {
+                alliance = new Alliance();
+                alliance.setId(esiCorp.alliance_id());
+                alliance.setName(esiAlliance.name());
+                alliance.setTicker(esiAlliance.ticker());
+                allianceRepo.save(alliance);
+            }
         }
 
         Corporation corp = new Corporation();
@@ -191,7 +203,7 @@ public class AuthService {
 
         // --- TITEL AUTO-DISCOVERY ÜBER ESI ---
         try {
-            var titlesResp = esiService.getCharacterTitles(character.getId(), accessToken, null);
+            var titlesResp = esiService.getCharacterTitles(character.getId(), accessToken);
             if (titlesResp.data() != null && titlesResp.data().length > 0) {
                 List<TitleRoleMapping> existingMappings = titleRepo.findByCorporationId(character.getCorporation().getId());
 
@@ -225,7 +237,7 @@ public class AuthService {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Konnte Titel beim Login für " + character.getName() + " nicht laden: " + e.getMessage());
+            log.warn("Konnte Titel beim Login fuer {} nicht laden: {}", character.getName(), e.getMessage());
         }
 
         calculatedRoles.addAll(retainedSpecialRoles);

@@ -18,8 +18,16 @@ public class AssetQueryRepository {
     @PersistenceContext
     private EntityManager em;
 
+    /**
+     * BPCs teilen sich die type_id mit dem Original, der Marktpreis gehoert aber
+     * fast immer zur BPO. Ohne echte Bewertungsgrundlage fuer Copies fliessen sie
+     * mit 0 in die Auswertung ein, statt faelschlich den BPO-Preis zu erben.
+     */
+    private static final String UNIT_PRICE_EXPR =
+            "(CASE WHEN a.is_blueprint_copy IS TRUE THEN 0 ELSE COALESCE(p.jita_buy, p.jita_sell, 0) END)";
+
     private static final String VALUE_EXPR =
-            "(COALESCE(p.jita_buy, p.jita_sell, 0) * a.quantity)";
+            "(" + UNIT_PRICE_EXPR + " * a.quantity)";
 
     private static final String BASE_FROM = """
             FROM character_assets a
@@ -83,7 +91,9 @@ public class AssetQueryRepository {
                        loc.region_name AS "regionName",
                        a.location_flag AS "locationFlag",
                        a.is_singleton AS "singleton",
-                       COALESCE(p.jita_buy, p.jita_sell, 0) AS "unitPrice",
+                       a.is_blueprint_copy AS "isBlueprintCopy",
+                       """ + UNIT_PRICE_EXPR + """
+                        AS "unitPrice",
                        """ + VALUE_EXPR + """
                         AS "totalValue"
                 """ + BASE_FROM + where
@@ -123,6 +133,7 @@ public class AssetQueryRepository {
                     str(r, "regionName"),
                     str(r, "locationFlag"),
                     bool(r, "singleton"),
+                    bool(r, "isBlueprintCopy"),
                     dbl(r, "unitPrice"),
                     value
             ));
@@ -148,7 +159,8 @@ public class AssetQueryRepository {
         String groupBy = """
                  GROUP BY t."typeID", t."typeName", g."groupName", cat."categoryName",
                           COALESCE(c.main_character_id, c.character_id),
-                          COALESCE(mc.name, c.name), corp.name, p.jita_buy, p.jita_sell
+                          COALESCE(mc.name, c.name), corp.name, p.jita_buy, p.jita_sell,
+                          a.is_blueprint_copy
                 """;
 
         String sql = """
@@ -159,9 +171,11 @@ public class AssetQueryRepository {
                        COALESCE(c.main_character_id, c.character_id) AS "mainId",
                        COALESCE(mc.name, c.name) AS "mainName",
                        corp.name AS "corporationName",
+                       a.is_blueprint_copy AS "isBlueprintCopy",
                        SUM(a.quantity) AS "quantity",
                        COUNT(DISTINCT a.root_location_id) AS "locationCount",
-                       COALESCE(p.jita_buy, p.jita_sell, 0) AS "unitPrice",
+                       """ + UNIT_PRICE_EXPR + """
+                        AS "unitPrice",
                        SUM(""" + VALUE_EXPR + """
                        ) AS "totalValue"
                 """ + BASE_FROM + where + groupBy
@@ -189,6 +203,7 @@ public class AssetQueryRepository {
                     lng(r, "mainId"),
                     str(r, "mainName"),
                     str(r, "corporationName"),
+                    bool(r, "isBlueprintCopy"),
                     lng(r, "quantity"),
                     lng(r, "locationCount").intValue(),
                     dbl(r, "unitPrice"),

@@ -32,6 +32,7 @@ public class AssetDtos {
             String regionName,
             String locationFlag,
             Boolean singleton,
+            Boolean isBlueprintCopy,
             Double unitPrice,
             Double totalValue
     ) {}
@@ -45,6 +46,7 @@ public class AssetDtos {
             Long mainId,
             String mainName,
             String corporationName,
+            Boolean isBlueprintCopy,
             Long quantity,
             Integer locationCount,
             Double unitPrice,

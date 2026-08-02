@@ -197,7 +197,7 @@ public class AccountSyncScheduler {
     }
 
     private boolean performLeaverCheck(Character c) {
-        var charPublicInfo = esiService.getCharacter(c.getId(), null).data();
+        var charPublicInfo = esiService.getCharacter(c.getId()).data();
         if (charPublicInfo == null) return true;
 
         Long currentCorpId = charPublicInfo.corporation_id();
@@ -259,22 +259,20 @@ public class AccountSyncScheduler {
         stats.setCharacterId(c.getId());
         stats.setLastUpdated(Instant.now());
 
-        var walletResp = esiService.getWalletBalance(c.getId(), token, stats.getWalletEtag());
-        if (walletResp.data() != null) {
+        var walletResp = esiService.getWalletBalance(c.getId(), token);
+        if (walletResp.hasData()) {
             stats.setWalletBalance(walletResp.data());
-            stats.setWalletEtag(walletResp.etag());
         }
 
-        var skillResp = esiService.getSkills(c.getId(), token, stats.getSkillsEtag());
-        if (skillResp.data() != null) {
+        var skillResp = esiService.getSkills(c.getId(), token);
+        if (skillResp.hasData()) {
             stats.setSkillPoints(skillResp.data().total_sp());
-            stats.setSkillsEtag(skillResp.etag());
         }
         statsRepo.save(stats);
     }
 
     private void syncLoyaltyPoints(Character c, String token) {
-        var lpResp = esiService.getLoyaltyPoints(c.getId(), token, null);
+        var lpResp = esiService.getLoyaltyPoints(c.getId(), token);
         if (lpResp.data() != null) {
             List<CharacterLp> mappedLps = Arrays.stream(lpResp.data()).map(el -> {
                 CharacterLp lp = new CharacterLp();
@@ -288,7 +286,16 @@ public class AccountSyncScheduler {
     }
 
     private void syncAssets(Character c, String token) {
-        var esiAssets = esiService.getAllAssets(c.getId(), token);
+        var assetResponse = esiService.getAllAssets(c.getId(), token);
+
+        // Alle Seiten mit 304 beantwortet: der Hangar ist unveraendert, das
+        // komplette Loeschen-und-Neuschreiben kann entfallen.
+        if (assetResponse.notModified()) {
+            log.debug("Assets von {} unveraendert, Neuschreiben uebersprungen.", c.getName());
+            return;
+        }
+
+        List<EsiService.EsiAssetResponse> esiAssets = assetResponse.dataOr(List.of());
         if (esiAssets.isEmpty()) return;
 
         // item_id -> location_id, damit wir die Container-Kette hochlaufen koennen.
@@ -308,6 +315,7 @@ public class AccountSyncScheduler {
             a.setLocationFlag(ea.location_flag());
             a.setLocationType(ea.location_type());
             a.setSingleton(ea.is_singleton());
+            a.setBlueprintCopy(ea.is_blueprint_copy());
             a.setQuantity(ea.quantity() != null ? ea.quantity() : 1);
             return a;
         }).collect(Collectors.toList());
@@ -319,7 +327,7 @@ public class AccountSyncScheduler {
         java.util.List<CharacterActivity> newActivities = new java.util.ArrayList<>();
         Instant now = Instant.now();
 
-        var miningResp = esiService.getMiningLedger(c.getId(), token, null);
+        var miningResp = esiService.getMiningLedger(c.getId(), token);
         if (miningResp.data() != null && miningResp.data().length > 0) {
             List<CharacterMining> miningList = Arrays.stream(miningResp.data()).map(m -> {
                 CharacterMining cm = new CharacterMining();
@@ -349,7 +357,7 @@ public class AccountSyncScheduler {
             newActivities.add(miningActivity);
         }
 
-        var journalResp = esiService.getWalletJournal(c.getId(), token, null);
+        var journalResp = esiService.getWalletJournal(c.getId(), token);
         if (journalResp.data() != null) {
             double totalBounty = 0.0;
             long bountyTicks = 0;
@@ -398,7 +406,7 @@ public class AccountSyncScheduler {
     }
 
     private void syncTitlesAndRoles(Character c, String token) {
-        var titlesResp = esiService.getCharacterTitles(c.getId(), token, null);
+        var titlesResp = esiService.getCharacterTitles(c.getId(), token);
         Set<String> calculatedRoles = new HashSet<>();
 
         // NEU: Rolle entsprechend der Corporation (Main, Alt oder Extern)

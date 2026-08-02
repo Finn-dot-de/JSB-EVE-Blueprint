@@ -4,6 +4,7 @@ import com.eve.own.auth.backend.domain.auth.service.AuthService;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.esi.EsiService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/characters")
+@Slf4j
 public class CharacterController {
 
     private final CharacterRepository characterRepo;
@@ -110,7 +112,7 @@ public class CharacterController {
                         }
                     }
                 } catch (Exception e) {
-                    System.err.println("ESI Daten für Corp " + cId + " konnten nicht geladen werden: " + e.getMessage());
+                    log.warn("ESI-Daten fuer Corp {} konnten nicht geladen werden: {}", cId, e.getMessage());
                 }
 
                 // ==========================================
@@ -137,12 +139,16 @@ public class CharacterController {
                                 }
                             } else {
                                 List<UnauthedCharDto> fallbackResolved = batch.parallelStream().map(id -> {
+                                    String portraitUrl = "https://images.evetech.net/characters/" + id + "/portrait?size=64";
                                     try {
-                                        var charData = esiService.getCharacter(id, null).data();
-                                        return new UnauthedCharDto(id, charData.name(), "https://images.evetech.net/characters/" + id + "/portrait?size=64");
+                                        var charData = esiService.getCharacter(id).data();
+                                        if (charData != null && charData.name() != null) {
+                                            return new UnauthedCharDto(id, charData.name(), portraitUrl);
+                                        }
                                     } catch (Exception ex) {
-                                        return new UnauthedCharDto(id, "Unbekannter Pilot (" + id + ")", "https://images.evetech.net/characters/" + id + "/portrait?size=64");
+                                        log.debug("Name fuer Charakter {} nicht aufloesbar: {}", id, ex.getMessage());
                                     }
+                                    return new UnauthedCharDto(id, "Unbekannter Pilot (" + id + ")", portraitUrl);
                                 }).toList();
                                 unauthedMembers.addAll(fallbackResolved);
                             }

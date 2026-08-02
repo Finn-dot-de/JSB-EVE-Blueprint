@@ -336,7 +336,12 @@
                           <div class="item-cell">
                             <img [src]="typeIcon(row.typeId)" (error)="onImgError($event)" [alt]="row.typeName" loading="lazy">
                             <div>
-                              <div class="item-name">{{ row.typeName }}</div>
+                              <div class="item-name">
+                                {{ row.typeName }}
+                                @if (row.isBlueprintCopy) {
+                                  <span class="badge copy" title="Blueprint Copy - kein verlaesslicher Marktwert">Copy</span>
+                                }
+                              </div>
                               <div class="item-group">{{ row.groupName }} &middot; {{ row.categoryName }}</div>
                             </div>
                           </div>
@@ -388,7 +393,12 @@
                           <div class="item-cell">
                             <img [src]="typeIcon(row.typeId)" (error)="onImgError($event)" [alt]="row.typeName" loading="lazy">
                             <div>
-                              <div class="item-name">{{ row.typeName }}</div>
+                              <div class="item-name">
+                                {{ row.typeName }}
+                                @if (row.isBlueprintCopy) {
+                                  <span class="badge copy" title="Blueprint Copy - kein verlaesslicher Marktwert">Copy</span>
+                                }
+                              </div>
                               <div class="item-group">{{ row.groupName }}</div>
                             </div>
                           </div>

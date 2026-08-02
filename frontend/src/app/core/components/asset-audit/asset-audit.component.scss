@@ -444,6 +444,13 @@
     color: #a9b1d6;
     border-color: rgba(169, 177, 214, 0.3);
   }
+
+  &.copy {
+    background: rgba(255, 176, 32, 0.12);
+    color: #ffb020;
+    border-color: rgba(255, 176, 32, 0.35);
+    margin-left: 6px;
+  }
 }
 
 /* ================= Ergebnis-Kopf & Pagination ================= */

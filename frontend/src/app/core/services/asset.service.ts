@@ -27,6 +27,7 @@ export interface AssetRowDto {
   regionName: string | null;
   locationFlag: string | null;
   singleton: boolean;
+  isBlueprintCopy: boolean | null;
   unitPrice: number;
   totalValue: number;
 }
@@ -39,6 +40,7 @@ export interface AssetStackDto {
   mainId: number;
   mainName: string;
   corporationName: string;
+  isBlueprintCopy: boolean | null;
   quantity: number;
   locationCount: number;
   unitPrice: number;

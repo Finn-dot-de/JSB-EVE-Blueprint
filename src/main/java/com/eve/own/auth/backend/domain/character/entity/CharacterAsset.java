@@ -58,5 +58,12 @@ public class CharacterAsset {
     @Column(name = "is_singleton")
     private Boolean singleton;
 
+    /**
+     * true = Blueprint Copy (begrenzte Runs), false/null = Original.
+     * ESI liefert das Feld nur bei Blueprints, sonst null.
+     */
+    @Column(name = "is_blueprint_copy")
+    private Boolean blueprintCopy;
+
     private Integer quantity;
 }

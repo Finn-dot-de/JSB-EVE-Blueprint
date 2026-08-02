@@ -154,9 +154,22 @@ public class AccountSyncScheduler {
     public void syncAllAccountData() {
         log.info("Starte Account-Sync...");
         List<Character> allChars = characterRepo.findAllWithCorporation();
+
         for (Character c : allChars) {
             try {
                 processSingleCharacter(c);
+
+                Thread.sleep(150);
+
+            } catch (org.springframework.web.client.HttpClientErrorException.TooManyRequests e) {
+                log.warn("ESI Rate Limit (420) bei Charakter {} erreicht. Pausiere Sync für 30 Sekunden...", c.getName());
+                try {
+                    Thread.sleep(30000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            } catch (org.springframework.web.client.HttpClientErrorException.Forbidden | org.springframework.web.client.HttpClientErrorException.Unauthorized e) {
+                log.warn("Auth-Fehler (401/403) bei Charakter {}. Eventuell Token abgelaufen oder Rechte fehlen.", c.getName());
             } catch (Exception e) {
                 log.error("Sync fehlgeschlagen für Charakter {}: {}", c.getId(), e.getMessage());
             }

@@ -161,17 +161,23 @@ public class AccountSyncScheduler {
 
                 Thread.sleep(150);
 
-            } catch (org.springframework.web.client.HttpClientErrorException.TooManyRequests e) {
-                log.warn("ESI Rate Limit (420) bei Charakter {} erreicht. Pausiere Sync für 30 Sekunden...", c.getName());
-                try {
-                    Thread.sleep(30000);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
+            } catch (org.springframework.web.client.RestClientResponseException e) {
+                int statusCode = e.getStatusCode().value();
+
+                if (statusCode == 420) {
+                    log.warn("ESI Rate Limit (420) erreicht bei Charakter {}. Error-Bucket voll, pausiere für 60 Sekunden...", c.getName());
+                    try {
+                        Thread.sleep(60000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else if (statusCode == 401 || statusCode == 403) {
+                    log.warn("Auth-Fehler ({}) bei Charakter {}. Eventuell Token abgelaufen oder Rechte fehlen.", statusCode, c.getName());
+                } else {
+                    log.error("ESI API Fehler bei Charakter {}: {} - {}", c.getName(), statusCode, e.getResponseBodyAsString());
                 }
-            } catch (org.springframework.web.client.HttpClientErrorException.Forbidden | org.springframework.web.client.HttpClientErrorException.Unauthorized e) {
-                log.warn("Auth-Fehler (401/403) bei Charakter {}. Eventuell Token abgelaufen oder Rechte fehlen.", c.getName());
             } catch (Exception e) {
-                log.error("Sync fehlgeschlagen für Charakter {}: {}", c.getId(), e.getMessage());
+                log.error("Genereller Sync-Fehler für Charakter {}: {}", c.getId(), e.getMessage());
             }
         }
         log.info("Account-Sync abgeschlossen.");

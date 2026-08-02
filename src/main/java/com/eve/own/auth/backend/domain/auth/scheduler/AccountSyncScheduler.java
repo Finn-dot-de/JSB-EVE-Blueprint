@@ -370,7 +370,6 @@ public class AccountSyncScheduler {
         // NEU: Rolle entsprechend der Corporation (Main, Alt oder Extern)
         if (getAllowedCorps().contains(c.getCorporation().getId())) {
             calculatedRoles.add("ROLE_USER");
-            calculatedRoles.add("ROLE_MEMBER");
             if (c.getCorporation().getId().equals(mainCorpId)) {
                 calculatedRoles.add("ROLE_MARAUDERS_ASSOCIATED");
             }

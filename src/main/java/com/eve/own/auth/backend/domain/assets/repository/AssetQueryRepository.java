@@ -327,12 +327,12 @@ public class AssetQueryRepository {
         String sql = """
                 SELECT COALESCE(c.main_character_id, c.character_id) AS "mainId",
                        COALESCE(mc.name, c.name) AS "mainName",
-                       corp.name AS "corporationName",
+                       STRING_AGG(DISTINCT corp.name, ', ') AS "corporationName",
                        COUNT(*) AS "stacks",
                        COALESCE(SUM(""" + VALUE_EXPR + """
                        ), 0) AS "value"
                 """ + BASE_FROM + """
-                GROUP BY 1, 2, 3
+                GROUP BY 1, 2
                 ORDER BY 5 DESC
                 LIMIT :limit
                 """;

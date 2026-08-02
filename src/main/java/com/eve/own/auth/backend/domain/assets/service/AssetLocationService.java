@@ -12,32 +12,17 @@ import jakarta.persistence.Query;
 import jakarta.persistence.Tuple;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Loest die location_id der Assets in lesbare Ortsnamen auf.
- *
- * ESI liefert nur nackte IDs. Die Zuordnung laeuft ueber den Zahlenbereich:
- *  - 30.000.000 - 32.000.000  Sonnensystem      -> SDE
- *  - 60.000.000 - 64.000.000  NPC-Station       -> SDE (mapDenormalize)
- *  - >= 1.000.000.000.000     Upwell-Struktur   -> ESI (Token + Docking-Access noetig)
- *
- * Ergebnisse landen dauerhaft in asset_locations, damit die Suche nur noch joint.
- */
 @Slf4j
 @Service
 public class AssetLocationService {
 
-    private static final long SYSTEM_MIN = 30_000_000L;
-    private static final long SYSTEM_MAX = 32_000_000L;
-    private static final long STATION_MIN = 60_000_000L;
-    private static final long STATION_MAX = 64_000_000L;
+    // Alles ab 1 Billion ist eine Upwell-Struktur und braucht ein ESI Token
     private static final long STRUCTURE_MIN = 1_000_000_000_000L;
 
     @PersistenceContext
@@ -58,14 +43,6 @@ public class AssetLocationService {
         this.esiService = esiService;
     }
 
-    /**
-     * Berechnet fuer jedes Asset den "echten" Aufbewahrungsort, indem die
-     * Container-Kette hochgelaufen wird (Item in Container in Schiff in Station).
-     *
-     * @param assetsByItemId alle Assets eines Charakters, indexiert nach item_id
-     * @param locationId     die direkte location_id des Assets
-     * @return die ID von Station / Struktur / System
-     */
     public Long resolveRootLocation(Map<Long, Long> assetsByItemId, Long locationId) {
         Long current = locationId;
         int guard = 0;
@@ -78,146 +55,77 @@ public class AssetLocationService {
         return current;
     }
 
-    /**
-     * Holt Namen fuer alle noch unbekannten Standorte nach.
-     * Wird vom Scheduler aufgerufen - bewusst nach dem Asset-Sync.
-     */
-    @Transactional
+    // ACHTUNG: Kein @Transactional!
+    // Dadurch rollt nicht der gesamte Batch zurück, falls ein einzelner Lookup platzt.
     public void resolvePendingLocations() {
         List<Long> pending = locationRepo.findUnresolvedLocationIds();
         if (pending.isEmpty()) {
-            log.debug("Keine offenen Asset-Standorte zum Aufloesen.");
+            log.debug("Keine offenen Asset-Standorte zum Auflösen.");
             return;
         }
-        log.info("Loese {} unbekannte Asset-Standorte auf...", pending.size());
 
-        List<Long> sdeIds = new ArrayList<>();
+        log.info("Löse {} unbekannte Asset-Standorte auf...", pending.size());
+
+        List<Long> publicIds = new ArrayList<>();
         List<Long> structureIds = new ArrayList<>();
 
+        // Aufteilen in öffentliche IDs (Stationen/Systeme) und Spieler-Strukturen
         for (Long id : pending) {
             if (id == null) continue;
-            if (id >= STRUCTURE_MIN) structureIds.add(id);
-            else sdeIds.add(id);
+            if (id >= STRUCTURE_MIN) {
+                structureIds.add(id);
+            } else {
+                publicIds.add(id);
+            }
         }
 
         int resolved = 0;
-        resolved += resolveFromSde(sdeIds);
+        resolved += resolvePublicViaUniverseNames(publicIds);
         resolved += resolveStructuresFromEsi(structureIds);
 
-        log.info("Asset-Standorte aufgeloest: {} von {}.", resolved, pending.size());
+        log.info("Asset-Standorte aufgelöst: {} von {}.", resolved, pending.size());
     }
 
-    // ------------------------------------------------------------------
-    // SDE: Stationen, Systeme, Celestials
-    // ------------------------------------------------------------------
-
-    private int resolveFromSde(List<Long> ids) {
+    // ==================================================================
+    // NEU: Bulk API /universe/names/ für alles unter 1 Trillion
+    // ==================================================================
+    private int resolvePublicViaUniverseNames(List<Long> ids) {
         if (ids.isEmpty()) return 0;
         int count = 0;
 
         for (int i = 0; i < ids.size(); i += 500) {
             List<Long> batch = ids.subList(i, Math.min(i + 500, ids.size()));
-            Map<Long, AssetLocation> found = new HashMap<>();
 
-            // 1) mapDenormalize deckt Stationen und Celestials ab
             try {
-                Query q = em.createNativeQuery("""
-                        SELECT m."itemID"           AS "id",
-                               m."itemName"         AS "name",
-                               m."solarSystemID"    AS "systemId",
-                               s."solarSystemName"  AS "systemName",
-                               m."regionID"         AS "regionId",
-                               r."regionName"       AS "regionName"
-                        FROM evesde."mapDenormalize" m
-                        LEFT JOIN evesde."mapSolarSystems" s ON s."solarSystemID" = m."solarSystemID"
-                        LEFT JOIN evesde."mapRegions" r ON r."regionID" = m."regionID"
-                        WHERE m."itemID" IN (:ids)
-                        """, Tuple.class);
-                q.setParameter("ids", batch);
-                @SuppressWarnings("unchecked")
-                List<Tuple> rows = q.getResultList();
-                for (Tuple t : rows) {
-                    Long id = num(t, "id");
-                    if (id == null) continue;
-                    AssetLocation loc = new AssetLocation();
-                    loc.setLocationId(id);
-                    loc.setName(text(t, "name"));
-                    loc.setSystemId(num(t, "systemId"));
-                    loc.setSystemName(text(t, "systemName"));
-                    loc.setRegionId(num(t, "regionId"));
-                    loc.setRegionName(text(t, "regionName"));
-                    loc.setLocationKind(isStation(id) ? "STATION" : (isSystem(id) ? "SYSTEM" : "UNKNOWN"));
-                    found.put(id, loc);
+                EsiService.EsiIdName[] names = esiService.getUniverseNames(batch);
+                if (names != null && names.length > 0) {
+                    for (EsiService.EsiIdName idName : names) {
+                        AssetLocation loc = locationRepo.findById(idName.id()).orElseGet(AssetLocation::new);
+                        loc.setLocationId(idName.id());
+                        loc.setName(idName.name());
+                        loc.setLocationKind(idName.category().toUpperCase());
+                        loc.setResolveFailed(false);
+                        loc.setResolvedAt(Instant.now());
+
+                        // Optional: System/Region per SDE anreichern, falls ESI nur die Stations-ID liefert
+                        enrichSystem(loc);
+
+                        locationRepo.save(loc);
+                        count++;
+                    }
                 }
             } catch (Exception e) {
-                log.warn("mapDenormalize-Lookup fehlgeschlagen: {}", e.getMessage());
-            }
-
-            // 2) Sonnensysteme, die in mapDenormalize keinen brauchbaren Eintrag hatten
-            List<Long> missingSystems = batch.stream()
-                    .filter(AssetLocationService::isSystem)
-                    .filter(id -> !found.containsKey(id) || found.get(id).getSystemName() == null)
-                    .toList();
-
-            if (!missingSystems.isEmpty()) {
-                try {
-                    Query q = em.createNativeQuery("""
-                            SELECT s."solarSystemID"   AS "id",
-                                   s."solarSystemName" AS "name",
-                                   s."regionID"        AS "regionId",
-                                   r."regionName"      AS "regionName"
-                            FROM evesde."mapSolarSystems" s
-                            LEFT JOIN evesde."mapRegions" r ON r."regionID" = s."regionID"
-                            WHERE s."solarSystemID" IN (:ids)
-                            """, Tuple.class);
-                    q.setParameter("ids", missingSystems);
-                    @SuppressWarnings("unchecked")
-                    List<Tuple> rows = q.getResultList();
-                    for (Tuple t : rows) {
-                        Long id = num(t, "id");
-                        if (id == null) continue;
-                        AssetLocation loc = found.getOrDefault(id, new AssetLocation());
-                        loc.setLocationId(id);
-                        loc.setName(text(t, "name") + " (im All)");
-                        loc.setSystemId(id);
-                        loc.setSystemName(text(t, "name"));
-                        loc.setRegionId(num(t, "regionId"));
-                        loc.setRegionName(text(t, "regionName"));
-                        loc.setLocationKind("SYSTEM");
-                        found.put(id, loc);
-                    }
-                } catch (Exception e) {
-                    log.warn("mapSolarSystems-Lookup fehlgeschlagen: {}", e.getMessage());
-                }
-            }
-
-            // 3) Rest als "nicht aufloesbar" markieren, damit wir es nicht endlos wiederholen
-            for (Long id : batch) {
-                AssetLocation loc = found.get(id);
-                if (loc == null) {
-                    loc = new AssetLocation();
-                    loc.setLocationId(id);
-                    loc.setName("Unbekannter Ort (" + id + ")");
-                    loc.setLocationKind("UNKNOWN");
-                    loc.setResolveFailed(true);
-                } else {
-                    loc.setResolveFailed(false);
-                    count++;
-                }
-                loc.setResolvedAt(Instant.now());
-                locationRepo.save(loc);
+                log.error("Fehler beim Bulk-Resolve der Public IDs über Universe Names: {}", e.getMessage());
             }
         }
         return count;
     }
 
-    // ------------------------------------------------------------------
-    // ESI: Upwell-Strukturen
-    // ------------------------------------------------------------------
-
+    // ==================================================================
+    // ESI: Upwell-Strukturen (Bleibt gleich, ESI Token nötig)
+    // ==================================================================
     private int resolveStructuresFromEsi(List<Long> ids) {
         if (ids.isEmpty()) return 0;
-
         String token = findStructureToken();
         if (token == null) {
             log.warn("Kein Token mit Struktur-Zugriff gefunden - {} Strukturen bleiben unbenannt.", ids.size());
@@ -233,7 +141,7 @@ public class AssetLocationService {
                     saveUnknownStructure(id);
                     continue;
                 }
-                AssetLocation loc = new AssetLocation();
+                AssetLocation loc = locationRepo.findById(id).orElseGet(AssetLocation::new);
                 loc.setLocationId(id);
                 loc.setName(info.name());
                 loc.setOwnerId(info.owner_id());
@@ -245,8 +153,7 @@ public class AssetLocationService {
                 locationRepo.save(loc);
                 count++;
             } catch (Exception e) {
-                // 403 = kein Docking-Access. Voellig normal bei fremden Strukturen.
-                log.debug("Struktur {} nicht aufloesbar: {}", id, e.getMessage());
+                log.debug("Struktur {} nicht auflösbar: {}", id, e.getMessage());
                 saveUnknownStructure(id);
             }
         }
@@ -254,7 +161,12 @@ public class AssetLocationService {
     }
 
     private void enrichSystem(AssetLocation loc) {
-        if (loc.getSystemId() == null) return;
+        // Falls wir eine Station sind, haben wir evt. systemId von ESI.
+        // Falls wir ein Solar System sind, ist die locationId selbst die System-ID.
+        if (loc.getSystemId() == null && !loc.getLocationKind().equals("SOLAR_SYSTEM")) return;
+
+        Long searchId = loc.getSystemId() != null ? loc.getSystemId() : loc.getLocationId();
+
         try {
             Query q = em.createNativeQuery("""
                     SELECT s."solarSystemName" AS "systemName",
@@ -264,7 +176,8 @@ public class AssetLocationService {
                     LEFT JOIN evesde."mapRegions" r ON r."regionID" = s."regionID"
                     WHERE s."solarSystemID" = :id
                     """, Tuple.class);
-            q.setParameter("id", loc.getSystemId());
+            q.setParameter("id", searchId);
+
             @SuppressWarnings("unchecked")
             List<Tuple> rows = q.getResultList();
             if (!rows.isEmpty()) {
@@ -288,22 +201,16 @@ public class AssetLocationService {
         locationRepo.save(loc);
     }
 
-    /**
-     * Sucht einen Charakter, dessen Token vermutlich Strukturen aufloesen darf.
-     * Directors / CEOs haben in aller Regel Docking-Access auf die eigenen Citadels.
-     */
     private String findStructureToken() {
         List<Character> candidates = characterRepo.findAllWithCorporation().stream()
                 .filter(c -> c.getRefreshToken() != null)
                 .sorted((a, b) -> Integer.compare(rank(b), rank(a)))
                 .toList();
-
         for (Character c : candidates) {
             try {
                 String token = authService.getValidAccessToken(c);
                 if (token != null) return token;
             } catch (Exception ignored) {
-                // naechsten Kandidaten probieren
             }
         }
         return null;
@@ -315,16 +222,6 @@ public class AssetLocationService {
         if (c.getRoles().contains("ROLE_DIRECTOR")) return 2;
         if (c.getRoles().contains("ROLE_IT_ADMIN")) return 1;
         return 0;
-    }
-
-    // ------------------------------------------------------------------
-
-    private static boolean isStation(Long id) {
-        return id != null && id >= STATION_MIN && id < STATION_MAX;
-    }
-
-    private static boolean isSystem(Long id) {
-        return id != null && id >= SYSTEM_MIN && id < SYSTEM_MAX;
     }
 
     private static Long num(Tuple t, String alias) {

@@ -261,9 +261,9 @@ export class AssetAuditComponent implements OnInit {
   formatIsk(value: number | null | undefined): string {
     if (value === null || value === undefined || isNaN(value)) return '0 ISK';
     const abs = Math.abs(value);
-    if (abs >= 1_000_000_000_000) return (value / 1_000_000_000_000).toFixed(2) + ' Bill. ISK';
-    if (abs >= 1_000_000_000) return (value / 1_000_000_000).toFixed(2) + ' Mrd ISK';
-    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' Mio ISK';
+    if (abs >= 1_000_000_000_000) return (value / 1_000_000_000_000).toFixed(2) + ' T ISK';
+    if (abs >= 1_000_000_000) return (value / 1_000_000_000).toFixed(2) + ' B ISK';
+    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' M ISK';
     if (abs >= 1_000) return (value / 1_000).toFixed(1) + ' k ISK';
     return value.toFixed(0) + ' ISK';
   }

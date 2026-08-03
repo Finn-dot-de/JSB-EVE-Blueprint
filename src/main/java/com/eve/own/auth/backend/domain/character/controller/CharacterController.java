@@ -49,6 +49,7 @@ public class CharacterController {
     public record AdminAccountCharDto(Long id, String name, String portraitUrl, String corporationName) {}
     public record AdminAccountDto(Long mainId, String mainName, String portraitUrl, String corporationName, List<AdminAccountCharDto> alts) {}
 
+
     public record CorpStatsDto(
             Long corpId, String corpName, int totalEsiMembers,
             int registeredMains, int registeredAlts, int totalRegisteredChars,

@@ -194,6 +194,28 @@
 /* =========================================
    MODALS
    ========================================= */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px); /* Schicker Unschärfe-Effekt für den Hintergrund */
+  z-index: 1000; /* Legt sich über alles andere */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 500px;
+  animation: slideDown 0.2s ease-out;
+  cursor: default;
+}
 
 .modal-content {
   width: 100%;

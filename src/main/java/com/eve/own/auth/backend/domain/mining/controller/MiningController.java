@@ -146,8 +146,12 @@ public class MiningController {
         String currentMonthStr = YearMonth.now(ZoneOffset.UTC).toString(); // z.B. "2026-07"
 
         // 4. Wasserfall-Prinzip: Wir berechnen chronologisch von alt nach neu!
-        List<String> sortedMonths = new ArrayList<>(monthlyMining.keySet());
-        Collections.sort(sortedMonths); // Alt -> Neu
+        Set<String> allMonths = new HashSet<>();
+        allMonths.addAll(monthlyMining.keySet());
+        allMonths.addAll(invoiceMap.keySet());
+
+        List<String> sortedMonths = new ArrayList<>(allMonths);
+        Collections.sort(sortedMonths);
 
         List<MonthlyLedgerDto> resultMonths = new ArrayList<>();
         double totalLifetimeTax = 0.0;

@@ -10,9 +10,12 @@ import java.util.List;
 
 @Repository
 public interface CharacterMiningRepository extends JpaRepository<CharacterMining, Long> {
+
     @Modifying
     @Query("DELETE FROM CharacterMining m WHERE m.characterId = :characterId")
     void deleteByCharacterId(Long characterId);
 
     List<CharacterMining> findByCharacterIdIn(List<Long> characterIds);
+
+    List<CharacterMining> findByCharacterId(Long characterId);
 }

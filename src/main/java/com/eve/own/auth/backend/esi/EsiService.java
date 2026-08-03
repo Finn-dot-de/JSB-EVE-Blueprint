@@ -181,7 +181,10 @@ public class EsiService {
     public record EsiMiningResponse(String date, Long quantity, Long solar_system_id, Long type_id) {}
     public record EsiJournalResponse(Long id, String date, String ref_type, Double amount, Long second_party_id, String reason) {}
     public record EsiLpResponse(Long corporation_id, Integer loyalty_points) {}
-    public record SkillResponse(Long total_sp, Integer unallocated_sp) {}
+    public record SkillResponse(Long total_sp, Integer unallocated_sp, EsiSkillEntry[] skills) {}
+
+    public record EsiSkillEntry(Long skill_id, Integer active_skill_level,
+                                Integer trained_skill_level, Long skillpoints_in_skill) {}
     public record EsiAssetResponse(Long item_id, Long type_id, Long location_id, Integer quantity,
                                    Boolean is_singleton, String location_flag, String location_type,
                                    Boolean is_blueprint_copy) {}

@@ -8,6 +8,7 @@ import com.eve.own.auth.backend.domain.auth.service.AuthService;
 import com.eve.own.auth.backend.domain.character.entity.*;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterSkillRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterStatsRepository;
 import com.eve.own.auth.backend.domain.character.repository.CorporationRepository;
 import com.eve.own.auth.backend.domain.character.service.AssetSyncService;
@@ -15,6 +16,7 @@ import com.eve.own.auth.backend.domain.eve.entity.InvType;
 import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
+import com.eve.own.auth.backend.esi.EsiResponse;
 import com.eve.own.auth.backend.esi.EsiService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +35,7 @@ public class AccountSyncScheduler {
     private final EsiService esiService;
     private final CharacterRepository characterRepo;
     private final CharacterStatsRepository statsRepo;
+    private final CharacterSkillRepository skillRepo;
     private final AssetSyncService assetSyncService;
     private final InvTypeRepository invTypeRepo;
     private final CorporationRepository corpRepo;
@@ -46,6 +49,7 @@ public class AccountSyncScheduler {
 
     public AccountSyncScheduler(AuthService authService, EsiService esiService,
                                 CharacterRepository characterRepo, CharacterStatsRepository statsRepo,
+                                CharacterSkillRepository skillRepo,
                                 AssetSyncService assetSyncService, InvTypeRepository invTypeRepo,
                                 CorporationRepository corpRepo, TitleRoleMappingRepository titleRepo,
                                 SystemRoleRepository systemRoleRepo, MiningTaxRateRepository taxRateRepo,
@@ -56,6 +60,7 @@ public class AccountSyncScheduler {
         this.esiService = esiService;
         this.characterRepo = characterRepo;
         this.statsRepo = statsRepo;
+        this.skillRepo = skillRepo;
         this.assetSyncService = assetSyncService;
         this.invTypeRepo = invTypeRepo;
         this.corpRepo = corpRepo;
@@ -269,6 +274,41 @@ public class AccountSyncScheduler {
             stats.setSkillPoints(skillResp.data().total_sp());
         }
         statsRepo.save(stats);
+
+        // Der gleiche Response traegt auch die Einzel-Skills - kein zweiter Call noetig.
+        syncSkills(c, skillResp);
+    }
+
+    /**
+     * Spiegelt die Einzel-Skills fuer den Doktrin-Skillcheck.
+     *
+     * <p>Ein 304 bedeutet nur dann "nichts zu tun", wenn zu dem Charakter bereits
+     * Skills in der Datenbank liegen. Beim ersten Lauf nach dem Deployment ist der
+     * ETag-Cache naemlich schon gefuellt, die Tabelle aber noch leer - ohne diese
+     * Pruefung bliebe der Charakter dauerhaft ohne Skill-Daten.</p>
+     */
+    private void syncSkills(Character c, EsiResponse<EsiService.SkillResponse> skillResp) {
+        if (skillResp.notModified() && skillRepo.existsByCharacterId(c.getId())) {
+            log.debug("Skills von {} unveraendert, Neuschreiben uebersprungen.", c.getName());
+            return;
+        }
+        if (!skillResp.hasData() || skillResp.data().skills() == null) return;
+
+        List<CharacterSkill> mapped = Arrays.stream(skillResp.data().skills())
+                .filter(s -> s.skill_id() != null)
+                .map(s -> {
+                    CharacterSkill cs = new CharacterSkill();
+                    cs.setCharacterId(c.getId());
+                    cs.setSkillTypeId(s.skill_id());
+                    // ESI liefert active_skill_level bei Alpha-Accounts niedriger als trained.
+                    cs.setActiveLevel(s.active_skill_level() != null ? s.active_skill_level() : 0);
+                    cs.setTrainedLevel(s.trained_skill_level());
+                    cs.setSkillpoints(s.skillpoints_in_skill());
+                    return cs;
+                })
+                .collect(Collectors.toList());
+
+        assetSyncService.replaceCharacterSkills(c.getId(), mapped);
     }
 
     private void syncLoyaltyPoints(Character c, String token) {
@@ -337,7 +377,7 @@ public class AccountSyncScheduler {
                 cm.setQuantity(m.quantity());
                 return cm;
             }).toList();
-            assetSyncService.replaceCharacterMining(c.getId(), miningList);
+            assetSyncService.mergeCharacterMining(c.getId(), miningList);
 
             java.util.Set<Long> minedTypeIds = Arrays.stream(miningResp.data()).map(EsiService.EsiMiningResponse::type_id).collect(Collectors.toSet());
             java.util.List<InvType> sdeTypes = invTypeRepo.findAllById(minedTypeIds);
@@ -401,7 +441,7 @@ public class AccountSyncScheduler {
         }
 
         if (!newActivities.isEmpty()) {
-            assetSyncService.replaceCharacterActivities(c.getId(), newActivities);
+            assetSyncService.mergeCharacterActivities(c.getId(), newActivities);
         }
     }
 

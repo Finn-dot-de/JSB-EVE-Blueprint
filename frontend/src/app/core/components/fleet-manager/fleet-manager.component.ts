@@ -1,38 +1,49 @@
-import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { computed } from '@angular/core';
+
 import { FleetService, FleetEvent, FleetAttendance } from '../../services/fleet.service';
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
 import { ConfirmService } from '../../services/confirm.service';
-import { AssetService, DoctrineReadinessDto } from '../../services/asset.service';
+import { DoctrinesComponent } from '../doctrines/doctrines.component';
+import {
+  ReadinessService,
+  DoctrineReadinessDto,
+  SandboxResultDto,
+  AccountReadinessDto
+} from '../../services/readiness.service';
+
+type TabId = 'FLEETS' | 'DOCTRINES' | 'BOARD' | 'SANDBOX';
 
 @Component({
   selector: 'app-fleet-manager',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, DoctrinesComponent],
   templateUrl: './fleet-manager.component.html',
   styleUrls: ['./fleet-manager.component.scss']
 })
 export class FleetManagerComponent implements OnInit, OnDestroy {
   public authService = inject(AuthService);
   private fleetService = inject(FleetService);
-  private assetService = inject(AssetService);
+  private readinessService = inject(ReadinessService);
   private toastService = inject(ToastService);
   private confirmService = inject(ConfirmService);
 
-  // Tabs
-  activeTab = signal<'FLEETS' | 'DOCTRINE'>('FLEETS');
+  activeTab = signal<TabId>('FLEETS');
 
   // --- Fleet State ---
   recentFleets = signal<FleetEvent[]>([]);
   attendanceList = signal<FleetAttendance[]>([]);
   selectedFleetId = signal<number | null>(null);
+
   showCreateModal = signal(false);
   fleetName = '';
   doctrineInput = '';
   expiryMinutes = 60;
   trackingType: 'LIVE' | 'LINK' = 'LIVE';
+
   isCreating = signal(false);
   isSyncing = signal(false);
   private pollingInterval: any;
@@ -41,19 +52,32 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     return this.recentFleets().find(f => f.id === this.selectedFleetId());
   });
 
-  // --- Doctrine State ---
+  // --- Readiness State ---
   doctrineNames = signal<string[]>([]);
-  doctrine = signal<DoctrineReadinessDto | null>(null);
-  loadingDoctrine = signal(false);
   selectedDoctrine: string | null = null;
+  board = signal<DoctrineReadinessDto | null>(null);
+  loadingBoard = signal(false);
+
+  memberFilter = signal('');
+
+  expandedHulls = signal<Set<number>>(new Set());
+  expandedAccounts = signal<Set<string>>(new Set()); // Key: "typeId:mainId"
+
+  // --- Sandbox State ---
+  sandboxInput = signal('');
+  sandboxResult = signal<SandboxResultDto | null>(null);
+  sandboxError = signal<string | null>(null);
+  loadingSandbox = signal(false);
+
 
   get isFleetCommander(): boolean {
     return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38']);
   }
 
-  get isMainFC(): boolean {
-    // Erlaubt der ROLE_69 (und CEO/Director als Backup) den Doktrin-Check zu sehen
-    return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_69']);
+  get canSeeReadiness(): boolean {
+    return this.authService.hasAnyRole([
+      'ROLE_IT_ADMIN', 'ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_MANAGER', 'ROLE_69', 'ROLE_1337', 'ROLE_A38'
+    ]);
   }
 
   ngOnInit() {
@@ -65,14 +89,21 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     if (this.pollingInterval) clearInterval(this.pollingInterval);
   }
 
-  setTab(tab: 'FLEETS' | 'DOCTRINE') {
+  setTab(tab: TabId) {
     this.activeTab.set(tab);
-    if (tab === 'DOCTRINE' && this.doctrineNames().length === 0) {
-      this.loadDoctrineNames();
+
+    if (tab === 'BOARD') {
+      if (this.doctrineNames().length === 0) {
+        this.loadDoctrineNames('BOARD');
+        return;
+      }
+      if (!this.board()) this.loadBoard();
     }
   }
 
   // ================= Fleet Logic =================
+  // (Unverändert)
+
   loadRecentFleets() {
     this.fleetService.getRecentFleets().subscribe(fleets => {
       this.recentFleets.set(fleets);
@@ -137,7 +168,7 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   async closeFleet(fleetId: number) {
     const confirmed = await this.confirmService.ask(
       'Tracking beenden?',
-      'Möchtest du das Tracking für diesen FAT wirklich beenden? Die Flotte wird dadurch geschlossen.',
+      'Möchtest du das Tracking für diesen FAT wirklich beenden?',
       'FAT beenden',
       'Abbrechen'
     );
@@ -156,7 +187,6 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     navigator.clipboard.writeText(url).then(() => {
       this.toastService.success('PAP-Link erfolgreich kopiert!');
     }).catch(err => {
-      console.error('Konnte Link nicht kopieren: ', err);
       this.toastService.error('Fehler beim Kopieren des PAP-Links.');
     });
   }
@@ -165,30 +195,115 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     return `${window.location.origin}/fleet/join/${code}`;
   }
 
-  // ================= Doctrine Logic =================
-  loadDoctrineNames() {
-    this.assetService.doctrines().subscribe({
+
+  // ================= Readiness Logic =================
+
+  loadDoctrineNames(thenLoad?: TabId) {
+    this.readinessService.doctrines().subscribe({
       next: (names) => {
         this.doctrineNames.set(names);
         if (names.length > 0 && !this.selectedDoctrine) {
           this.selectedDoctrine = names[0];
-          this.loadDoctrine();
         }
+        if (thenLoad === 'BOARD') this.loadBoard();
       },
       error: () => this.toastService.error('Doktrinen konnten nicht geladen werden.')
     });
   }
 
-  loadDoctrine() {
+  onDoctrineChange() {
+    this.board.set(null);
+    this.expandedHulls.set(new Set());
+    this.expandedAccounts.set(new Set());
+
+    if (this.activeTab() === 'BOARD') this.loadBoard();
+  }
+
+  loadBoard() {
     if (!this.selectedDoctrine) return;
-    this.loadingDoctrine.set(true);
-    this.assetService.doctrineReadiness(this.selectedDoctrine).subscribe({
-      next: (data) => { this.doctrine.set(data); this.loadingDoctrine.set(false); },
-      error: () => { this.loadingDoctrine.set(false); this.toastService.error('Doktrin-Auswertung fehlgeschlagen.'); }
+    this.loadingBoard.set(true);
+    this.readinessService.checkBoard(this.selectedDoctrine).subscribe({
+      next: (data) => {
+        this.board.set(data);
+        this.loadingBoard.set(false);
+        if (data.hulls.length > 0) this.expandedHulls.set(new Set([data.hulls[0].typeId]));
+      },
+      error: (err) => {
+        this.loadingBoard.set(false);
+        this.toastService.error(err.error?.message || 'Readiness-Check fehlgeschlagen.');
+      }
     });
   }
 
+  // ================= Sandbox Logic =================
+
+  runSandbox() {
+    const eft = this.sandboxInput().trim();
+    if (!eft) return;
+
+    this.loadingSandbox.set(true);
+    this.sandboxError.set(null);
+
+    this.readinessService.sandbox(eft).subscribe({
+      next: (data) => {
+        this.sandboxResult.set(data);
+        this.loadingSandbox.set(false);
+        this.expandedAccounts.set(new Set());
+      },
+      error: (err) => {
+        this.loadingSandbox.set(false);
+        this.sandboxResult.set(null);
+        this.sandboxError.set(err.error?.message || 'Das Fitting konnte nicht ausgewertet werden.');
+      }
+    });
+  }
+
+  clearSandbox() {
+    this.sandboxInput.set('');
+    this.sandboxResult.set(null);
+    this.sandboxError.set(null);
+  }
+
+  // ================= Aufklapp-Logik =================
+
+  toggleHull(typeId: number) {
+    this.expandedHulls.update(current => {
+      const next = new Set(current);
+      next.has(typeId) ? next.delete(typeId) : next.add(typeId);
+      return next;
+    });
+  }
+
+  isHullExpanded(typeId: number): boolean {
+    return this.expandedHulls().has(typeId);
+  }
+
+  toggleAccount(typeId: number, mainId: number) {
+    const key = `${typeId}:${mainId}`;
+    this.expandedAccounts.update(current => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  isAccountExpanded(typeId: number, mainId: number): boolean {
+    return this.expandedAccounts().has(`${typeId}:${mainId}`);
+  }
+
+  // ================= Filter =================
+
+  filterAccounts(accounts: AccountReadinessDto[]): AccountReadinessDto[] {
+    const q = this.memberFilter().trim().toLowerCase();
+    if (!q) return accounts;
+    return accounts.filter(a =>
+      a.mainName.toLowerCase().includes(q) ||
+      a.characters.some(c => c.characterName.toLowerCase().includes(q))
+    );
+  }
+
   // ================= Utilities =================
+
   formatNumber(value: number | null | undefined): string {
     if (value === null || value === undefined || isNaN(value)) return '0';
     return value.toLocaleString('de-DE');
@@ -202,23 +317,29 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     return Math.max(0, Math.min(100, value * 100)).toFixed(0) + '%';
   }
 
+  coverageClass(value: number): string {
+    if (value >= 0.75) return 'green';
+    if (value >= 0.4) return 'orange';
+    return 'red';
+  }
+
+  copyFitToClipboard(eft: string) {
+    navigator.clipboard.writeText(eft).then(() => {
+      this.toastService.info('Fitting kopiert! Ingame das Fitting-Fenster öffnen und "Import from Clipboard" wählen.');
+    }).catch(() => this.toastService.error('Fehler beim Kopieren in die Zwischenablage.'));
+  }
+
   onImgError(event: Event) {
     const target = event.target as HTMLImageElement;
-
-    // Verhindert eine Endlosschleife, wenn das Fragezeichen-Bild selbst fehlen sollte
     if (target.src.includes('7_64_15.png')) return;
 
-    // Wenn das normale Icon (oder Render) fehlschlägt, prüfen wir auf Blueprint (/bp?)
     if (target.src.includes('/icon?') || target.src.includes('/render?')) {
       const match = target.src.match(/\/types\/(\d+)\//);
       if (match) {
-        // Blueprint Endpunkt setzen. Falls das auch fehlschlägt, triggert (error) erneut!
         target.src = `https://images.evetech.net/types/${match[1]}/bp?size=64`;
         return;
       }
     }
-
-    // Wenn es kein Blueprint war (oder /bp? auch fehlgeschlagen ist), zeige das Fragezeichen
     target.src = 'https://evetycoon.com/images/icons/7_64_15.png';
   }
 

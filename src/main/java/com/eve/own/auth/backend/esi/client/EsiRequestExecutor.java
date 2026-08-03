@@ -127,7 +127,7 @@ public class EsiRequestExecutor {
                 .uri(uriTemplate)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
-                .body(body)
+                .body(objectMapper.writeValueAsString(body))
                 .retrieve()
                 .body(responseType);
     }

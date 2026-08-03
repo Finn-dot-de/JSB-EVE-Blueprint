@@ -394,11 +394,21 @@
                             <img [src]="typeIcon(row.typeId)" (error)="onImgError($event)" [alt]="row.typeName" loading="lazy">
                             <div>
                               <div class="item-name">
+                                @if (row.singleton) {
+                                  <span class="asm-icon" title="Zusammengebaut / gefittet">🚀</span>
+                                } @else {
+                                  <span class="asm-icon packed" title="Verpackt im Stapel">📦</span>
+                                }
                                 {{ row.typeName }}
                                 @if (row.isBlueprintCopy) {
                                   <span class="badge copy" title="Blueprint Copy - kein verlaesslicher Marktwert">Copy</span>
                                 }
                               </div>
+                              @if (row.customName) {
+                                <div class="custom-name" [title]="'Ingame vergebener Name: ' + row.customName">
+                                  „{{ row.customName }}“
+                                </div>
+                              }
                               <div class="item-group">{{ row.groupName }}</div>
                             </div>
                           </div>
@@ -503,9 +513,25 @@
                           <tbody>
                             @for (loc of ch.locations; track $index) {
                               <tr>
+                                <td class="state-cell">
+                                  @if (loc.singleton) {
+                                    <span class="asm-badge assembled" title="Zusammengebaut / gefittet">
+                                      🚀 Zusammengebaut
+                                    </span>
+                                  } @else {
+                                    <span class="asm-badge packed" title="Verpackte Hülle im Stapel">
+                                      📦 Verpackt
+                                    </span>
+                                  }
+                                </td>
                                 <td>
                                   <i class="fa-solid fa-location-dot" style="color: var(--accent-color); margin-right: 8px;"></i>
                                   {{ loc.locationName }}
+                                  @if (loc.customName) {
+                                    <div class="custom-name" [title]="'Ingame vergebener Name: ' + loc.customName">
+                                      „{{ loc.customName }}“
+                                    </div>
+                                  }
                                 </td>
                                 <td style="color: var(--text-secondary);">
                                   @if (loc.systemName) { {{ loc.systemName }} }

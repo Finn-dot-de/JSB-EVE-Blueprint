@@ -31,10 +31,19 @@ public interface CharacterAssetRepository extends JpaRepository<CharacterAsset, 
         """, nativeQuery = true)
     List<Object[]> aggregateAssetsByGroup(List<Long> characterIds);
 
-    /**
-     * Alle Typen, die irgendwo in den Assets vorkommen.
-     * Grundlage fuer das stuendliche Jita-Preis-Update.
-     */
     @Query(value = "SELECT DISTINCT a.type_id FROM character_assets a", nativeQuery = true)
     List<Long> findDistinctAssetTypeIds();
+
+    @Query(value = """
+            SELECT EXISTS (
+                SELECT 1 FROM character_assets a
+                JOIN evesde."invTypes" t ON t."typeID" = a.type_id
+                JOIN evesde."invGroups" g ON g."groupID" = t."groupID"
+                WHERE a.character_id = :characterId
+                  AND a.is_singleton IS TRUE
+                  AND g."categoryID" IN (2, 6, 22, 65)
+                  AND a.custom_name IS NULL
+            )
+            """, nativeQuery = true)
+    boolean hasPendingCustomNames(Long characterId);
 }

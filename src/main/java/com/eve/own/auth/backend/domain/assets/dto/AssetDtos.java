@@ -31,7 +31,10 @@ public class AssetDtos {
             String systemName,
             String regionName,
             String locationFlag,
+            /** true = zusammengebaut / gefittet, false = verpackt im Stapel. */
             Boolean singleton,
+            /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
+            String customName,
             Boolean isBlueprintCopy,
             Double unitPrice,
             Double totalValue
@@ -107,12 +110,23 @@ public class AssetDtos {
             List<HolderLocationDto> locations
     ) {}
 
+    /**
+     * Ein Posten eines Charakters an einem Standort.
+     *
+     * <p>Verpackte Huellen eines Typs werden zu einer Zeile mit entsprechender
+     * Menge zusammengefasst; zusammengebaute Schiffe bleiben nach Name getrennt,
+     * damit "Oskar" und "PVP Scimitar" einzeln sichtbar sind.</p>
+     */
     public record HolderLocationDto(
             Long locationId,
             String locationName,
             String systemName,
             String regionName,
             String locationFlag,
+            /** true = zusammengebaut / gefittet, false = verpackt im Stapel. */
+            Boolean singleton,
+            /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
+            String customName,
             Long quantity
     ) {}
 

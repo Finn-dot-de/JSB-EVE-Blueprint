@@ -65,5 +65,24 @@ public class CharacterAsset {
     @Column(name = "is_blueprint_copy")
     private Boolean blueprintCopy;
 
+    /**
+     * Ingame vergebener Name eines zusammengebauten Items, z.B. "Oskar" oder
+     * "PVP Scimitar". Kommt nicht aus dem Asset-Endpunkt, sondern aus dem
+     * separaten POST /characters/{id}/assets/names/.
+     *
+     * <p>Drei Zustaende, die bewusst unterschieden werden:</p>
+     * <ul>
+     *   <li>{@code null} - noch nie abgefragt (z.B. Bestand von vor diesem Feature)</li>
+     *   <li>{@code ""} - abgefragt, aber der Spieler hat keinen Namen vergeben</li>
+     *   <li>Text - der tatsaechliche Name</li>
+     * </ul>
+     *
+     * <p>Ohne die Unterscheidung null/"" liesse sich nicht erkennen, ob die Namen
+     * eines Charakters schon einmal geholt wurden - siehe
+     * {@code CharacterAssetRepository.hasPendingCustomNames}.</p>
+     */
+    @Column(name = "custom_name", length = 255)
+    private String customName;
+
     private Integer quantity;
 }

@@ -92,6 +92,31 @@ public class EsiService {
         return executor.getAllPages("/characters/{id}/assets/", new Object[]{characterId}, token, EsiAssetResponse[].class);
     }
 
+    /** Maximale Anzahl item_ids, die CCP pro Namens-Request akzeptiert. */
+    public static final int ASSET_NAMES_MAX_IDS = 1000;
+
+    /**
+     * Ingame vergebene Namen zusammengebauter Items (Schiffe, Container, Strukturen).
+     *
+     * <p>Bewusst ohne ETag-Cache: ESI liefert fuer diesen POST keine ETags. Fehler
+     * werden hier nicht geschluckt, damit der Aufrufer ein 420 (Error-Limit) noch
+     * an die zentrale Drosselung durchreichen kann.</p>
+     *
+     * <p>Die Aufteilung in Bloecke von maximal {@link #ASSET_NAMES_MAX_IDS} IDs
+     * liegt beim Aufrufer.</p>
+     */
+    public EsiAssetNameResponse[] getAssetNames(Long characterId, String token, List<Long> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return new EsiAssetNameResponse[0];
+        }
+        if (itemIds.size() > ASSET_NAMES_MAX_IDS) {
+            throw new IllegalArgumentException(
+                    "ESI akzeptiert maximal " + ASSET_NAMES_MAX_IDS + " item_ids pro Request, erhalten: " + itemIds.size());
+        }
+        return executor.post("/characters/{id}/assets/names/", new Object[]{characterId},
+                itemIds.toArray(new Long[0]), token, EsiAssetNameResponse[].class);
+    }
+
     // ==================================================================
     // Corporation (Token noetig)
     // ==================================================================
@@ -188,6 +213,7 @@ public class EsiService {
     public record EsiAssetResponse(Long item_id, Long type_id, Long location_id, Integer quantity,
                                    Boolean is_singleton, String location_flag, String location_type,
                                    Boolean is_blueprint_copy) {}
+    public record EsiAssetNameResponse(Long item_id, String name) {}
     public record EsiStructureResponse(String name, Long owner_id, Long solar_system_id, Long type_id) {}
     public record EsiCharacterResponse(String name, Long corporation_id) {}
     public record EsiCorporationResponse(String name, String ticker, Long alliance_id, Long faction_id) {}

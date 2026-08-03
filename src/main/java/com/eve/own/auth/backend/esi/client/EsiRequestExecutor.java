@@ -122,11 +122,28 @@ public class EsiRequestExecutor {
     // POST (ohne Cache - ESI liefert dafuer keine ETags)
     // ==================================================================
 
+    /** POST auf einen oeffentlichen Endpunkt ohne Pfadvariablen. */
     public <T> T post(String uriTemplate, Object body, Class<T> responseType) {
+        return post(uriTemplate, new Object[0], body, null, responseType);
+    }
+
+    /**
+     * POST mit Pfadvariablen und optionalem Token.
+     *
+     * @param uriVariables Werte fuer die Platzhalter im Template
+     * @param token        Access-Token oder null bei oeffentlichen Endpunkten
+     */
+    public <T> T post(String uriTemplate, Object[] uriVariables, Object body,
+                      String token, Class<T> responseType) {
         return restClient.post()
-                .uri(uriTemplate)
+                .uri(uriTemplate, uriVariables)
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
+                .headers(headers -> {
+                    if (token != null) {
+                        headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+                    }
+                })
                 .body(objectMapper.writeValueAsString(body))
                 .retrieve()
                 .body(responseType);

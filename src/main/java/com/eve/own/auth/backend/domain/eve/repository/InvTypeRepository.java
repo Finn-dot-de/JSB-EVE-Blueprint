@@ -28,6 +28,14 @@ public interface InvTypeRepository extends JpaRepository<InvType, Long> {
         """, nativeQuery = true)
     List<InvType> searchMineables(@Param("typeName") String typeName);
 
+    @Query(value = """
+            SELECT t."typeID" FROM evesde."invTypes" t
+            JOIN evesde."invGroups" g ON g."groupID" = t."groupID"
+            WHERE t."typeID" IN (:typeIds)
+              AND g."categoryID" IN (2, 6, 22, 65)
+            """, nativeQuery = true)
+    List<Long> findNameableTypeIds(@Param("typeIds") List<Long> typeIds);
+
     // Holt alle echten Abbaubaren Materialien für den Start-Initializer
     @Query(value = """
         SELECT t.* FROM evesde."invTypes" t

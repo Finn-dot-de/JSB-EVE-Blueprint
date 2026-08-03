@@ -91,6 +91,9 @@ public class AssetQueryRepository {
                        loc.region_name AS "regionName",
                        a.location_flag AS "locationFlag",
                        a.is_singleton AS "singleton",
+                       -- Leerstring heisst "abgefragt, aber kein Name vergeben".
+                       -- Nach aussen ist das dasselbe wie "kein Name".
+                       NULLIF(a.custom_name, '') AS "customName",
                        a.is_blueprint_copy AS "isBlueprintCopy",
                        """ + UNIT_PRICE_EXPR + """
                         AS "unitPrice",
@@ -133,6 +136,7 @@ public class AssetQueryRepository {
                     str(r, "regionName"),
                     str(r, "locationFlag"),
                     bool(r, "singleton"),
+                    str(r, "customName"),
                     bool(r, "isBlueprintCopy"),
                     dbl(r, "unitPrice"),
                     value
@@ -233,6 +237,8 @@ public class AssetQueryRepository {
                        loc.system_name AS "systemName",
                        loc.region_name AS "regionName",
                        a.location_flag AS "locationFlag",
+                       a.is_singleton AS "singleton",
+                       NULLIF(a.custom_name, '') AS "customName",
                        SUM(a.quantity) AS "quantity",
                        SUM(""" + VALUE_EXPR + """
                        ) AS "value"
@@ -240,8 +246,9 @@ public class AssetQueryRepository {
                 WHERE a.type_id = :typeId
                 GROUP BY COALESCE(c.main_character_id, c.character_id),
                          COALESCE(mc.name, c.name), c.character_id, c.name, corp.name,
-                         a.root_location_id, loc.name, loc.system_name, loc.region_name, a.location_flag
-                ORDER BY SUM(a.quantity) DESC
+                         a.root_location_id, loc.name, loc.system_name, loc.region_name, a.location_flag,
+                         a.is_singleton, a.custom_name
+                ORDER BY a.is_singleton NULLS FIRST, SUM(a.quantity) DESC, a.custom_name
                 """;
         Query q = em.createNativeQuery(sql, Tuple.class);
         q.setParameter("typeId", typeId);

@@ -26,7 +26,10 @@ export interface AssetRowDto {
   systemName: string | null;
   regionName: string | null;
   locationFlag: string | null;
+  /** true = zusammengebaut / gefittet, false = verpackt im Stapel. */
   singleton: boolean;
+  /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
+  customName: string | null;
   isBlueprintCopy: boolean | null;
   unitPrice: number;
   totalValue: number;
@@ -57,12 +60,21 @@ export interface PageDto<T> {
   grandTotalValue: number;
 }
 
+/**
+ * Ein Posten eines Charakters an einem Standort.
+ * Verpackte Huellen sind zu einer Zeile aggregiert, zusammengebaute Schiffe
+ * bleiben nach ihrem Ingame-Namen getrennt.
+ */
 export interface HolderLocationDto {
   locationId: number;
   locationName: string;
   systemName: string | null;
   regionName: string | null;
   locationFlag: string | null;
+  /** true = zusammengebaut / gefittet, false = verpackt im Stapel. */
+  singleton: boolean | null;
+  /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
+  customName: string | null;
   quantity: number;
 }
 

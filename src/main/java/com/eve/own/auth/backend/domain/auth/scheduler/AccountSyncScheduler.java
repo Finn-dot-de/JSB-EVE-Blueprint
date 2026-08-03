@@ -7,6 +7,7 @@ import com.eve.own.auth.backend.domain.auth.repository.TitleRoleMappingRepositor
 import com.eve.own.auth.backend.domain.auth.service.AuthService;
 import com.eve.own.auth.backend.domain.character.entity.*;
 import com.eve.own.auth.backend.domain.character.entity.Character;
+import com.eve.own.auth.backend.domain.character.repository.CharacterAssetRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterSkillRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterStatsRepository;
@@ -36,6 +37,7 @@ public class AccountSyncScheduler {
     private final CharacterRepository characterRepo;
     private final CharacterStatsRepository statsRepo;
     private final CharacterSkillRepository skillRepo;
+    private final CharacterAssetRepository assetRepo;
     private final AssetSyncService assetSyncService;
     private final InvTypeRepository invTypeRepo;
     private final CorporationRepository corpRepo;
@@ -49,7 +51,7 @@ public class AccountSyncScheduler {
 
     public AccountSyncScheduler(AuthService authService, EsiService esiService,
                                 CharacterRepository characterRepo, CharacterStatsRepository statsRepo,
-                                CharacterSkillRepository skillRepo,
+                                CharacterSkillRepository skillRepo, CharacterAssetRepository assetRepo,
                                 AssetSyncService assetSyncService, InvTypeRepository invTypeRepo,
                                 CorporationRepository corpRepo, TitleRoleMappingRepository titleRepo,
                                 SystemRoleRepository systemRoleRepo, MiningTaxRateRepository taxRateRepo,
@@ -61,6 +63,7 @@ public class AccountSyncScheduler {
         this.characterRepo = characterRepo;
         this.statsRepo = statsRepo;
         this.skillRepo = skillRepo;
+        this.assetRepo = assetRepo;
         this.assetSyncService = assetSyncService;
         this.invTypeRepo = invTypeRepo;
         this.corpRepo = corpRepo;
@@ -329,8 +332,10 @@ public class AccountSyncScheduler {
         var assetResponse = esiService.getAllAssets(c.getId(), token);
 
         // Alle Seiten mit 304 beantwortet: der Hangar ist unveraendert, das
-        // komplette Loeschen-und-Neuschreiben kann entfallen.
-        if (assetResponse.notModified()) {
+        // komplette Loeschen-und-Neuschreiben kann entfallen. Ausnahme: solange noch
+        // zusammengebaute Items ohne abgefragten Namen liegen, muss einmal durchlaufen
+        // werden - sonst blieben die Custom-Namen nach dem Deployment dauerhaft leer.
+        if (assetResponse.notModified() && !assetRepo.hasPendingCustomNames(c.getId())) {
             log.debug("Assets von {} unveraendert, Neuschreiben uebersprungen.", c.getName());
             return;
         }
@@ -345,6 +350,8 @@ public class AccountSyncScheduler {
             if (ea.item_id() != null) itemToLocation.put(ea.item_id(), ea.location_id());
         }
 
+        Map<Long, String> customNames = fetchCustomNames(c, token, esiAssets);
+
         List<CharacterAsset> mappedAssets = esiAssets.stream().map(ea -> {
             CharacterAsset a = new CharacterAsset();
             a.setItemId(ea.item_id());
@@ -356,11 +363,80 @@ public class AccountSyncScheduler {
             a.setLocationType(ea.location_type());
             a.setSingleton(ea.is_singleton());
             a.setBlueprintCopy(ea.is_blueprint_copy());
+            a.setCustomName(customNames.get(ea.item_id()));
             a.setQuantity(ea.quantity() != null ? ea.quantity() : 1);
             return a;
         }).collect(Collectors.toList());
 
         assetSyncService.replaceCharacterAssets(c.getId(), mappedAssets);
+    }
+
+
+    private Map<Long, String> fetchCustomNames(Character c, String token,
+                                               List<EsiService.EsiAssetResponse> esiAssets) {
+        List<EsiService.EsiAssetResponse> singletons = esiAssets.stream()
+                .filter(ea -> Boolean.TRUE.equals(ea.is_singleton()))
+                .filter(ea -> ea.item_id() != null && ea.type_id() != null)
+                .toList();
+
+        if (singletons.isEmpty()) return Map.of();
+
+        Set<Long> nameableTypes = new HashSet<>(invTypeRepo.findNameableTypeIds(
+                singletons.stream().map(EsiService.EsiAssetResponse::type_id).distinct().toList()));
+
+        List<Long> itemIds = singletons.stream()
+                .filter(ea -> nameableTypes.contains(ea.type_id()))
+                .map(EsiService.EsiAssetResponse::item_id)
+                .distinct()
+                .toList();
+
+        if (itemIds.isEmpty()) return Map.of();
+
+        Map<Long, String> names = new HashMap<>();
+
+        for (int start = 0; start < itemIds.size(); start += EsiService.ASSET_NAMES_MAX_IDS) {
+            List<Long> batch = itemIds.subList(
+                    start, Math.min(start + EsiService.ASSET_NAMES_MAX_IDS, itemIds.size()));
+            try {
+                var response = esiService.getAssetNames(c.getId(), token, batch);
+                if (response == null) continue;
+
+                // Erst nach erfolgreicher Antwort als "abgefragt" markieren.
+                batch.forEach(id -> names.put(id, ""));
+
+                for (var entry : response) {
+                    if (entry.item_id() == null) continue;
+                    names.put(entry.item_id(), normalizeAssetName(entry.name()));
+                }
+            } catch (org.springframework.web.client.RestClientResponseException e) {
+                // 420 muss durchgereicht werden, damit die zentrale Drosselung greift.
+                if (e.getStatusCode().value() == 420) throw e;
+
+                log.warn("Asset-Namen für {} (Batch ab {}, {} IDs) nicht abrufbar: {} - {}",
+                        c.getName(), start, batch.size(), e.getStatusCode(), e.getResponseBodyAsString());
+
+                if (e.getStatusCode().value() == 404) {
+
+                    batch.forEach(id -> names.putIfAbsent(id, ""));
+                }
+
+            }
+        }
+
+        log.debug("Asset-Namen für {}: {} von {} zusammengebauten Items sind benennbar, {} Batch(es).",
+                c.getName(), itemIds.size(), singletons.size(),
+                (itemIds.size() + EsiService.ASSET_NAMES_MAX_IDS - 1) / EsiService.ASSET_NAMES_MAX_IDS);
+        return names;
+    }
+
+    /**
+     * ESI antwortet fuer unbenannte Schiffe und Container mit dem Literal "None".
+     * Das ist kein Name, sondern ein Platzhalter - ohne diese Normalisierung
+     * stuende im Frontend spaeter bei jedem ungetauften Schiff "None".
+     */
+    private static String normalizeAssetName(String name) {
+        if (name == null || name.isBlank() || "None".equals(name.trim())) return "";
+        return name.trim();
     }
 
     private void syncActivities(Character c, String token) {

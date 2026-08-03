@@ -85,6 +85,8 @@ public class AssetAnalyticsService {
                     str(r, "systemName"),
                     str(r, "regionName"),
                     str(r, "locationFlag"),
+                    bool(r, "singleton"),
+                    str(r, "customName"),
                     qty
             ));
         }

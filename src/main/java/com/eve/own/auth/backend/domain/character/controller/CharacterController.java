@@ -46,6 +46,8 @@ public class CharacterController {
     public record AuthedAltDto(Long id, String name, String portraitUrl, boolean isMain) {}
     public record AuthedMainDto(Long mainId, String mainName, String portraitUrl, List<AuthedAltDto> alts) {}
     public record UnauthedCharDto(Long id, String name, String portraitUrl) {}
+    public record AdminAccountCharDto(Long id, String name, String portraitUrl, String corporationName) {}
+    public record AdminAccountDto(Long mainId, String mainName, String portraitUrl, String corporationName, List<AdminAccountCharDto> alts) {}
 
     public record CorpStatsDto(
             Long corpId, String corpName, int totalEsiMembers,
@@ -227,5 +229,52 @@ public class CharacterController {
         characterRepo.saveAll(allAccountChars);
 
         return ResponseEntity.ok().build();
+    }
+
+    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN')")
+    @GetMapping("/admin/accounts")
+    public ResponseEntity<List<AdminAccountDto>> getAllAccounts() {
+        List<Character> allChars = characterRepo.findAllWithCorporation();
+
+        // Gruppiere alle Charaktere nach ihrer Main-ID
+        java.util.Map<Long, List<Character>> byMain = allChars.stream()
+                .collect(java.util.stream.Collectors.groupingBy(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId()));
+
+        List<AdminAccountDto> result = new ArrayList<>();
+
+        for (var entry : byMain.entrySet()) {
+            Long mainId = entry.getKey();
+            List<Character> chars = entry.getValue();
+
+            // Main-Charakter heraussuchen
+            Character mainChar = chars.stream()
+                    .filter(c -> c.getId().equals(mainId))
+                    .findFirst()
+                    .orElse(chars.get(0));
+
+            // Alle Alts extrahieren und sortieren
+            List<AdminAccountCharDto> alts = chars.stream()
+                    .filter(c -> !c.getId().equals(mainId))
+                    .map(c -> new AdminAccountCharDto(
+                            c.getId(),
+                            c.getName(),
+                            "https://images.evetech.net/characters/" + c.getId() + "/portrait?size=64",
+                            c.getCorporation() != null ? c.getCorporation().getName() : "Unbekannt"
+                    ))
+                    .sorted(java.util.Comparator.comparing(AdminAccountCharDto::name, String.CASE_INSENSITIVE_ORDER))
+                    .toList();
+
+            result.add(new AdminAccountDto(
+                    mainId,
+                    mainChar.getName(),
+                    "https://images.evetech.net/characters/" + mainId + "/portrait?size=64",
+                    mainChar.getCorporation() != null ? mainChar.getCorporation().getName() : "Unbekannt",
+                    alts
+            ));
+        }
+
+        // Mains alphabetisch sortieren
+        result.sort(java.util.Comparator.comparing(AdminAccountDto::mainName, String.CASE_INSENSITIVE_ORDER));
+        return ResponseEntity.ok(result);
     }
 }

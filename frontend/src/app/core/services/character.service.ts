@@ -41,6 +41,21 @@ export interface CorpStatsDto {
   unauthedMembers: UnauthedCharDto[];   // <-- NEU
 }
 
+export interface AdminAccountCharDto {
+  id: number;
+  name: string;
+  portraitUrl: string;
+  corporationName: string;
+}
+
+export interface AdminAccountDto {
+  mainId: number;
+  mainName: string;
+  portraitUrl: string;
+  corporationName: string;
+  alts: AdminAccountCharDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class CharacterService {
   private http = inject(HttpClient);
@@ -56,5 +71,9 @@ export class CharacterService {
 
   setMainCharacter(characterId: number): Observable<void> {
     return this.http.post<void>(`${this.apiUrl}/set-main/${characterId}`, {});
+  }
+
+  getAllAccounts(): Observable<AdminAccountDto[]> {
+    return this.http.get<AdminAccountDto[]>(`${this.apiUrl}/admin/accounts`);
   }
 }

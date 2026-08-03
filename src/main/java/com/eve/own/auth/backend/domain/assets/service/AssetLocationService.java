@@ -124,6 +124,9 @@ public class AssetLocationService {
     // ==================================================================
     // ESI: Upwell-Strukturen (Bleibt gleich, ESI Token nötig)
     // ==================================================================
+    /** Ab so vielen 403ern in Folge gilt der Token als grundsaetzlich ohne Struktur-Zugriff (Scope/Docking). */
+    private static final int FORBIDDEN_CIRCUIT_BREAKER = 5;
+
     private int resolveStructuresFromEsi(List<Long> ids) {
         if (ids.isEmpty()) return 0;
         String token = findStructureToken();
@@ -134,11 +137,14 @@ public class AssetLocationService {
         }
 
         int count = 0;
+        int consecutiveForbidden = 0;
+
         for (Long id : ids) {
             try {
                 var info = esiService.getStructureInfo(id, token);
                 if (info == null || info.name() == null) {
                     saveUnknownStructure(id);
+                    consecutiveForbidden = 0;
                     continue;
                 }
                 AssetLocation loc = locationRepo.findById(id).orElseGet(AssetLocation::new);
@@ -152,9 +158,31 @@ public class AssetLocationService {
                 enrichSystem(loc);
                 locationRepo.save(loc);
                 count++;
+                consecutiveForbidden = 0;
+            } catch (org.springframework.web.client.RestClientResponseException e) {
+                int statusCode = e.getStatusCode().value();
+                log.debug("Struktur {} nicht auflösbar: {}", id, e.getMessage());
+
+                if (statusCode == 420) {
+                    log.warn("ESI Error-Rate-Limit (420) beim Aufloesen von Strukturen erreicht - breche ab.");
+                    break;
+                }
+                if (statusCode == 403) {
+                    consecutiveForbidden++;
+                    if (consecutiveForbidden >= FORBIDDEN_CIRCUIT_BREAKER) {
+                        log.warn("{} Strukturen in Folge mit 403 Forbidden - Token hat vermutlich keinen " +
+                                "Struktur-Zugriff (Scope oder Docking fehlt). Breche fuer diesen Lauf ab.",
+                                consecutiveForbidden);
+                        break;
+                    }
+                    continue;
+                }
+                saveUnknownStructure(id);
+                consecutiveForbidden = 0;
             } catch (Exception e) {
                 log.debug("Struktur {} nicht auflösbar: {}", id, e.getMessage());
                 saveUnknownStructure(id);
+                consecutiveForbidden = 0;
             }
         }
         return count;

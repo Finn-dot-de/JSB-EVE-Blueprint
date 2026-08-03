@@ -305,7 +305,8 @@
 .chip-clear {
   position: absolute;
   right: 8px;
-  top: 30px;
+  top: 50%;
+  transform: translateY(-50%);
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid var(--accent-color);
   color: var(--accent-color);

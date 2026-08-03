@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import {Component, OnInit, inject, signal, computed, ViewChild, ElementRef, HostListener} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
@@ -54,6 +54,21 @@ export class AssetAuditComponent implements OnInit {
   suggestions = signal<TypeSuggestionDto[]>([]);
   showSuggestions = signal(false);
   private searchTerms = new Subject<string>();
+
+  @ViewChild('typeaheadWrapper') typeaheadWrapper?: ElementRef;
+
+  @HostListener('document:click', ['$event'])
+  onClickOutside(event: Event) {
+    if (this.showSuggestions() && this.typeaheadWrapper && !this.typeaheadWrapper.nativeElement.contains(event.target)) {
+      this.showSuggestions.set(false);
+    }
+  }
+
+  onSearchFocus() {
+    if (this.f.q && this.f.q.length >= 2 && this.suggestions().length > 0) {
+      this.showSuggestions.set(true);
+    }
+  }
 
   // --- Wer hat das? ---
   holders = signal<TypeHoldersDto | null>(null);
@@ -146,6 +161,7 @@ export class AssetAuditComponent implements OnInit {
   runSearch(resetPage: boolean = true) {
     if (resetPage) this.f.page = 0;
     this.loadingSearch.set(true);
+    this.showSuggestions.set(false);
 
     if (this.grouped()) {
       this.assetService.searchGrouped(this.f).subscribe({

@@ -179,9 +179,9 @@
     @if (activeTab() === 'SEARCH') {
       <div class="surface-panel filter-panel">
         <div class="filter-row" style="align-items: center;">
-          <div class="form-group typeahead-wrapper" style="flex: 2">
+          <div class="form-group typeahead-wrapper" style="flex: 2" #typeaheadWrapper>
             <input type="text" [ngModel]="f.q" (ngModelChange)="onTypeAhead($event)"
-                   (keyup.enter)="runSearch()" placeholder="Schnellsuche (Item, Pilot, Standort)...">
+                   (keyup.enter)="runSearch()" (focus)="onSearchFocus()" placeholder="Schnellsuche (Item, Pilot, Standort)...">
             @if (f.typeId) {
               <button class="chip-clear" (click)="clearTypeFilter()" title="Typ-Filter entfernen">
                 <i class="fa-solid fa-xmark"></i> Typ fixiert

@@ -71,7 +71,7 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
 
   get isFleetCommander(): boolean {
-    return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38']);
+    return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38', 'ROLE_69']);
   }
 
   get canSeeReadiness(): boolean {

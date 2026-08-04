@@ -542,6 +542,126 @@ public class AssetQueryRepository {
     }
 
     // ==================================================================
+    // 8. Mitglieder-Sicht ("My Assets")
+    // ------------------------------------------------------------------
+    // Dieselben Auswertungen wie oben, aber hart auf einen Account begrenzt.
+    // Die Filter-Optionen duerfen hier NICHT die globalen Listen liefern:
+    // sonst saehe ein einfaches Mitglied ueber die Standort- und Regions-
+    // Dropdowns, wo die gesamte Corp ihre Sachen stehen hat.
+    // ==================================================================
+
+    /**
+     * Was "mein Account" bedeutet: der Main und alle seine Alts.
+     * Bewusst eine Konstante, damit die Definition an keiner Stelle abweicht.
+     */
+    private static final String MAIN_SCOPE = " COALESCE(c.main_character_id, c.character_id) = :mainId ";
+
+    public List<Tuple> distinctCategoriesForMain(Long mainId) {
+        return mainScopedTuples("""
+                SELECT DISTINCT cat."categoryID" AS "id", cat."categoryName" AS "name"
+                """ + BASE_FROM + " WHERE " + MAIN_SCOPE + """
+                  AND cat."categoryName" IS NOT NULL
+                ORDER BY 2
+                """, mainId);
+    }
+
+    public List<Tuple> distinctGroupsForMain(Long mainId, Long categoryId) {
+        String filter = categoryId != null ? " AND cat.\"categoryID\" = :categoryId " : "";
+        String sql = """
+                SELECT DISTINCT g."groupID" AS "id", g."groupName" AS "name"
+                """ + BASE_FROM + " WHERE " + MAIN_SCOPE + """
+                  AND g."groupName" IS NOT NULL
+                """ + filter + " ORDER BY 2";
+
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("mainId", mainId);
+        if (categoryId != null) q.setParameter("categoryId", categoryId);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
+    public List<Tuple> distinctLocationsForMain(Long mainId) {
+        return mainScopedTuples("""
+                SELECT DISTINCT a.root_location_id AS "id",
+                       COALESCE(loc.name, 'Unbekannter Ort (' || a.root_location_id || ')') AS "name"
+                """ + BASE_FROM + " WHERE " + MAIN_SCOPE + """
+                  AND a.root_location_id IS NOT NULL
+                ORDER BY 2
+                """, mainId);
+    }
+
+    public List<String> distinctRegionsForMain(Long mainId) {
+        return mainScopedStrings("""
+                SELECT DISTINCT loc.region_name
+                """ + BASE_FROM + " WHERE " + MAIN_SCOPE + """
+                  AND loc.region_name IS NOT NULL
+                ORDER BY 1
+                """, mainId);
+    }
+
+    public List<String> distinctLocationFlagsForMain(Long mainId) {
+        return mainScopedStrings("""
+                SELECT DISTINCT a.location_flag
+                """ + BASE_FROM + " WHERE " + MAIN_SCOPE + """
+                  AND a.location_flag IS NOT NULL
+                ORDER BY 1
+                """, mainId);
+    }
+
+    /** Die Charaktere des Accounts - fuer das "Charakter"-Dropdown der Mitglieder-Suche. */
+    public List<Tuple> charactersOfMain(Long mainId) {
+        String sql = """
+                SELECT c.character_id AS "id", c.name AS "name"
+                FROM characters c
+                WHERE COALESCE(c.main_character_id, c.character_id) = :mainId
+                ORDER BY 2
+                """;
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("mainId", mainId);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
+    public List<Tuple> suggestTypesForMain(Long mainId, String term, int limit) {
+        String sql = """
+                SELECT t."typeID" AS "typeId",
+                       t."typeName" AS "typeName",
+                       g."groupName" AS "groupName",
+                       COALESCE(SUM(a.quantity), 0) AS "quantity"
+                """ + BASE_FROM + " WHERE " + MAIN_SCOPE + """
+                  AND LOWER(t."typeName") LIKE LOWER(CONCAT('%', :term, '%'))
+                GROUP BY t."typeID", t."typeName", g."groupName"
+                ORDER BY LENGTH(t."typeName") ASC, 4 DESC
+                LIMIT :limit
+                """;
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("mainId", mainId);
+        q.setParameter("term", term == null ? "" : term);
+        q.setParameter("limit", limit);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
+    private List<Tuple> mainScopedTuples(String sql, Long mainId) {
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("mainId", mainId);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
+    private List<String> mainScopedStrings(String sql, Long mainId) {
+        Query q = em.createNativeQuery(sql);
+        q.setParameter("mainId", mainId);
+        @SuppressWarnings("unchecked")
+        List<String> res = q.getResultList();
+        return res;
+    }
+
+    // ==================================================================
     // Helfer
     // ==================================================================
     private String buildWhere(AssetDtos.AssetSearchRequest req, Map<String, Object> params) {

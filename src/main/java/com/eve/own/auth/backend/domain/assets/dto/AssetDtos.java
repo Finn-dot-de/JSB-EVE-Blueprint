@@ -233,6 +233,27 @@ public class AssetDtos {
 
     public record IdNameDto(Long id, String name) {}
 
+    // ------------------------------------------------------------------
+    // Mitglieder-Sicht ("My Assets")
+    // ------------------------------------------------------------------
+
+    /**
+     * Filter-Optionen der Mitglieder-Suche.
+     *
+     * <p>Bewusst ein eigener Typ statt {@link FilterOptionsDto}: dort stecken
+     * Corporation- und Main-Listen drin, die ein einfaches Mitglied nichts
+     * angehen. Hier gibt es stattdessen die eigenen Charaktere, und alle Listen
+     * enthalten nur Werte, die in den eigenen Assets auch vorkommen.</p>
+     */
+    public record MyFilterOptionsDto(
+            List<IdNameDto> categories,
+            List<IdNameDto> groups,
+            List<IdNameDto> locations,
+            List<String> regions,
+            List<String> locationFlags,
+            List<IdNameDto> characters
+    ) {}
+
     public record TypeSuggestionDto(Long typeId, String typeName, String groupName,
                                     String iconUrl, Long totalQuantity) {}
 }

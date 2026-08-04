@@ -62,4 +62,10 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/asset-audit/asset-audit.component').then(m => m.AssetAuditComponent)
   },
+  {
+    // Selbstauskunft: jedes Mitglied sieht hier ausschliesslich den eigenen Account.
+    path: 'my/assets',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/my-assets/my-assets.component').then(m => m.MyAssetsComponent)
+  },
 ];

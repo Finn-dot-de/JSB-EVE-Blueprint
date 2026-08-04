@@ -19,6 +19,118 @@
 
   <!-- ======================== USER ANSICHT ======================== -->
   @if (activeTab() === 'USER') {
+
+    <!-- ---------- Aufklappbare Corp-Rangliste ---------- -->
+    <div class="leaderboard-block">
+      <button class="leaderboard-toggle" (click)="toggleLeaderboard()"
+              [class.open]="showLeaderboard()">
+        <i class="fa-solid fa-trophy"></i>
+        <span class="toggle-text">
+          <strong>Mining-Rangliste der Corp</strong>
+          <small>Wer hat am meisten abgebaut?</small>
+        </span>
+        <i class="fa-solid fa-chevron-down chevron"></i>
+      </button>
+
+      @if (showLeaderboard()) {
+        <div class="surface-panel leaderboard-panel">
+
+          <div class="leaderboard-head">
+            <div class="form-group">
+              <label>Zeitraum</label>
+              <select [(ngModel)]="selectedLeaderMonth" (ngModelChange)="onLeaderMonthChange()">
+                @for (m of leaderboard()?.availableMonths ?? []; track m) {
+                  <option [ngValue]="m">{{ formatMonthLabel(m) }}</option>
+                }
+                <option [ngValue]="'ALL'">Gesamter Zeitraum</option>
+              </select>
+            </div>
+
+            <div class="metric-switch">
+              <button [class.active]="leaderMetric() === 'VOLUME'" (click)="setLeaderMetric('VOLUME')">
+                <i class="fa-solid fa-cube"></i> Volumen
+              </button>
+              <button [class.active]="leaderMetric() === 'VALUE'" (click)="setLeaderMetric('VALUE')">
+                <i class="fa-solid fa-coins"></i> ISK-Wert
+              </button>
+            </div>
+
+            @if (leaderboard(); as lb) {
+              <div class="leaderboard-total">
+                <span class="total-label">Corp gesamt</span>
+                <span class="total-value">
+                  @if (leaderMetric() === 'VOLUME') {
+                    {{ formatVolumeShort(lb.totalVolume) }}
+                  } @else {
+                    {{ formatIskShort(lb.totalValue) }}
+                  }
+                </span>
+              </div>
+            }
+          </div>
+
+          @if (loadingLeaderboard()) {
+            <div class="loading-container"><div class="loading-spinner"></div></div>
+          } @else if (leaderboard(); as lb) {
+            @if (lb.rows.length > 0) {
+              <div class="leader-list">
+                @for (row of lb.rows; track row.mainId) {
+                  <div class="leader-row" [class.me]="row.isMe" [class.podium]="row.rank <= 3">
+                    <div class="leader-rank" [attr.data-rank]="row.rank">
+                      @if (row.rank === 1) { 🥇 }
+                      @else if (row.rank === 2) { 🥈 }
+                      @else if (row.rank === 3) { 🥉 }
+                      @else { {{ row.rank }} }
+                    </div>
+
+                    <img class="leader-portrait" [src]="row.portraitUrl"
+                         (error)="onPortraitError($event)" [alt]="row.mainName" loading="lazy">
+
+                    <div class="leader-body">
+                      <div class="leader-name-row">
+                        <span class="leader-name">
+                          {{ row.mainName }}
+                          @if (row.isMe) { <span class="me-tag">DU</span> }
+                        </span>
+                        <span class="leader-value">{{ formatLeaderValue(row.volume, row.value) }}</span>
+                      </div>
+
+                      <div class="leader-bar-track">
+                        <div class="leader-bar-fill" [style.width]="leaderBarWidth(row.volume, row.value)"></div>
+                      </div>
+
+                      <div class="leader-meta">
+                        <span>{{ leaderShare(row.volume, row.value) }} der Corp</span>
+                        <span>
+                          @if (leaderMetric() === 'VOLUME') {
+                            {{ formatIskShort(row.value) }}
+                          } @else {
+                            {{ formatVolumeShort(row.volume) }}
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+
+              <p class="leaderboard-hint">
+                <i class="fa-solid fa-circle-info"></i>
+                Zusammengefasst pro Account (Main inkl. aller Alts). Bewertet mit den
+                gleichen Jita-Buy-Preisen wie die Steuerabrechnung. Grundlage ist das
+                Mining-Ledger aus ESI &ndash; das reicht nur eine begrenzte Zeit zurück.
+              </p>
+            } @else {
+              <div class="empty-leader">
+                <i class="fa-solid fa-pickaxe"></i>
+                <p>Für {{ formatMonthLabel(lb.month) }} liegen keine Mining-Daten vor.</p>
+              </div>
+            }
+          }
+        </div>
+      }
+    </div>
+
     @if (loadingLedger()) {
       <div class="loading-container"><div class="loading-spinner"></div></div>
     } @else if (myLedger().length > 0) {

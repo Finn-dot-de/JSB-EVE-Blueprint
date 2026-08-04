@@ -5,7 +5,8 @@ import {
   MiningService,
   MiningTaxRate,
   LedgerItemDto,
-  UserLedgerResponse, AdminLedgerSummaryDto
+  UserLedgerResponse, AdminLedgerSummaryDto,
+  MiningLeaderboardDto
 } from '../../services/mining.service';
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
@@ -38,6 +39,27 @@ export class MiningTaxComponent implements OnInit {
     const ledgers = this.myLedger();
     if (ledgers.length === 0) return null;
     return ledgers[this.selectedMonthIndex()];
+  });
+
+  // --- Rangliste (aufklappbar) ---
+  showLeaderboard = signal(false);
+  leaderboard = signal<MiningLeaderboardDto | null>(null);
+  loadingLeaderboard = signal(false);
+  /** Nach welcher Größe die Balken skalieren. */
+  leaderMetric = signal<'VOLUME' | 'VALUE'>('VOLUME');
+  selectedLeaderMonth: string | null = null;
+
+  /** Bezugsgröße für die Balkenbreite: der Spitzenreiter ist immer 100 %. */
+  leaderMax = computed(() => {
+    const rows = this.leaderboard()?.rows ?? [];
+    if (rows.length === 0) return 0;
+    return Math.max(...rows.map(r => this.leaderValue(r.volume, r.value)));
+  });
+
+  leaderTotal = computed(() => {
+    const lb = this.leaderboard();
+    if (!lb) return 0;
+    return this.leaderMetric() === 'VOLUME' ? lb.totalVolume : lb.totalValue;
   });
 
   // Admin State
@@ -96,6 +118,96 @@ export class MiningTaxComponent implements OnInit {
 
   getTotalVolume(details: LedgerItemDto[]): number {
     return details.reduce((sum, item) => sum + item.volume, 0);
+  }
+
+  // --- Rangliste ---
+
+  toggleLeaderboard() {
+    this.showLeaderboard.update(v => !v);
+    // Erst beim Aufklappen laden - die Rangliste soll die Seite nicht ausbremsen.
+    if (this.showLeaderboard() && !this.leaderboard()) {
+      this.loadLeaderboard();
+    }
+  }
+
+  loadLeaderboard() {
+    this.loadingLeaderboard.set(true);
+    this.miningService.getLeaderboard(this.selectedLeaderMonth).subscribe({
+      next: (data) => {
+        this.leaderboard.set(data);
+        // Beim ersten Laden übernimmt das Backend die Monatswahl (neuester Monat).
+        this.selectedLeaderMonth = data.month;
+        this.loadingLeaderboard.set(false);
+      },
+      error: () => {
+        this.loadingLeaderboard.set(false);
+        this.toastService.error('Die Mining-Rangliste konnte nicht geladen werden.');
+      }
+    });
+  }
+
+  onLeaderMonthChange() {
+    this.loadLeaderboard();
+  }
+
+  setLeaderMetric(metric: 'VOLUME' | 'VALUE') {
+    this.leaderMetric.set(metric);
+  }
+
+  /** Liefert je nach aktiver Metrik den Volumen- oder den ISK-Wert. */
+  leaderValue(volume: number, value: number): number {
+    return this.leaderMetric() === 'VOLUME' ? volume : value;
+  }
+
+  leaderBarWidth(volume: number, value: number): string {
+    const max = this.leaderMax();
+    if (!max || max <= 0) return '0%';
+    return Math.max(1.5, (this.leaderValue(volume, value) / max) * 100).toFixed(1) + '%';
+  }
+
+  leaderShare(volume: number, value: number): string {
+    const total = this.leaderTotal();
+    if (!total || total <= 0) return '0 %';
+    return ((this.leaderValue(volume, value) / total) * 100).toFixed(1) + ' %';
+  }
+
+  /** Formatiert den Wert der gerade aktiven Metrik. */
+  formatLeaderValue(volume: number, value: number): string {
+    return this.leaderMetric() === 'VOLUME'
+      ? this.formatVolume(volume)
+      : this.formatIskShort(value);
+  }
+
+  formatMonthLabel(month: string): string {
+    if (!month || month === 'ALL') return 'Gesamter Zeitraum';
+    const [year, m] = month.split('-');
+    const names = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+                   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+    const idx = Number(m) - 1;
+    return (names[idx] ?? month) + ' ' + year;
+  }
+
+  /** Kompakte ISK-Darstellung, damit die Balkenzeilen nicht überlaufen. */
+  formatIskShort(value: number | undefined): string {
+    if (value === undefined || value === null || isNaN(value)) return '0 ISK';
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000_000_000) return (value / 1_000_000_000_000).toFixed(2) + ' T ISK';
+    if (abs >= 1_000_000_000) return (value / 1_000_000_000).toFixed(2) + ' B ISK';
+    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' M ISK';
+    if (abs >= 1_000) return (value / 1_000).toFixed(1) + ' k ISK';
+    return value.toFixed(0) + ' ISK';
+  }
+
+  formatVolumeShort(value: number | undefined): string {
+    if (value === undefined || value === null || isNaN(value)) return '0 m³';
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' Mio m³';
+    if (abs >= 1_000) return (value / 1_000).toFixed(1) + ' k m³';
+    return value.toFixed(0) + ' m³';
+  }
+
+  onPortraitError(event: Event) {
+    (event.target as HTMLImageElement).src = 'https://images.evetech.net/characters/1/portrait?size=64';
   }
 
   // --- ADMIN LADEN ---

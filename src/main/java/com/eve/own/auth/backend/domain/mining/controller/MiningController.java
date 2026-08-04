@@ -257,6 +257,71 @@ public class MiningController {
     }
 
     // =============================================================
+    // MINING-RANGLISTE (fuer alle Mitglieder sichtbar)
+    // =============================================================
+
+    public record MiningLeaderRowDto(int rank, Long mainId, String mainName, String portraitUrl,
+                                     double volume, double value, long units, boolean isMe) {}
+
+    public record MiningLeaderboardDto(String month, List<String> availableMonths,
+                                       double totalVolume, double totalValue,
+                                       List<MiningLeaderRowDto> rows) {}
+
+    /**
+     * Wer hat am meisten abgebaut - aggregiert pro Account (Main + Alts).
+     *
+     * <p>Bewusst ohne Rollenpruefung: die Rangliste ist als Ansporn fuer alle
+     * Mitglieder gedacht. Sie zeigt ausschliesslich Abbaumenge und -wert, keine
+     * Steuerschulden oder Salden - die bleiben in den Admin-Bilanzen.</p>
+     *
+     * @param month "YYYY-MM" oder "ALL" fuer den gesamten verfuegbaren Zeitraum.
+     *              Ohne Angabe wird der neueste Monat mit Daten genommen.
+     */
+    @GetMapping("/leaderboard")
+    public ResponseEntity<MiningLeaderboardDto> getLeaderboard(@RequestParam(required = false) String month) {
+        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+        Long myMainId = characterRepo.findById(charId)
+                .map(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId())
+                .orElse(null);
+
+        List<String> availableMonths = characterMiningRepo.findAvailableMiningMonths();
+
+        // Ohne Vorgabe den neuesten Monat zeigen - "ALL" waere als Einstieg
+        // wenig aussagekraeftig, weil ESI je nach Charakter unterschiedlich
+        // weit zurueckreichende Ledger liefert.
+        String selected = (month == null || month.isBlank())
+                ? (availableMonths.isEmpty() ? "ALL" : availableMonths.get(0))
+                : month.trim();
+
+        List<Object[]> rows = characterMiningRepo.aggregateMiningByAccount(selected);
+
+        double totalVolume = 0;
+        double totalValue = 0;
+        List<MiningLeaderRowDto> result = new ArrayList<>();
+
+        int rank = 1;
+        for (Object[] row : rows) {
+            Long mainId = ((Number) row[0]).longValue();
+            String mainName = row[1] != null ? String.valueOf(row[1]) : ("Account " + mainId);
+            double volume = row[2] != null ? ((Number) row[2]).doubleValue() : 0d;
+            double value = row[3] != null ? ((Number) row[3]).doubleValue() : 0d;
+            long units = row[4] != null ? ((Number) row[4]).longValue() : 0L;
+
+            totalVolume += volume;
+            totalValue += value;
+
+            result.add(new MiningLeaderRowDto(
+                    rank++, mainId, mainName,
+                    "https://images.evetech.net/characters/" + mainId + "/portrait?size=64",
+                    volume, value, units,
+                    mainId.equals(myMainId)));
+        }
+
+        return ResponseEntity.ok(new MiningLeaderboardDto(
+                selected, availableMonths, totalVolume, totalValue, result));
+    }
+
+    // =============================================================
     // ADMIN ENDPUNKTE (Prozente)
     // =============================================================
 

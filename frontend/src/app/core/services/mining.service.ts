@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
@@ -34,6 +34,26 @@ export interface MiningTaxRate {
   category: string;
   taxPercentage: number;
   currentJitaBuy: number;
+}
+
+/** Eine Zeile der Mining-Rangliste (ein Account: Main + Alts zusammengefasst). */
+export interface MiningLeaderRowDto {
+  rank: number;
+  mainId: number;
+  mainName: string;
+  portraitUrl: string;
+  volume: number;   // m³
+  value: number;    // ISK (Jita Buy)
+  units: number;    // abgebaute Einheiten
+  isMe: boolean;
+}
+
+export interface MiningLeaderboardDto {
+  month: string;              // "YYYY-MM" oder "ALL"
+  availableMonths: string[];
+  totalVolume: number;
+  totalValue: number;
+  rows: MiningLeaderRowDto[];
 }
 
 export interface AdminLedgerSummaryDto {
@@ -75,6 +95,13 @@ export class MiningService {
 
   getAdminLedgers(): Observable<AdminLedgerSummaryDto[]> {
     return this.http.get<AdminLedgerSummaryDto[]>(`${this.apiUrl}/admin/ledgers`);
+  }
+
+  /** Rangliste "wer hat am meisten abgebaut". month: "YYYY-MM" oder "ALL". */
+  getLeaderboard(month?: string | null): Observable<MiningLeaderboardDto> {
+    let params = new HttpParams();
+    if (month) params = params.set('month', month);
+    return this.http.get<MiningLeaderboardDto>(`${this.apiUrl}/leaderboard`, { params });
   }
 
 }

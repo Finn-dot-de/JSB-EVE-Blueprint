@@ -15,18 +15,29 @@ public interface CharacterAssetRepository extends JpaRepository<CharacterAsset, 
     @Query("DELETE FROM CharacterAsset a WHERE a.characterId = :characterId")
     void deleteByCharacterId(Long characterId);
 
-    // nativeQuery, um das evesde-Schema direkt mit maximaler SQL-Performance zu joinen!
+    /**
+     * Die Schiffsbestaende eines Accounts, verdichtet auf SDE-Gruppen.
+     *
+     * <p>Als native Query, um das {@code evesde}-Schema direkt zu joinen.
+     * Kategorie 6 sind die Schiffe - alles andere waere fuer die Uebersicht des
+     * Dashboards ohnehin nur Rauschen.</p>
+     *
+     * <p>Spalten der Ergebniszeilen: [0] Gruppenname, [1] Menge.</p>
+     *
+     * <p>Die Abfrage lieferte frueher zusaetzlich eine fertige Bild-URL, die
+     * niemand gelesen hat. Sie zwang die Gruppierung auf die einzelne typeID
+     * herunter und damit zu einem Vielfachen der noetigen Zeilen - je Gruppe
+     * eine pro Schiffstyp statt einer einzigen.</p>
+     */
     @Query(value = """
-        SELECT 
-            g."groupName" as groupName, 
-            SUM(a.quantity) as quantity,
-            'https://images.evetech.net/types/' || t."typeID" || '/icon?size=64' as imageUrl
+        SELECT g."groupName" AS groupName,
+               SUM(a.quantity) AS quantity
         FROM character_assets a
         JOIN evesde."invTypes" t ON a.type_id = t."typeID"
         JOIN evesde."invGroups" g ON t."groupID" = g."groupID"
-        WHERE a.character_id IN (:characterIds) 
+        WHERE a.character_id IN (:characterIds)
           AND g."categoryID" = 6
-        GROUP BY g."groupName", t."typeID"
+        GROUP BY g."groupName"
         ORDER BY quantity DESC
         """, nativeQuery = true)
     List<Object[]> aggregateAssetsByGroup(List<Long> characterIds);

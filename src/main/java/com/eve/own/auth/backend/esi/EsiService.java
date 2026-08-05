@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.time.Instant;
 
 /**
  * Typisierte Sicht auf die ESI-Endpunkte.
@@ -231,7 +232,7 @@ public class EsiService {
     public record EsiIdName(Long id, String name, String category) {}
     public record EsiOnlineResponse(Boolean online, String last_login, String last_logout, Integer logins) {}
     public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}
-    public record EsiFleetMemberResponse(Long character_id, java.time.Instant join_time, String role, Long ship_type_id, Long solar_system_id) {}
+    public record EsiFleetMemberResponse(Long character_id, Instant join_time, String role, Long ship_type_id, Long solar_system_id) {}
     public record EsiCorpTitleResponse(Long title_id, String name) {}
     public record EsiTitleResponse(Long title_id, String name) {}
     public record EsiMiningResponse(String date, Long quantity, Long solar_system_id, Long type_id) {}

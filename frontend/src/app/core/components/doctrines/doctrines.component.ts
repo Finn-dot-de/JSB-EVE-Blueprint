@@ -5,6 +5,7 @@ import { DoctrineService, FleetDoctrine } from '../../services/doctrine.service'
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
 import { ConfirmService } from '../../services/confirm.service';
+import { typeRender } from '../../shared/eve-image.util';
 
 @Component({
   selector: 'app-doctrines',
@@ -18,6 +19,9 @@ export class DoctrinesComponent implements OnInit {
   private doctrineService = inject(DoctrineService);
   private toastService = inject(ToastService);
   private confirmService = inject(ConfirmService);
+
+  protected readonly typeRender = typeRender;
+
 
   doctrines = signal<FleetDoctrine[]>([]);
 

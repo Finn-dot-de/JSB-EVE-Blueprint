@@ -58,7 +58,7 @@
         <div class="details-header">
           <div class="doc-image-box large">
             @if (doc.shipTypeId) {
-              <img [src]="'https://images.evetech.net/types/' + doc.shipTypeId + '/render?size=128'" [alt]="doc.shipType">
+              <img [src]="typeRender(doc.shipTypeId, 128)" [alt]="doc.shipType">
             } @else {
               <i class="fa-solid fa-rocket" style="font-size: 3rem; color: var(--text-secondary);"></i>
             }
@@ -108,7 +108,7 @@
               <div class="doc-header">
                 <div class="doc-image-box">
                   @if (doc.shipTypeId) {
-                    <img [src]="'https://images.evetech.net/types/' + doc.shipTypeId + '/render?size=64'" [alt]="doc.shipType">
+                    <img [src]="typeRender(doc.shipTypeId, 64)" [alt]="doc.shipType">
                   } @else {
                     <i class="fa-solid fa-rocket" style="font-size: 2rem; color: var(--text-secondary);"></i>
                   }

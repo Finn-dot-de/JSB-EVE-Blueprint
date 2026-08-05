@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.fleet.service;
 
+import com.eve.own.auth.backend.common.EveImageUrls;
 import com.eve.own.auth.backend.domain.fleet.dto.ReadinessDtos;
 import com.eve.own.auth.backend.domain.fleet.repository.ReadinessQueryRepository;
 import jakarta.persistence.Tuple;
@@ -7,7 +8,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -260,11 +269,11 @@ public class EftParserService {
     }
 
     static String icon(Long typeId) {
-        return "https://images.evetech.net/types/" + typeId + "/icon?size=64";
+        return EveImageUrls.typeIcon(typeId);
     }
 
     static String render(Long typeId) {
-        return "https://images.evetech.net/types/" + typeId + "/render?size=256";
+        return EveImageUrls.typeRender(typeId);
     }
 
     private static Long lng(Tuple t, String alias) {

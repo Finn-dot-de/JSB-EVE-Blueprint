@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 @Service
 public class DiscordBotService {
@@ -63,7 +64,7 @@ public class DiscordBotService {
 
     // 3. User auf den Server einladen (JETZT MIT NICKNAME)
     public void addMemberToServer(String discordUserId, String userAccessToken, List<String> discordRoleIds, String nickname) {
-        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        Map<String, Object> body = new HashMap<>();
         body.put("access_token", userAccessToken);
         body.put("roles", discordRoleIds);
         if (nickname != null && !nickname.isBlank()) {
@@ -80,7 +81,7 @@ public class DiscordBotService {
 
     // 4. Rollen und Nickname synchronisieren
     public void syncMemberData(String discordUserId, List<String> discordRoleIds, String nickname) {
-        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        Map<String, Object> body = new HashMap<>();
         body.put("roles", discordRoleIds);
         if (nickname != null && !nickname.isBlank()) {
             body.put("nick", nickname.length() > 32 ? nickname.substring(0, 32) : nickname);

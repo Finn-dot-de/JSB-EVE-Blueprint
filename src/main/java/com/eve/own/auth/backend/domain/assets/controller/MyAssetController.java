@@ -1,19 +1,20 @@
 package com.eve.own.auth.backend.domain.assets.controller;
 
+import com.eve.own.auth.backend.common.CurrentUser;
 import com.eve.own.auth.backend.domain.assets.dto.AssetDtos;
 import com.eve.own.auth.backend.domain.assets.service.MyAssetService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Selbstauskunft ueber die eigenen Assets - fuer jedes eingeloggte Mitglied.
@@ -36,23 +37,10 @@ public class MyAssetController {
     /** UTF-8 BOM, damit Excel die Umlaute im CSV korrekt interpretiert. */
     private static final String BOM = "﻿";
 
-
     private final MyAssetService myAssetService;
 
     public MyAssetController(MyAssetService myAssetService) {
         this.myAssetService = myAssetService;
-    }
-
-    /**
-     * Die characterId steckt als Principal im JWT (siehe JwtAuthenticationFilter).
-     * Sie ist die einzige vertrauenswuerdige Quelle fuer den Scope.
-     */
-    private Long currentCharacterId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !(auth.getPrincipal() instanceof Long characterId)) {
-            throw new IllegalStateException("Kein authentifizierter Charakter im Kontext.");
-        }
-        return characterId;
     }
 
     // ------------------------------------------------------------------
@@ -60,7 +48,7 @@ public class MyAssetController {
     // ------------------------------------------------------------------
 
     @GetMapping("/search")
-    public ResponseEntity<?> search(
+    public ResponseEntity<AssetDtos.PageDto<?>> search(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Long typeId,
             @RequestParam(required = false) Long groupId,
@@ -85,16 +73,10 @@ public class MyAssetController {
                 locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
                 null, sort, direction, page, size, grouped);
 
-        try {
-            Long me = currentCharacterId();
-            return ResponseEntity.ok(Boolean.TRUE.equals(grouped)
-                    ? myAssetService.searchGrouped(me, req)
-                    : myAssetService.search(me, req));
-        } catch (Exception e) {
-            log.error("Eigene Asset-Suche fehlgeschlagen", e);
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("message", "Suche fehlgeschlagen: " + e.getMessage()));
-        }
+        Long me = CurrentUser.characterId();
+        return ResponseEntity.ok(Boolean.TRUE.equals(grouped)
+                ? myAssetService.searchGrouped(me, req)
+                : myAssetService.search(me, req));
     }
 
     /** Typeahead ueber die Items, die im eigenen Bestand tatsaechlich liegen. */
@@ -103,7 +85,7 @@ public class MyAssetController {
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "15") int limit) {
         return ResponseEntity.ok(
-                myAssetService.suggestTypes(currentCharacterId(), q, Math.min(limit, 50)));
+                myAssetService.suggestTypes(CurrentUser.characterId(), q, Math.min(limit, 50)));
     }
 
     // ------------------------------------------------------------------
@@ -111,20 +93,14 @@ public class MyAssetController {
     // ------------------------------------------------------------------
 
     @GetMapping("/summary")
-    public ResponseEntity<?> summary() {
-        try {
-            return ResponseEntity.ok(myAssetService.summary(currentCharacterId()));
-        } catch (Exception e) {
-            log.error("Eigene Asset-Uebersicht fehlgeschlagen", e);
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("message", "Auswertung fehlgeschlagen: " + e.getMessage()));
-        }
+    public ResponseEntity<AssetDtos.MemberAssetDetailDto> summary() {
+        return ResponseEntity.ok(myAssetService.summary(CurrentUser.characterId()));
     }
 
     @GetMapping("/filters")
     public ResponseEntity<AssetDtos.MyFilterOptionsDto> filters(
             @RequestParam(required = false) Long categoryId) {
-        return ResponseEntity.ok(myAssetService.filterOptions(currentCharacterId(), categoryId));
+        return ResponseEntity.ok(myAssetService.filterOptions(CurrentUser.characterId(), categoryId));
     }
 
     // ------------------------------------------------------------------
@@ -153,7 +129,7 @@ public class MyAssetController {
                 locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
                 null, sort, direction, 0, 500, grouped);
 
-        String csv = myAssetService.exportCsv(currentCharacterId(), req);
+        String csv = myAssetService.exportCsv(CurrentUser.characterId(), req);
         // BOM, damit Excel die Umlaute korrekt als UTF-8 liest
         byte[] body = (BOM + csv).getBytes(StandardCharsets.UTF_8);
 

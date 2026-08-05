@@ -1,3 +1,4 @@
+@use '../../shared/tokens' as tokens;
 // Variablen für ein konsistentes Theme
 $bg-color: #1a1b26;
 $border-color: #2e3146;
@@ -5,7 +6,7 @@ $text-primary: #a9b1d6;
 $text-secondary: #717c9e;
 $danger-color: #f7768e;
 $danger-hover: #db506a;
-$eve-green: #00dfa2;
+$eve-green: tokens.$success;
 $hover-bg: rgba(255, 255, 255, 0.05);
 
 .navbar {

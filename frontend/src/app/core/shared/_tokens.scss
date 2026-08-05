@@ -1,0 +1,20 @@
+// Die Farbpalette der Anwendung - die einzige Stelle, an der ein Farbwert steht.
+//
+// Zwei Wege führen zu diesen Farben:
+//   * über die CSS-Variablen aus styles.scss (`var(--success-color)`) - der
+//     Regelfall, weil sie dem Theme-Wechsel folgen,
+//   * über die SCSS-Variablen hier - nur dort nötig, wo SCSS-Farbfunktionen wie
+//     `rgba()` zum Einsatz kommen. Die können mit einer CSS-Variable nicht
+//     rechnen, weil deren Wert erst im Browser feststeht.
+
+/// Erfolg, positive Kennzahlen, "bereit". Das Grün der EVE-Oberfläche.
+$success: #00dfa2;
+
+/// Fehler, Schulden, "nicht bereit".
+$danger: #ff3366;
+
+/// Warnung und Zwischenzustände.
+$warning: #ffb020;
+
+/// Hervorhebung im Sinne von "besonders" - etwa der eigene Eintrag in Ranglisten.
+$highlight: #f5a623;

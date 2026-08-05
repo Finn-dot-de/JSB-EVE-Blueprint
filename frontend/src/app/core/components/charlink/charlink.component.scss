@@ -47,7 +47,7 @@
   font-size: 1.1rem;
 
   &:hover {
-    color: #00dfa2; /* EVE Green */
+    color: var(--success-color); /* EVE Green */
     border-color: rgba(0, 223, 162, 0.4);
     background-color: rgba(0, 223, 162, 0.1);
   }

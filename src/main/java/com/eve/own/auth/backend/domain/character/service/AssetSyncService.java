@@ -17,6 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -74,13 +77,13 @@ public class AssetSyncService {
 
         // 1. Was haben wir schon in der Datenbank?
         List<CharacterMining> existingList = miningRepo.findByCharacterId(characterId);
-        java.util.Map<String, CharacterMining> existingMap = new java.util.HashMap<>();
+        Map<String, CharacterMining> existingMap = new HashMap<>();
         for (CharacterMining m : existingList) {
             existingMap.put(m.getDate() + "_" + m.getTypeId(), m);
         }
 
         // 2. Ersetzen oder Ergänzen (Merge)
-        List<CharacterMining> toSave = new java.util.ArrayList<>();
+        List<CharacterMining> toSave = new ArrayList<>();
         for (CharacterMining newM : newMiningList) {
             String key = newM.getDate() + "_" + newM.getTypeId();
             CharacterMining ex = existingMap.get(key);
@@ -106,7 +109,7 @@ public class AssetSyncService {
                 .filter(a -> "TAX_PAYMENT".equals(a.getActivityType()))
                 .toList();
 
-        List<CharacterActivity> toSave = new java.util.ArrayList<>();
+        List<CharacterActivity> toSave = new ArrayList<>();
         for (CharacterActivity act : newActivities) {
             if ("TAX_PAYMENT".equals(act.getActivityType())) {
                 boolean exists = existingTaxes.stream().anyMatch(ex ->

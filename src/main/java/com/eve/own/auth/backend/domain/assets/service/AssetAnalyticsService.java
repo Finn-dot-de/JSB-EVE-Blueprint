@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.assets.service;
 
+import com.eve.own.auth.backend.common.EveImageUrls;
 import com.eve.own.auth.backend.domain.assets.dto.AssetDtos;
 import com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository;
 import com.eve.own.auth.backend.domain.fleet.entity.FleetDoctrine;
@@ -9,9 +10,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
-import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.*;
+import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.bool;
+import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.dbl;
+import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.lng;
+import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.str;
 
 /**
  * Fachlogik der Asset-Auswertung fuer Directors.
@@ -28,18 +39,6 @@ public class AssetAnalyticsService {
         this.doctrineRepo = doctrineRepo;
     }
 
-    private static String portrait(Long characterId, int size) {
-        return "https://images.evetech.net/characters/" + characterId + "/portrait?size=" + size;
-    }
-
-    /** Corp-Hangars bekommen das Corporation-Logo statt eines Portraets. */
-    private static String corpLogo(Long corporationId, int size) {
-        return "https://images.evetech.net/corporations/" + corporationId + "/logo?size=" + size;
-    }
-
-    private static String typeIcon(Long typeId) {
-        return "https://images.evetech.net/types/" + typeId + "/icon?size=64";
-    }
 
     // ==================================================================
     // Suche
@@ -102,13 +101,13 @@ public class AssetAnalyticsService {
                 .sorted(Comparator.comparingLong((MainAcc m) -> m.quantity).reversed())
                 .map(m -> new AssetDtos.HolderDto(
                         m.mainId, m.mainName,
-                        m.isCorp ? corpLogo(m.mainId, 64) : portrait(m.mainId, 64),
+                        EveImageUrls.ownerImage(m.mainId, m.isCorp),
                         m.corporationName, m.isCorp,
                         m.quantity, m.value,
                         m.characters.values().stream()
                                 .sorted(Comparator.comparingLong((CharAcc c) -> c.quantity).reversed())
                                 .map(c -> new AssetDtos.HolderCharacterDto(
-                                        c.characterId, c.characterName, portrait(c.characterId, 64),
+                                        c.characterId, c.characterName, EveImageUrls.portrait(c.characterId),
                                         c.quantity, c.locations))
                                 .toList()
                 ))
@@ -117,7 +116,7 @@ public class AssetAnalyticsService {
         long totalQty = holders.stream().mapToLong(AssetDtos.HolderDto::totalQuantity).sum();
         double totalValue = holders.stream().mapToDouble(AssetDtos.HolderDto::totalValue).sum();
 
-        return new AssetDtos.TypeHoldersDto(typeId, typeName, groupName, typeIcon(typeId),
+        return new AssetDtos.TypeHoldersDto(typeId, typeName, groupName, EveImageUrls.typeIcon(typeId),
                 unitPrice, totalQty, totalValue, holders.size(), holders);
     }
 
@@ -169,7 +168,7 @@ public class AssetAnalyticsService {
                 queryRepo.topTypes(15).stream()
                         .map(t -> new AssetDtos.TopTypeDto(
                                 lng(t, "typeId"), str(t, "typeName"), str(t, "groupName"),
-                                typeIcon(lng(t, "typeId")), lng(t, "quantity"),
+                                EveImageUrls.typeIcon(lng(t, "typeId")), lng(t, "quantity"),
                                 dbl(t, "value"), lng(t, "holders")))
                         .toList(),
                 queryRepo.topHolders(15).stream()
@@ -180,7 +179,7 @@ public class AssetAnalyticsService {
                             Long ownerId = lng(t, "mainId");
                             return new AssetDtos.TopHolderDto(
                                     ownerId, str(t, "mainName"),
-                                    isCorp ? corpLogo(ownerId, 64) : portrait(ownerId, 64),
+                                    EveImageUrls.ownerImage(ownerId, isCorp),
                                     str(t, "corporationName"), isCorp,
                                     lng(t, "stacks"), dbl(t, "value"));
                         })
@@ -225,7 +224,7 @@ public class AssetAnalyticsService {
         String corpName = topItems.content().isEmpty() ? null : topItems.content().getFirst().corporationName();
 
         return new AssetDtos.MemberAssetDetailDto(
-                mainId, mainName, portrait(mainId, 128), corpName,
+                mainId, mainName, EveImageUrls.portrait(mainId, EveImageUrls.SIZE_LARGE), corpName,
                 totalValue, totalStacks, byCategory, byLocation, topItems.content());
     }
 
@@ -262,7 +261,7 @@ public class AssetAnalyticsService {
         }
 
         List<AssetDtos.DoctrineShipDto> required = shipNames.entrySet().stream()
-                .map(e -> new AssetDtos.DoctrineShipDto(e.getKey(), e.getValue(), typeIcon(e.getKey()), 0L))
+                .map(e -> new AssetDtos.DoctrineShipDto(e.getKey(), e.getValue(), EveImageUrls.typeIcon(e.getKey()), 0L))
                 .toList();
 
         if (shipNames.isEmpty()) {
@@ -284,12 +283,12 @@ public class AssetAnalyticsService {
                 .map(acc -> {
                     List<AssetDtos.DoctrineShipDto> ships = shipNames.entrySet().stream()
                             .map(e -> new AssetDtos.DoctrineShipDto(
-                                    e.getKey(), e.getValue(), typeIcon(e.getKey()),
+                                    e.getKey(), e.getValue(), EveImageUrls.typeIcon(e.getKey()),
                                     acc.owned.getOrDefault(e.getKey(), 0L)))
                             .toList();
                     int ownedCount = (int) ships.stream().filter(s -> s.owned() > 0).count();
                     return new AssetDtos.DoctrineReadinessRowDto(
-                            acc.mainId, acc.mainName, portrait(acc.mainId, 64), acc.corporationName,
+                            acc.mainId, acc.mainName, EveImageUrls.portrait(acc.mainId), acc.corporationName,
                             ownedCount, shipsTotal,
                             shipsTotal == 0 ? 0d : (double) ownedCount / shipsTotal,
                             ships);
@@ -344,7 +343,7 @@ public class AssetAnalyticsService {
         return queryRepo.suggestTypes(term, limit).stream()
                 .map(t -> new AssetDtos.TypeSuggestionDto(
                         lng(t, "typeId"), str(t, "typeName"), str(t, "groupName"),
-                        typeIcon(lng(t, "typeId")), lng(t, "quantity")))
+                        EveImageUrls.typeIcon(lng(t, "typeId")), lng(t, "quantity")))
                 .toList();
     }
 

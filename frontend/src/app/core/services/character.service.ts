@@ -3,14 +3,14 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
-export interface AltDto {
-  id: number;
-  name: string;
-  portraitUrl: string;
-  isMain: boolean;
-}
-
-export interface AuthedAltDto {
+/**
+ * Ein Charakter eines Accounts.
+ *
+ * <p>Ersetzt die frueheren, feldgleichen Typen `AltDto` und `AuthedAltDto` -
+ * zwei Namen fuer dieselbe Antwort. Spiegelt `CharacterDtos.CharacterRefDto`
+ * im Backend.</p>
+ */
+export interface CharacterRefDto {
   id: number;
   name: string;
   portraitUrl: string;
@@ -21,7 +21,7 @@ export interface AuthedMainDto {
   mainId: number;
   mainName: string;
   portraitUrl: string;
-  alts: AuthedAltDto[];
+  alts: CharacterRefDto[];
 }
 
 export interface UnauthedCharDto {
@@ -61,8 +61,8 @@ export class CharacterService {
   private http = inject(HttpClient);
   private apiUrl = `${environment.apiUrl}/characters`;
 
-  getMyAlts(): Observable<AltDto[]> {
-    return this.http.get<AltDto[]>(`${this.apiUrl}/alts`);
+  getMyAlts(): Observable<CharacterRefDto[]> {
+    return this.http.get<CharacterRefDto[]>(`${this.apiUrl}/alts`);
   }
 
   getCorpStats(): Observable<CorpStatsDto[]> {

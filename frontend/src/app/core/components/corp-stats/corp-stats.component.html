@@ -33,7 +33,7 @@
             <div class="clickable-header" (click)="toggleCorp(s.corpId)">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
                 <div style="display: flex; align-items: center; gap: 1rem;">
-                  <img [src]="'https://images.evetech.net/corporations/' + s.corpId + '/logo?size=64'" alt="Logo" style="width: 48px; height: 48px; border-radius: 6px;">
+                  <img [src]="corporationLogo(s.corpId)" alt="Logo" style="width: 48px; height: 48px; border-radius: 6px;">
                   <h2 style="margin: 0; color: var(--text-primary);">{{ s.corpName }}</h2>
                 </div>
                 <i class="fa-solid fa-chevron-down expand-icon" [class.rotated]="expandedCorpId() === s.corpId"></i>

@@ -1,5 +1,7 @@
 package com.eve.own.auth.backend.domain.assets.controller;
 
+import com.eve.own.auth.backend.common.AccessRules;
+import com.eve.own.auth.backend.common.ApiError;
 import com.eve.own.auth.backend.domain.assets.dto.AssetDtos;
 import com.eve.own.auth.backend.domain.assets.service.AssetAnalyticsService;
 import com.eve.own.auth.backend.domain.assets.service.AssetLocationService;
@@ -8,7 +10,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -17,7 +24,7 @@ import java.util.List;
 @Slf4j
 @RestController
 @RequestMapping("/api/assets")
-@PreAuthorize("hasAnyAuthority('ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN')")
+@PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
 public class AssetController {
 
     private final AssetAnalyticsService analyticsService;
@@ -38,7 +45,7 @@ public class AssetController {
      * Beispiel: /api/assets/search?q=Nestor&sort=value&direction=desc
      */
     @GetMapping("/search")
-    public ResponseEntity<?> search(
+    public ResponseEntity<AssetDtos.PageDto<?>> search(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Long typeId,
             @RequestParam(required = false) Long groupId,
@@ -64,15 +71,9 @@ public class AssetController {
                 locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
                 ownerType, sort, direction, page, size, grouped);
 
-        try {
-            return ResponseEntity.ok(Boolean.TRUE.equals(grouped)
-                    ? analyticsService.searchGrouped(req)
-                    : analyticsService.search(req));
-        } catch (Exception e) {
-            log.error("Asset-Suche fehlgeschlagen", e);
-            return ResponseEntity.internalServerError()
-                    .body(java.util.Map.of("message", "Asset-Suche fehlgeschlagen: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(Boolean.TRUE.equals(grouped)
+                ? analyticsService.searchGrouped(req)
+                : analyticsService.search(req));
     }
 
     /** Typeahead ueber die Items, die tatsaechlich vorhanden sind. */
@@ -97,14 +98,8 @@ public class AssetController {
     // ------------------------------------------------------------------
 
     @GetMapping("/summary")
-    public ResponseEntity<?> summary() {
-        try {
-            return ResponseEntity.ok(analyticsService.summary());
-        } catch (Exception e) {
-            log.error("Asset-Summary fehlgeschlagen", e);
-            return ResponseEntity.internalServerError()
-                    .body(java.util.Map.of("message", "Auswertung fehlgeschlagen: " + e.getMessage()));
-        }
+    public ResponseEntity<AssetDtos.SummaryDto> summary() {
+        return ResponseEntity.ok(analyticsService.summary());
     }
 
     @GetMapping("/filters")
@@ -179,9 +174,9 @@ public class AssetController {
 
     /** Manueller Anstoss der Standort-Aufloesung (z.B. nach neuem Docking-Access). */
     @PostMapping("/locations/resolve")
-    @PreAuthorize("hasAnyAuthority('ROLE_CEO', 'ROLE_IT_ADMIN')")
-    public ResponseEntity<?> resolveLocations() {
+    @PreAuthorize(AccessRules.COMMAND)
+    public ResponseEntity<ApiError> resolveLocations() {
         locationService.resolvePendingLocations();
-        return ResponseEntity.ok(java.util.Map.of("message", "Standort-Aufloesung gestartet."));
+        return ResponseEntity.ok(new ApiError("Standort-Aufloesung gestartet."));
     }
 }

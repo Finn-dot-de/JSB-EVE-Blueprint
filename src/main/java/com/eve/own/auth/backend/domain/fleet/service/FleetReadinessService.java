@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.fleet.service;
 
+import com.eve.own.auth.backend.common.EveImageUrls;
 import com.eve.own.auth.backend.domain.fleet.dto.ReadinessDtos;
 import com.eve.own.auth.backend.domain.fleet.entity.FleetDoctrine;
 import com.eve.own.auth.backend.domain.fleet.repository.FleetDoctrineRepository;
@@ -9,7 +10,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -101,7 +112,7 @@ public class FleetReadinessService {
                 if (hasData && met > bestMet) bestMet = met;
 
                 characters.add(new ReadinessDtos.CharacterReadinessDto(
-                        ref.characterId(), ref.name(), portrait(ref.characterId()), ref.main(),
+                        ref.characterId(), ref.name(), EveImageUrls.portrait(ref.characterId()), ref.main(),
                         owned, hasData, canFly, met, skillsRequired, gaps));
             }
 
@@ -118,7 +129,7 @@ public class FleetReadinessService {
                     .thenComparing(ReadinessDtos.CharacterReadinessDto::characterName, String.CASE_INSENSITIVE_ORDER));
 
             ReadinessDtos.AccountReadinessDto row = new ReadinessDtos.AccountReadinessDto(
-                    account.mainId, account.mainName, portrait(account.mainId), account.corporationName,
+                    account.mainId, account.mainName, EveImageUrls.portrait(account.mainId), account.corporationName,
                     accountOwned, charactersOwning, accountCanFly, pilotsCapable, accountAnySkillData,
                     bestMet, skillsRequired, hasShip, hasSkills, isReady, characters);
 
@@ -280,9 +291,6 @@ public class FleetReadinessService {
         }
     }
 
-    private static String portrait(Long characterId) {
-        return "https://images.evetech.net/characters/" + characterId + "/portrait?size=64";
-    }
 
     private static Long lng(Tuple t, String alias) {
         Object v = t.get(alias);

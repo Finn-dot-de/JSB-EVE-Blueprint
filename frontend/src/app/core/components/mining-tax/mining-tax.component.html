@@ -60,9 +60,9 @@
                 <span class="total-label">Corp gesamt</span>
                 <span class="total-value">
                   @if (leaderMetric() === 'VOLUME') {
-                    {{ formatVolumeShort(lb.totalVolume) }}
+                    {{ formatVolumeCompact(lb.totalVolume) }}
                   } @else {
-                    {{ formatIskShort(lb.totalValue) }}
+                    {{ formatIsk(lb.totalValue) }}
                   }
                 </span>
               </div>
@@ -103,9 +103,9 @@
                         <span>{{ leaderShare(row.volume, row.value) }} der Corp</span>
                         <span>
                           @if (leaderMetric() === 'VOLUME') {
-                            {{ formatIskShort(row.value) }}
+                            {{ formatIsk(row.value) }}
                           } @else {
-                            {{ formatVolumeShort(row.volume) }}
+                            {{ formatVolumeCompact(row.volume) }}
                           }
                         </span>
                       </div>
@@ -142,16 +142,16 @@
             <div>
               <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">Corp Master Wallet Konto</h3>
               <div style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">
-                Zeitraum-Steuern: {{ formatIsk(data.totalDebt) }} | Geleistete Zahlungen: {{ formatIsk(data.totalPaid) }}
+                Zeitraum-Steuern: {{ formatIskFull(data.totalDebt) }} | Geleistete Zahlungen: {{ formatIskFull(data.totalPaid) }}
               </div>
             </div>
             <div style="text-align: right;">
               <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary);">Aktueller Saldo</div>
               <div style="font-size: 1.8rem; font-weight: 700;" [style.color]="data.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
                 @if (data.currentBalance >= 0) {
-                  + {{ formatIsk(data.currentBalance) }} (Guthaben)
+                  + {{ formatIskFull(data.currentBalance) }} (Guthaben)
                 } @else {
-                  {{ formatIsk(data.currentBalance) }} (Schulden)
+                  {{ formatIskFull(data.currentBalance) }} (Schulden)
                 }
               </div>
             </div>
@@ -182,12 +182,12 @@
             }
 
             <div style="font-size: 3rem; font-weight: 700; margin: 0.5rem 0;" [style.color]="monthLedger.isPaid ? '#00dfa2' : '#ff3366'">
-              {{ formatIsk(monthLedger.totalTax) }}
+              {{ formatIskFull(monthLedger.totalTax) }}
             </div>
 
             <div style="display: flex; justify-content: center; gap: 2rem; color: var(--text-secondary); font-size: 0.95rem; margin-top: 1.5rem;">
-              <span><strong>Bezahlt:</strong> {{ formatIsk(monthLedger.taxPaid) }}</span>
-              <span><strong>Fehlt noch:</strong> {{ formatIsk(monthLedger.totalTax - monthLedger.taxPaid > 0 ? monthLedger.totalTax - monthLedger.taxPaid : 0) }}</span>
+              <span><strong>Bezahlt:</strong> {{ formatIskFull(monthLedger.taxPaid) }}</span>
+              <span><strong>Fehlt noch:</strong> {{ formatIskFull(monthLedger.totalTax - monthLedger.taxPaid > 0 ? monthLedger.totalTax - monthLedger.taxPaid : 0) }}</span>
               <span style="border-left: 1px solid var(--border-color); padding-left: 2rem; color: var(--text-primary);">
                 <i class="fa-solid fa-cube" style="color: var(--accent-color); margin-right: 8px"></i> <strong>Gesamtvolumen:</strong> {{ formatVolume(getTotalVolume(monthLedger.details)) }}
               </span>
@@ -218,15 +218,15 @@
                   <tr>
                     <td>
                       <div style="display: flex; align-items: center; gap: 10px;">
-                        <img [src]="'https://images.evetech.net/types/' + item.typeId + '/icon?size=32'" style="width: 24px; border-radius: 4px;">
+                        <img [src]="typeIcon(item.typeId, 32)" style="width: 24px; border-radius: 4px;">
                         <span>{{ item.typeName }}</span>
                       </div>
                     </td>
                     <td><span class="badge" [ngClass]="item.category.toLowerCase()">{{ item.category }}</span></td>
                     <td style="text-align: right; color: var(--text-secondary);">{{ item.quantity.toLocaleString('de-DE') }}</td>
                     <td style="text-align: right; color: var(--text-primary); font-weight: 500;">{{ formatVolume(item.volume) }}</td>
-                    <td style="text-align: right; color: var(--text-secondary);">{{ formatIsk(item.jitaPrice) }}</td>
-                    <td style="text-align: right; font-weight: 600; color: #ff3366;">{{ formatIsk(item.taxToPay) }}</td>
+                    <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(item.jitaPrice) }}</td>
+                    <td style="text-align: right; font-weight: 600; color: #ff3366;">{{ formatIskFull(item.taxToPay) }}</td>
                   </tr>
                 }
                 @if (monthLedger.details.length === 0) {
@@ -274,14 +274,14 @@
                       <span style="font-weight: 500;">{{ pilot.mainName }}</span>
                     </div>
                   </td>
-                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIsk(pilot.totalTax) }}</td>
-                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIsk(pilot.totalPaid) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(pilot.totalTax) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(pilot.totalPaid) }}</td>
                   <td style="text-align: right; font-weight: 700; font-size: 1.05rem;"
                       [style.color]="pilot.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
                     @if (pilot.currentBalance >= 0) {
-                      + {{ formatIsk(pilot.currentBalance) }}
+                      + {{ formatIskFull(pilot.currentBalance) }}
                     } @else {
-                      {{ formatIsk(pilot.currentBalance) }}
+                      {{ formatIskFull(pilot.currentBalance) }}
                     }
                   </td>
                 </tr>
@@ -370,12 +370,12 @@
               <tr>
                 <td>
                   <div style="display: flex; align-items: center; gap: 10px;">
-                    <img [src]="'https://images.evetech.net/types/' + rate.typeId + '/icon?size=32'" style="width: 24px; border-radius: 4px;">
+                    <img [src]="typeIcon(rate.typeId, 32)" style="width: 24px; border-radius: 4px;">
                     <span style="font-weight: 500;">{{ rate.typeName }}</span>
                   </div>
                 </td>
                 <td><span class="badge" [ngClass]="rate.category.toLowerCase()">{{ rate.category }}</span></td>
-                <td style="text-align: right; color: var(--text-secondary);">{{ formatIsk(rate.currentJitaBuy) }}</td>
+                <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(rate.currentJitaBuy) }}</td>
                 <td style="text-align: right; color: #00dfa2; font-weight: 600;">{{ rate.taxPercentage }} %</td>
                 <td style="text-align: right;">
                   <button class="btn-icon btn-danger-hover" (click)="deleteTaxRate(rate.typeId)">

@@ -11,6 +11,8 @@ import {
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
 import { ConfirmService } from '../../services/confirm.service';
+import { formatIsk, formatIskFull, formatMonthLabel, formatVolume, formatVolumeCompact } from '../../shared/eve-format.util';
+import { handlePortraitError, typeIcon } from '../../shared/eve-image.util';
 
 @Component({
   selector: 'app-mining-tax',
@@ -24,6 +26,15 @@ export class MiningTaxComponent implements OnInit {
   public authService = inject(AuthService);
   private toastService = inject(ToastService);
   private confirmService = inject(ConfirmService);
+
+  // Formatierung und Bildadressen kommen aus den gemeinsamen Utilities.
+  protected readonly formatIsk = formatIsk;
+  protected readonly formatIskFull = formatIskFull;
+  protected readonly formatVolume = formatVolume;
+  protected readonly formatVolumeCompact = formatVolumeCompact;
+  protected readonly formatMonthLabel = formatMonthLabel;
+  protected readonly typeIcon = typeIcon;
+  protected readonly onPortraitError = handlePortraitError;
 
   adminLedgers = signal<AdminLedgerSummaryDto[]>([]);
   loadingAdminLedgers = signal(false);
@@ -175,39 +186,7 @@ export class MiningTaxComponent implements OnInit {
   formatLeaderValue(volume: number, value: number): string {
     return this.leaderMetric() === 'VOLUME'
       ? this.formatVolume(volume)
-      : this.formatIskShort(value);
-  }
-
-  formatMonthLabel(month: string): string {
-    if (!month || month === 'ALL') return 'Gesamter Zeitraum';
-    const [year, m] = month.split('-');
-    const names = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
-                   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
-    const idx = Number(m) - 1;
-    return (names[idx] ?? month) + ' ' + year;
-  }
-
-  /** Kompakte ISK-Darstellung, damit die Balkenzeilen nicht überlaufen. */
-  formatIskShort(value: number | undefined): string {
-    if (value === undefined || value === null || isNaN(value)) return '0 ISK';
-    const abs = Math.abs(value);
-    if (abs >= 1_000_000_000_000) return (value / 1_000_000_000_000).toFixed(2) + ' T ISK';
-    if (abs >= 1_000_000_000) return (value / 1_000_000_000).toFixed(2) + ' B ISK';
-    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' M ISK';
-    if (abs >= 1_000) return (value / 1_000).toFixed(1) + ' k ISK';
-    return value.toFixed(0) + ' ISK';
-  }
-
-  formatVolumeShort(value: number | undefined): string {
-    if (value === undefined || value === null || isNaN(value)) return '0 m³';
-    const abs = Math.abs(value);
-    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' Mio m³';
-    if (abs >= 1_000) return (value / 1_000).toFixed(1) + ' k m³';
-    return value.toFixed(0) + ' m³';
-  }
-
-  onPortraitError(event: Event) {
-    (event.target as HTMLImageElement).src = 'https://images.evetech.net/characters/1/portrait?size=64';
+      : this.formatIsk(value);
   }
 
   // --- ADMIN LADEN ---
@@ -272,13 +251,4 @@ export class MiningTaxComponent implements OnInit {
     }
   }
 
-  formatIsk(value: number | undefined): string {
-    if (value === undefined || value === null) return '0 ISK';
-    return value.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' ISK';
-  }
-
-  formatVolume(value: number | undefined): string {
-    if (value === undefined || value === null) return '0 m³';
-    return value.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' m³';
-  }
 }

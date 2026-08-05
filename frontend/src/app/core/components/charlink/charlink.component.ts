@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { CharacterService, AltDto } from '../../services/character.service';
+import { CharacterService, CharacterRefDto } from '../../services/character.service';
 import { AuthService } from '../../services/auth.service';
 import { ConfirmService } from '../../services/confirm.service'; // <-- NEU
 import { ToastService } from '../../services/toast.service';     // <-- NEU
@@ -19,7 +19,7 @@ export class CharlinkComponent implements OnInit {
   private confirmService = inject(ConfirmService); // <-- NEU
   private toastService = inject(ToastService);     // <-- NEU
 
-  characters = signal<AltDto[]>([]);
+  characters = signal<CharacterRefDto[]>([]);
   loading = signal(true);
 
   get isLeadership(): boolean {
@@ -42,7 +42,7 @@ export class CharlinkComponent implements OnInit {
   }
 
   // NEU: Methode zum Wechseln des Mains
-  async makeMain(char: AltDto) {
+  async makeMain(char: CharacterRefDto) {
     const confirmed = await this.confirmService.ask(
       'Main Charakter ändern?',
       `Möchtest du wirklich ${char.name} zu deinem neuen Main Charakter machen?`,

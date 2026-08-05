@@ -1,9 +1,13 @@
+@use './app/core/shared/tokens' as tokens;
+
 /* ==========================================================================
    1. Theme Variablen (Farbpalette)
    ========================================================================== */
 
-/* LIGHT MODE (Standard) */
-:root {
+/* Das dunkle Thema stand zuvor zweimal ausgeschrieben - einmal für die manuelle
+   Umschaltung, einmal für die Systemeinstellung. Als Mixin steht es nur noch
+   einmal da und kann nicht mehr auseinanderlaufen. */
+@mixin light-theme {
   --bg-color: #f8f9fa;           /* Heller Hintergrund */
   --bg-surface: #ffffff;         /* Hintergrund für Karten/Panels */
   --text-primary: #1e222b;       /* Haupttext (fast schwarz) */
@@ -16,8 +20,7 @@
   --border-color: #e2e8f0;       /* Helle Rahmenlinien */
 }
 
-/* DARK MODE (Wird über ein Attribut am <html> Tag aktiviert) */
-[data-theme="dark"] {
+@mixin dark-theme {
   --bg-color: #0d1117;           /* Tiefes, sattes Sci-Fi Dunkel */
   --bg-surface: #161b22;         /* Leicht abgehoben für Karten */
   --text-primary: #e6edf3;       /* Heller Text, aber kein reines Weiß (schont die Augen) */
@@ -30,18 +33,36 @@
   --border-color: #30363d;
 }
 
+/**
+ * Bedeutungsfarben, die in beiden Themen gleich bleiben.
+ *
+ * Sie standen zuvor als Hex-Werte über die Komponenten verteilt - allein das
+ * Grün an 33 Stellen. Die Werte kommen aus _tokens.scss, damit sie auch den
+ * SCSS-Farbfunktionen zur Verfügung stehen.
+ */
+@mixin semantic-colors {
+  --success-color: #{tokens.$success};
+  --danger-color: #{tokens.$danger};
+  --warning-color: #{tokens.$warning};
+  --highlight-color: #{tokens.$highlight};
+}
+
+/* LIGHT MODE (Standard) */
+:root {
+  @include light-theme;
+  @include semantic-colors;
+}
+
+/* DARK MODE (Wird über ein Attribut am <html> Tag aktiviert) */
+[data-theme="dark"] {
+  @include dark-theme;
+}
+
 /* AUTOMATIK: Reagiert auf die Windows/Mac Dark Mode Einstellungen des Nutzers,
    solange er nicht manuell auf "light" geschaltet hat */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg-color: #0d1117;
-    --bg-surface: #161b22;
-    --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
-    --accent-color: #3b82f6;
-    --accent-hover: #60a5fa;
-    --error-color: #f85149;
-    --border-color: #30363d;
+    @include dark-theme;
   }
 }
 

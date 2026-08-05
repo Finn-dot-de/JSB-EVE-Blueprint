@@ -14,6 +14,8 @@ import {
   SandboxResultDto,
   AccountReadinessDto
 } from '../../services/readiness.service';
+import { formatNumber } from '../../shared/eve-format.util';
+import { handlePortraitError, handleTypeImageError, portrait } from '../../shared/eve-image.util';
 
 type TabId = 'FLEETS' | 'DOCTRINES' | 'BOARD' | 'SANDBOX';
 
@@ -30,6 +32,13 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   private readinessService = inject(ReadinessService);
   private toastService = inject(ToastService);
   private confirmService = inject(ConfirmService);
+
+  // Formatierung und Bildadressen kommen aus den gemeinsamen Utilities -
+  // hier werden sie nur noch fuer das Template sichtbar gemacht.
+  protected readonly formatNumber = formatNumber;
+  protected readonly portrait = portrait;
+  protected readonly onImgError = handleTypeImageError;
+  protected readonly onPortraitError = handlePortraitError;
 
   activeTab = signal<TabId>('FLEETS');
 
@@ -68,7 +77,6 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   sandboxResult = signal<SandboxResultDto | null>(null);
   sandboxError = signal<string | null>(null);
   loadingSandbox = signal(false);
-
 
   get isFleetCommander(): boolean {
     return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38', 'ROLE_69']);
@@ -195,7 +203,6 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     return `${window.location.origin}/fleet/join/${code}`;
   }
 
-
   // ================= Readiness Logic =================
 
   loadDoctrineNames(thenLoad?: TabId) {
@@ -304,12 +311,7 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
   // ================= Utilities =================
 
-  formatNumber(value: number | null | undefined): string {
-    if (value === null || value === undefined || isNaN(value)) return '0';
-    return value.toLocaleString('de-DE');
-  }
-
-  percent(value: number): string {
+    percent(value: number): string {
     return (value * 100).toFixed(0) + ' %';
   }
 
@@ -329,21 +331,5 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     }).catch(() => this.toastService.error('Fehler beim Kopieren in die Zwischenablage.'));
   }
 
-  onImgError(event: Event) {
-    const target = event.target as HTMLImageElement;
-    if (target.src.includes('7_64_15.png')) return;
-
-    if (target.src.includes('/icon?') || target.src.includes('/render?')) {
-      const match = target.src.match(/\/types\/(\d+)\//);
-      if (match) {
-        target.src = `https://images.evetech.net/types/${match[1]}/bp?size=64`;
-        return;
-      }
-    }
-    target.src = 'https://evetycoon.com/images/icons/7_64_15.png';
-  }
-
-  onPortraitError(event: Event) {
-    (event.target as HTMLImageElement).src = 'https://images.evetech.net/characters/1/portrait?size=64';
-  }
+    
 }

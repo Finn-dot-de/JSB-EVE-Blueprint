@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CharacterService, CorpStatsDto, AdminAccountDto } from '../../services/character.service';
+import { corporationLogo } from '../../shared/eve-image.util';
 
 @Component({
   selector: 'app-corp-stats',
@@ -12,6 +13,9 @@ import { CharacterService, CorpStatsDto, AdminAccountDto } from '../../services/
 })
 export class CorpStatsComponent implements OnInit {
   private charService = inject(CharacterService);
+
+  protected readonly corporationLogo = corporationLogo;
+
 
   // Tab State
   activeTab = signal<'CORP' | 'ACCOUNTS'>('CORP');

@@ -10,12 +10,12 @@
           <div class="banner-tags">
             @if (data.allianceName && data.allianceId) {
               <div class="banner-tag">
-                <img [src]="'https://images.evetech.net/alliances/' + data.allianceId + '/logo?size=32'" alt="Alliance" class="tiny-logo">
+                <img [src]="allianceLogo(data.allianceId, 32)" alt="Alliance" class="tiny-logo">
                 <span>{{ data.allianceName }}</span>
               </div>
             }
             <div class="banner-tag">
-              <img [src]="'https://images.evetech.net/corporations/' + data.corporationId + '/logo?size=32'" alt="Corp" class="tiny-logo">
+              <img [src]="corporationLogo(data.corporationId, 32)" alt="Corp" class="tiny-logo">
               <span>{{ data.corporationName }}</span>
             </div>
           </div>
@@ -166,7 +166,7 @@
         <div class="card-header">Evermarks</div>
         <div class="card-content">
           <div class="ship-icon-box" title="Paragon Evermarks" [class.empty]="data.affiliations.evermarks === 0">
-            <img src="https://images.evetech.net/corporations/1000419/logo?size=128" alt="Paragon" class="eve-ship-icon">
+            <img [src]="paragonLogoUrl" alt="Paragon" class="eve-ship-icon">
             <span class="ship-count">{{ data.affiliations.evermarks > 0 ? formatShortNumber(data.affiliations.evermarks) : '-' }}</span>
           </div>
         </div>

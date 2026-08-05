@@ -130,9 +130,9 @@
   border: 1px solid transparent;
 
   &.ore { background: rgba(169, 177, 214, 0.1); color: #a9b1d6; border-color: rgba(169, 177, 214, 0.3); }
-  &.moon { background: rgba(245, 166, 35, 0.1); color: #f5a623; border-color: rgba(245, 166, 35, 0.3); }
+  &.moon { background: rgba(245, 166, 35, 0.1); color: var(--highlight-color); border-color: rgba(245, 166, 35, 0.3); }
   &.ice { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.3); }
-  &.gas { background: rgba(0, 223, 162, 0.1); color: #00dfa2; border-color: rgba(0, 223, 162, 0.3); }
+  &.gas { background: rgba(0, 223, 162, 0.1); color: var(--success-color); border-color: rgba(0, 223, 162, 0.3); }
 }
 
 .btn-primary {
@@ -153,7 +153,7 @@
   background: none; border: none; color: var(--text-secondary); cursor: pointer;
   padding: 6px; border-radius: 4px; transition: all 0.2s;
   &:hover { color: #fff; }
-  &.btn-danger-hover:hover { color: #ff3366; background-color: rgba(255,51,102,0.1); }
+  &.btn-danger-hover:hover { color: var(--danger-color); background-color: rgba(255,51,102,0.1); }
 }
 
 .loading-container { display: flex; justify-content: center; padding: 4rem; }
@@ -240,7 +240,7 @@
 
   > i:first-child {
     font-size: 1.15rem;
-    color: #ffb020;
+    color: var(--warning-color);
   }
 
   .toggle-text {
@@ -309,7 +309,7 @@
     .total-value {
       font-size: 1.15rem;
       font-weight: 700;
-      color: #00dfa2;
+      color: var(--success-color);
       font-variant-numeric: tabular-nums;
     }
   }
@@ -412,7 +412,7 @@
 
   .leader-value {
     font-weight: 700;
-    color: #00dfa2;
+    color: var(--success-color);
     font-size: 0.95rem;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -440,16 +440,16 @@
 .leader-bar-fill {
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--accent-color), #00dfa2);
+  background: linear-gradient(90deg, var(--accent-color), var(--success-color));
   transition: width 0.45s ease;
 }
 
 /* Podestplaetze bekommen einen waermeren Verlauf. */
 .leader-row.podium .leader-bar-fill {
-  background: linear-gradient(90deg, #ffb020, #ffd166);
+  background: linear-gradient(90deg, var(--warning-color), #ffd166);
 }
 
-.leader-row.podium .leader-value { color: #ffb020; }
+.leader-row.podium .leader-value { color: var(--warning-color); }
 
 .leader-meta {
   display: flex;

@@ -267,13 +267,13 @@
 
 /* Spezielle Hover-Effekte für bestimmte Buttons */
 .add-alt-btn:hover {
-  color: #00dfa2; // EVE Grün
-  i { color: #00dfa2; }
+  color: var(--success-color); // EVE Grün
+  i { color: var(--success-color); }
 }
 
 .logout-btn:hover {
-  color: #ff3366; // Rot
-  i { color: #ff3366; }
+  color: var(--danger-color); // Rot
+  i { color: var(--danger-color); }
 }
 
 .divider {

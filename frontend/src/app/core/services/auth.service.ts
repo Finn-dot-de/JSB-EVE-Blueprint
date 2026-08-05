@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { catchError, of, tap } from 'rxjs';
 import { Router } from '@angular/router';
 import {environment} from '../../../environments/environment';
+import { SIZE_LARGE, portrait } from '../shared/eve-image.util';
 
 export interface AuthUser {
   characterId: number;
@@ -23,7 +24,7 @@ export class AuthService {
 
   portraitUrl = computed(() => {
     const user = this.currentUser();
-    return user ? `https://images.evetech.net/characters/${user.characterId}/portrait?size=128` : null;
+    return user ? portrait(user.characterId, SIZE_LARGE) : null;
   });
 
   constructor() {

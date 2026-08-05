@@ -1,429 +1,100 @@
 package com.eve.own.auth.backend.domain.mining.controller;
 
-import com.eve.own.auth.backend.domain.character.entity.Character;
-import com.eve.own.auth.backend.domain.character.entity.CharacterActivity;
-import com.eve.own.auth.backend.domain.character.entity.CharacterMining;
-import com.eve.own.auth.backend.domain.character.repository.CharacterActivityRepository;
-import com.eve.own.auth.backend.domain.character.repository.CharacterMiningRepository;
-import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
-import com.eve.own.auth.backend.domain.eve.entity.InvType;
-import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
-import com.eve.own.auth.backend.domain.mining.entity.MiningTaxInvoice;
+import com.eve.own.auth.backend.common.AccessRules;
+import com.eve.own.auth.backend.common.CurrentUser;
+import com.eve.own.auth.backend.domain.mining.dto.MiningDtos;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
-import com.eve.own.auth.backend.domain.mining.repository.MiningTaxInvoiceRepository;
-import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
-import jakarta.annotation.PostConstruct;
+import com.eve.own.auth.backend.domain.mining.service.MiningLeaderboardService;
+import com.eve.own.auth.backend.domain.mining.service.MiningLedgerService;
+import com.eve.own.auth.backend.domain.mining.service.MiningTaxRateService;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.time.YearMonth;
-import java.time.ZoneOffset;
-import java.util.*;
-import java.util.stream.Collectors;
-
+/**
+ * Die Endpunkte rund um Mining-Steuern und -Rangliste.
+ *
+ * <p>Der Controller nimmt entgegen, prueft Berechtigungen und gibt zurueck -
+ * gerechnet wird in den Services. Zuvor lag die vollstaendige Steuerberechnung
+ * samt Snapshot-Verwaltung in dieser Klasse.</p>
+ */
 @RestController
 @RequestMapping("/api/mining")
 public class MiningController {
 
-    private final CharacterRepository characterRepo;
-    private final CharacterMiningRepository characterMiningRepo;
-    private final CharacterActivityRepository activityRepo; // NEU
-    private final MiningTaxRateRepository taxRateRepo;
-    private final InvTypeRepository invTypeRepo;
-    private final MiningTaxInvoiceRepository invoiceRepo; // NEU
-    private final ObjectMapper objectMapper;
+    private final MiningLedgerService ledgerService;
+    private final MiningLeaderboardService leaderboardService;
+    private final MiningTaxRateService taxRateService;
 
-    public MiningController(CharacterRepository characterRepo, CharacterMiningRepository characterMiningRepo,
-                            CharacterActivityRepository activityRepo, MiningTaxRateRepository taxRateRepo,
-                            InvTypeRepository invTypeRepo, MiningTaxInvoiceRepository invoiceRepo,
-                            ObjectMapper objectMapper) {
-        this.characterRepo = characterRepo;
-        this.characterMiningRepo = characterMiningRepo;
-        this.activityRepo = activityRepo;
-        this.taxRateRepo = taxRateRepo;
-        this.invTypeRepo = invTypeRepo;
-        this.invoiceRepo = invoiceRepo;
-        this.objectMapper = objectMapper;
+    public MiningController(MiningLedgerService ledgerService,
+                            MiningLeaderboardService leaderboardService,
+                            MiningTaxRateService taxRateService) {
+        this.ledgerService = ledgerService;
+        this.leaderboardService = leaderboardService;
+        this.taxRateService = taxRateService;
     }
 
-    @PostConstruct
-    public void initAllMineables() {
-        try {
-            List<InvType> allMineables = invTypeRepo.findAllMineables();
-            List<MiningTaxRate> existingRates = taxRateRepo.findAll();
-            Set<Long> validIds = allMineables.stream().map(InvType::getTypeId).collect(Collectors.toSet());
-
-            List<MiningTaxRate> junkToDelete = existingRates.stream().filter(r -> !validIds.contains(r.getTypeId())).toList();
-            if (!junkToDelete.isEmpty()) taxRateRepo.deleteAll(junkToDelete);
-
-            Set<Long> existingIds = existingRates.stream().map(MiningTaxRate::getTypeId).collect(Collectors.toSet());
-            List<MiningTaxRate> toSave = new ArrayList<>();
-
-            for (InvType t : allMineables) {
-                // Die korrekte SDE Kategorie ermitteln
-                String correctCategory = "ORE";
-                if (t.getGroupId() == 423L) correctCategory = "ICE";
-                else if (t.getGroupId() == 711L) correctCategory = "GAS";
-                else if (List.of(1884L, 1920L, 1921L, 1922L, 1923L).contains(t.getGroupId())) correctCategory = "MOON";
-
-                if (!existingIds.contains(t.getTypeId())) {
-                    // Neu anlegen
-                    MiningTaxRate rate = new MiningTaxRate();
-                    rate.setTypeId(t.getTypeId());
-                    rate.setTypeName(t.getTypeName());
-                    rate.setTaxPercentage(0.0);
-                    rate.setCurrentJitaBuy(0.0);
-                    rate.setCategory(correctCategory);
-                    toSave.add(rate);
-                } else {
-                    // Update: Falls die Kategorie in der DB falsch ist (wie bei deinem White Glaze), reparieren wir sie!
-                    MiningTaxRate existing = existingRates.stream().filter(r -> r.getTypeId().equals(t.getTypeId())).findFirst().orElse(null);
-                    if (existing != null && !correctCategory.equals(existing.getCategory())) {
-                        existing.setCategory(correctCategory);
-                        toSave.add(existing);
-                    }
-                }
-            }
-            if (!toSave.isEmpty()) taxRateRepo.saveAll(toSave);
-        } catch (Exception e) {
-            System.err.println("Konnte Start-Erze nicht initialisieren: " + e.getMessage());
-        }
-    }
-
-    public record LedgerItemDto(Long typeId, String typeName, String category, long quantity, double volume, double jitaPrice, double taxToPay) {}
-    public record MonthlyLedgerDto(String month, double totalTax, double taxPaid, boolean isPaid, List<LedgerItemDto> details) {}
-
-    // NEU: Wrapper für den gesamten Account-Kontostand
-    public record UserLedgerResponse(double totalDebt, double totalPaid, double currentBalance, List<MonthlyLedgerDto> months) {}
-
-    // =============================================================
-    // MONATLICHE USER-ABRECHNUNG (MIT VORAUSZAHLUNG / WASSERFALL)
-    // =============================================================
+    /** Die eigene Steuerbilanz ueber alle Monate. */
     @GetMapping("/my-ledger")
-    public ResponseEntity<UserLedgerResponse> getMyLedger() {
-        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
-        assert charId != null;
-
-        Character reqChar = characterRepo.findById(charId).orElseThrow();
-        Long mainId = reqChar.getMainCharacterId() != null ? reqChar.getMainCharacterId() : reqChar.getId();
-
-        List<Long> allMyCharIds = characterRepo.findByMainCharacterId(mainId).stream().map(Character::getId).toList();
-
-        List<CharacterMining> myMining = characterMiningRepo.findByCharacterIdIn(allMyCharIds);
-        List<CharacterActivity> myActivities = activityRepo.findByCharacterIdIn(allMyCharIds);
-
-        Map<Long, MiningTaxRate> taxRates = taxRateRepo.findAll().stream().collect(Collectors.toMap(MiningTaxRate::getTypeId, t -> t));
-        Set<Long> allTypeIds = myMining.stream().map(CharacterMining::getTypeId).collect(Collectors.toSet());
-        Map<Long, Double> typeVolumes = invTypeRepo.findAllById(allTypeIds).stream().collect(Collectors.toMap(InvType::getTypeId, InvType::getVolume));
-
-        // 1. Alle geleisteten Zahlungen (Lifetime) summieren
-        double totalLifetimePaid = 0.0;
-        for (CharacterActivity a : myActivities) {
-            if ("TAX_PAYMENT".equals(a.getActivityType()) && a.getValue() != null) {
-                totalLifetimePaid += a.getValue();
-            }
-        }
-
-        // 2. Erze nach "YYYY-MM" gruppieren
-        Map<String, Map<Long, Long>> monthlyMining = new HashMap<>();
-        for (CharacterMining m : myMining) {
-            if (m.getDate() == null || m.getDate().length() < 7) continue;
-            String month = m.getDate().substring(0, 7);
-            monthlyMining.putIfAbsent(month, new HashMap<>());
-            monthlyMining.get(month).merge(m.getTypeId(), m.getQuantity(), Long::sum);
-        }
-
-        // 3. Vorhandene Snapshots aus der Datenbank laden
-        List<MiningTaxInvoice> existingInvoices = invoiceRepo.findByMainCharacterId(mainId);
-        Map<String, MiningTaxInvoice> invoiceMap = existingInvoices.stream()
-                .collect(Collectors.toMap(MiningTaxInvoice::getMonth, inv -> inv));
-
-        // Wir brauchen den aktuellen Monat, um zu wissen, was noch live berechnet werden muss
-        String currentMonthStr = YearMonth.now(ZoneOffset.UTC).toString(); // z.B. "2026-07"
-
-        // 4. Wasserfall-Prinzip: Wir berechnen chronologisch von alt nach neu!
-        Set<String> allMonths = new HashSet<>();
-        allMonths.addAll(monthlyMining.keySet());
-        allMonths.addAll(invoiceMap.keySet());
-
-        List<String> sortedMonths = new ArrayList<>(allMonths);
-        Collections.sort(sortedMonths);
-
-        List<MonthlyLedgerDto> resultMonths = new ArrayList<>();
-        double totalLifetimeTax = 0.0;
-        double remainingMoney = totalLifetimePaid;
-
-        for (String month : sortedMonths) {
-            double monthTax = 0;
-            List<LedgerItemDto> details = new ArrayList<>();
-
-            // =========================================================
-            // A) SNAPSHOT VORHANDEN? (Monat ist eingefroren)
-            // =========================================================
-            if (invoiceMap.containsKey(month)) {
-                MiningTaxInvoice invoice = invoiceMap.get(month);
-                monthTax = invoice.getTotalTax();
-                try {
-                    details = objectMapper.readValue(invoice.getDetailsJson(), new TypeReference<>() {
-                    });
-                } catch (Exception e) {
-                    System.err.println("Konnte Details für Snapshot " + month + " nicht laden.");
-                }
-            }
-            // =========================================================
-            // B) KEIN SNAPSHOT -> LIVE BERECHNEN
-            // =========================================================
-            else {
-                Map<Long, Long> monthOres = monthlyMining.get(month);
-                for (Map.Entry<Long, Long> entry : monthOres.entrySet()) {
-                    Long typeId = entry.getKey();
-                    long qty = entry.getValue();
-                    MiningTaxRate rate = taxRates.get(typeId);
-
-                    if (rate == null) {
-                        MiningTaxRate newRate = new MiningTaxRate();
-                        newRate.setTypeId(typeId);
-                        newRate.setTaxPercentage(0.0);
-                        newRate.setCurrentJitaBuy(0.0);
-                        invTypeRepo.findById(typeId).ifPresentOrElse(t -> {
-                            newRate.setTypeName(t.getTypeName());
-                            if (t.getGroupId() == 423L) newRate.setCategory("ICE");
-                            else if (t.getGroupId() == 711L) newRate.setCategory("GAS");
-                            else if (List.of(1884L, 1920L, 1921L, 1922L, 1923L).contains(t.getGroupId())) newRate.setCategory("MOON");
-                            else newRate.setCategory("ORE");
-                        }, () -> {
-                            newRate.setTypeName("Unknown Ore (" + typeId + ")");
-                            newRate.setCategory("ORE");
-                        });
-                        taxRateRepo.save(newRate);
-                        taxRates.put(typeId, newRate);
-                        rate = newRate;
-                    }
-
-                    double jitaBuy = rate.getCurrentJitaBuy() != null ? rate.getCurrentJitaBuy() : 0.0;
-                    double taxPct = rate.getTaxPercentage() != null ? rate.getTaxPercentage() : 0.0;
-
-                    double taxForThisOre = (qty * jitaBuy) * (taxPct / 100.0);
-                    double volume = qty * typeVolumes.getOrDefault(typeId, 0.0);
-
-                    monthTax += taxForThisOre;
-                    details.add(new LedgerItemDto(typeId, rate.getTypeName(), rate.getCategory(), qty, volume, jitaBuy, taxForThisOre));
-                }
-
-                details.sort((a, b) -> Double.compare(b.taxToPay(), a.taxToPay()));
-
-                // =========================================================
-                // C) WENN DER MONAT VERGANGEN IST -> EINFRIEREN!
-                // =========================================================
-                if (!month.equals(currentMonthStr)) {
-                    MiningTaxInvoice newInvoice = new MiningTaxInvoice();
-                    newInvoice.setMainCharacterId(mainId);
-                    newInvoice.setMonth(month);
-                    newInvoice.setTotalTax(monthTax);
-                    try {
-                        newInvoice.setDetailsJson(objectMapper.writeValueAsString(details));
-                    } catch (Exception e) {
-                        newInvoice.setDetailsJson("[]");
-                    }
-                    invoiceRepo.save(newInvoice);
-                    invoiceMap.put(month, newInvoice); // Ab sofort ist es ein Snapshot
-                }
-            }
-
-            totalLifetimeTax += monthTax;
-
-            // Rechnungen mit dem vorhandenen Geld "bezahlen" (Wasserfall)
-            double paidForThisMonth = 0.0;
-            if (remainingMoney >= monthTax) {
-                paidForThisMonth = monthTax;
-                remainingMoney -= monthTax;
-            } else if (remainingMoney > 0) {
-                paidForThisMonth = remainingMoney;
-                remainingMoney = 0;
-            }
-
-            boolean isPaid = paidForThisMonth >= (monthTax * 0.95);
-            resultMonths.add(new MonthlyLedgerDto(month, monthTax, paidForThisMonth, isPaid, details));
-        }
-
-        resultMonths.sort((a, b) -> b.month().compareTo(a.month()));
-        double currentBalance = totalLifetimePaid - totalLifetimeTax;
-
-        return ResponseEntity.ok(new UserLedgerResponse(totalLifetimeTax, totalLifetimePaid, currentBalance, resultMonths));
+    public ResponseEntity<MiningDtos.UserLedgerResponse> getMyLedger() {
+        return ResponseEntity.ok(ledgerService.ledgerOf(CurrentUser.characterId()));
     }
-
-    // =============================================================
-    // MINING-RANGLISTE (fuer alle Mitglieder sichtbar)
-    // =============================================================
-
-    public record MiningLeaderRowDto(int rank, Long mainId, String mainName, String portraitUrl,
-                                     double volume, double value, long units, boolean isMe) {}
-
-    public record MiningLeaderboardDto(String month, List<String> availableMonths,
-                                       double totalVolume, double totalValue,
-                                       List<MiningLeaderRowDto> rows) {}
 
     /**
-     * Wer hat am meisten abgebaut - aggregiert pro Account (Main + Alts).
+     * Die Mining-Rangliste.
      *
-     * <p>Bewusst ohne Rollenpruefung: die Rangliste ist als Ansporn fuer alle
-     * Mitglieder gedacht. Sie zeigt ausschliesslich Abbaumenge und -wert, keine
-     * Steuerschulden oder Salden - die bleiben in den Admin-Bilanzen.</p>
-     *
-     * @param month "YYYY-MM" oder "ALL" fuer den gesamten verfuegbaren Zeitraum.
-     *              Ohne Angabe wird der neueste Monat mit Daten genommen.
+     * @param month "YYYY-MM" oder "ALL"; ohne Angabe der neueste Monat mit Daten
      */
     @GetMapping("/leaderboard")
-    public ResponseEntity<MiningLeaderboardDto> getLeaderboard(@RequestParam(required = false) String month) {
-        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
-        Long myMainId = characterRepo.findById(charId)
-                .map(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId())
-                .orElse(null);
-
-        List<String> availableMonths = characterMiningRepo.findAvailableMiningMonths();
-
-        // Ohne Vorgabe den neuesten Monat zeigen - "ALL" waere als Einstieg
-        // wenig aussagekraeftig, weil ESI je nach Charakter unterschiedlich
-        // weit zurueckreichende Ledger liefert.
-        String selected = (month == null || month.isBlank())
-                ? (availableMonths.isEmpty() ? "ALL" : availableMonths.get(0))
-                : month.trim();
-
-        List<Object[]> rows = characterMiningRepo.aggregateMiningByAccount(selected);
-
-        double totalVolume = 0;
-        double totalValue = 0;
-        List<MiningLeaderRowDto> result = new ArrayList<>();
-
-        int rank = 1;
-        for (Object[] row : rows) {
-            Long mainId = ((Number) row[0]).longValue();
-            String mainName = row[1] != null ? String.valueOf(row[1]) : ("Account " + mainId);
-            double volume = row[2] != null ? ((Number) row[2]).doubleValue() : 0d;
-            double value = row[3] != null ? ((Number) row[3]).doubleValue() : 0d;
-            long units = row[4] != null ? ((Number) row[4]).longValue() : 0L;
-
-            totalVolume += volume;
-            totalValue += value;
-
-            result.add(new MiningLeaderRowDto(
-                    rank++, mainId, mainName,
-                    "https://images.evetech.net/characters/" + mainId + "/portrait?size=64",
-                    volume, value, units,
-                    mainId.equals(myMainId)));
-        }
-
-        return ResponseEntity.ok(new MiningLeaderboardDto(
-                selected, availableMonths, totalVolume, totalValue, result));
+    public ResponseEntity<MiningDtos.MiningLeaderboardDto> getLeaderboard(
+            @RequestParam(required = false) String month) {
+        return ResponseEntity.ok(leaderboardService.leaderboard(month, CurrentUser.characterId()));
     }
 
-    // =============================================================
-    // ADMIN ENDPUNKTE (Prozente)
-    // =============================================================
+    // ==================================================================
+    // Verwaltung der Steuersaetze
+    // ==================================================================
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO')")
+    @PreAuthorize(AccessRules.LEADERSHIP)
     @GetMapping("/taxes")
     public ResponseEntity<List<MiningTaxRate>> getTaxRates() {
-        return ResponseEntity.ok(taxRateRepo.findAll());
+        return ResponseEntity.ok(taxRateService.findAll());
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO')")
+    @PreAuthorize(AccessRules.LEADERSHIP)
     @PostMapping("/taxes")
     public ResponseEntity<MiningTaxRate> saveTaxRate(@RequestBody MiningTaxRate rate) {
-        return ResponseEntity.ok(taxRateRepo.save(rate));
+        return ResponseEntity.ok(taxRateService.save(rate));
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO')")
+    @PreAuthorize(AccessRules.LEADERSHIP)
     @DeleteMapping("/taxes/{typeId}")
     public ResponseEntity<Void> deleteTaxRate(@PathVariable Long typeId) {
-        taxRateRepo.deleteById(typeId);
+        taxRateService.delete(typeId);
         return ResponseEntity.ok().build();
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO')")
+    /** Setzt denselben Prozentsatz fuer eine ganze Steuerklasse (ORE, ICE, GAS, MOON). */
+    @PreAuthorize(AccessRules.LEADERSHIP)
     @PostMapping("/taxes/bulk")
-    public ResponseEntity<Void> updateBulkTax(@RequestParam String category, @RequestParam Double taxPercentage) {
-        List<MiningTaxRate> rates = taxRateRepo.findAll().stream()
-                .filter(r -> r.getCategory().equalsIgnoreCase(category))
-                .toList();
-        for (MiningTaxRate r : rates) {
-            r.setTaxPercentage(taxPercentage);
-        }
-        taxRateRepo.saveAll(rates);
+    public ResponseEntity<Void> updateBulkTax(@RequestParam String category,
+                                              @RequestParam Double taxPercentage) {
+        taxRateService.updateCategory(category, taxPercentage);
         return ResponseEntity.ok().build();
     }
 
-    // NEU: Admin Statistik Wrapper
-    public record AdminLedgerSummaryDto(Long mainId, String mainName, String portraitUrl, double totalTax, double totalPaid, double currentBalance) {}
-
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN')")
+    /** Die Bilanzen aller Accounts, das groesste Minus zuerst. */
+    @PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
     @GetMapping("/admin/ledgers")
-    public ResponseEntity<List<AdminLedgerSummaryDto>> getAllLedgersSummary() {
-        List<Character> allChars = characterRepo.findAll();
-        // Alle Charaktere nach Main-Charakter gruppieren
-        Map<Long, List<Character>> charsByMain = allChars.stream()
-                .collect(Collectors.groupingBy(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId()));
-
-        List<CharacterActivity> taxPayments = activityRepo.findAll().stream()
-                .filter(a -> "TAX_PAYMENT".equals(a.getActivityType()))
-                .toList();
-
-        List<MiningTaxInvoice> allInvoices = invoiceRepo.findAll();
-        List<CharacterMining> allMining = characterMiningRepo.findAll();
-        Map<Long, MiningTaxRate> taxRates = taxRateRepo.findAll().stream().collect(Collectors.toMap(MiningTaxRate::getTypeId, t -> t));
-        String currentMonthStr = YearMonth.now(ZoneOffset.UTC).toString();
-
-        List<AdminLedgerSummaryDto> result = new ArrayList<>();
-
-        for (Map.Entry<Long, List<Character>> entry : charsByMain.entrySet()) {
-            Long mainId = entry.getKey();
-            List<Character> alts = entry.getValue();
-            Character mainChar = characterRepo.findById(mainId).orElse(alts.get(0));
-            List<Long> accountIds = alts.stream().map(Character::getId).toList();
-
-            // 1. Alle Zahlungen dieses Accounts summieren
-            double totalPaid = taxPayments.stream()
-                    .filter(a -> accountIds.contains(a.getCharacterId()) && a.getValue() != null)
-                    .mapToDouble(CharacterActivity::getValue)
-                    .sum();
-
-            // 2. Alle fixen Snapshots (vergangene Monate) summieren
-            double totalTax = allInvoices.stream()
-                    .filter(i -> i.getMainCharacterId().equals(mainId))
-                    .mapToDouble(MiningTaxInvoice::getTotalTax)
-                    .sum();
-
-            // 3. Den aktuellen (Live) Monat summieren
-            double liveTax = allMining.stream()
-                    .filter(m -> accountIds.contains(m.getCharacterId()))
-                    .filter(m -> m.getDate() != null && m.getDate().startsWith(currentMonthStr))
-                    .mapToDouble(m -> {
-                        MiningTaxRate rate = taxRates.get(m.getTypeId());
-                        if (rate == null) return 0.0;
-                        double jita = rate.getCurrentJitaBuy() != null ? rate.getCurrentJitaBuy() : 0.0;
-                        double pct = rate.getTaxPercentage() != null ? rate.getTaxPercentage() : 0.0;
-                        return (m.getQuantity() * jita) * (pct / 100.0);
-                    }).sum();
-
-            totalTax += liveTax;
-            double balance = totalPaid - totalTax;
-
-            result.add(new AdminLedgerSummaryDto(
-                    mainId,
-                    mainChar.getName(),
-                    "https://images.evetech.net/characters/" + mainId + "/portrait?size=64",
-                    totalTax,
-                    totalPaid,
-                    balance
-            ));
-        }
-
-        result.sort(Comparator.comparingDouble(AdminLedgerSummaryDto::currentBalance));
-
-        return ResponseEntity.ok(result);
+    public ResponseEntity<List<MiningDtos.AdminLedgerSummaryDto>> getAllLedgersSummary() {
+        return ResponseEntity.ok(ledgerService.allAccountSummaries());
     }
 }

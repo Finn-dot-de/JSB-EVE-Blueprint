@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.web.client.RestClientResponseException;
 
 @Slf4j
 @Service
@@ -159,7 +160,7 @@ public class AssetLocationService {
                 locationRepo.save(loc);
                 count++;
                 consecutiveForbidden = 0;
-            } catch (org.springframework.web.client.RestClientResponseException e) {
+            } catch (RestClientResponseException e) {
                 int statusCode = e.getStatusCode().value();
                 log.debug("Struktur {} nicht auflösbar: {}", id, e.getMessage());
 

@@ -157,7 +157,7 @@
               @for (member of attendanceList(); track member.id) {
                 <div
                   style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                  <img [src]="'https://images.evetech.net/characters/' + member.characterId + '/portrait?size=32'"
+                  <img [src]="portrait(member.characterId, 32)"
                        style="border-radius: 4px; width: 32px;">
                   <div style="flex: 1;">
                     <div style="font-size: 0.9rem; color: var(--text-primary);">{{ member.characterName }}</div>

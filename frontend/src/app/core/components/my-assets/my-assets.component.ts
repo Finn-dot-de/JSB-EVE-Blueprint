@@ -9,6 +9,8 @@ import {
 import { MyAssetService, MyFilterOptionsDto, MyAssetSearchParams } from '../../services/my-asset.service';
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
+import { barWidth, formatIsk, formatIskFull, formatNumber, maxValue } from '../../shared/eve-format.util';
+import { handleTypeImageError, typeIcon } from '../../shared/eve-image.util';
 
 type Tab = 'OVERVIEW' | 'SEARCH';
 
@@ -31,6 +33,16 @@ export class MyAssetsComponent implements OnInit {
   private myAssetService = inject(MyAssetService);
   public authService = inject(AuthService);
   private toastService = inject(ToastService);
+
+  // Formatierung und Bildadressen kommen aus den gemeinsamen Utilities -
+  // hier werden sie nur noch fuer das Template sichtbar gemacht.
+  protected readonly formatIsk = formatIsk;
+  protected readonly formatIskFull = formatIskFull;
+  protected readonly formatNumber = formatNumber;
+  protected readonly barWidth = barWidth;
+  protected readonly maxValue = maxValue;
+  protected readonly typeIcon = typeIcon;
+  protected readonly onImgError = handleTypeImageError;
 
   activeTab = signal<Tab>('OVERVIEW');
   showAdvancedFilters = signal(false);
@@ -270,54 +282,4 @@ export class MyAssetsComponent implements OnInit {
     this.runSearch();
   }
 
-  // ================= Formatierung =================
-  formatIsk(value: number | null | undefined): string {
-    if (value === null || value === undefined || isNaN(value)) return '0 ISK';
-    const abs = Math.abs(value);
-    if (abs >= 1_000_000_000_000) return (value / 1_000_000_000_000).toFixed(2) + ' T ISK';
-    if (abs >= 1_000_000_000) return (value / 1_000_000_000).toFixed(2) + ' B ISK';
-    if (abs >= 1_000_000) return (value / 1_000_000).toFixed(2) + ' M ISK';
-    if (abs >= 1_000) return (value / 1_000).toFixed(1) + ' k ISK';
-    return value.toFixed(0) + ' ISK';
-  }
-
-  formatIskFull(value: number | null | undefined): string {
-    if (value === null || value === undefined || isNaN(value)) return '0 ISK';
-    return value.toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' ISK';
-  }
-
-  formatNumber(value: number | null | undefined): string {
-    if (value === null || value === undefined || isNaN(value)) return '0';
-    return value.toLocaleString('de-DE');
-  }
-
-  barWidth(value: number, max: number): string {
-    if (!max || max <= 0) return '0%';
-    return Math.max(2, (value / max) * 100).toFixed(1) + '%';
-  }
-
-  maxValue(items: { value: number }[] | undefined): number {
-    if (!items || items.length === 0) return 0;
-    return Math.max(...items.map(i => i.value));
-  }
-
-  typeIcon(typeId: number): string {
-    return `https://images.evetech.net/types/${typeId}/icon?size=64`;
-  }
-
-  onImgError(event: Event) {
-    const target = event.target as HTMLImageElement;
-
-    // Verhindert eine Endlosschleife, wenn selbst das Tritanium-Bild fehlen sollte
-    if (target.src.includes('/34/icon')) return;
-
-    if (target.src.includes('/icon?') || target.src.includes('/render?')) {
-      const match = target.src.match(/\/types\/(\d+)\//);
-      if (match) {
-        target.src = `https://images.evetech.net/types/${match[1]}/bp?size=64`;
-        return;
-      }
-    }
-    target.src = 'https://images.evetech.net/types/34/icon?size=64';
-  }
 }

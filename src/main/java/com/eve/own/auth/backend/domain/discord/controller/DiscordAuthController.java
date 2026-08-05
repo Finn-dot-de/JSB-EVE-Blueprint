@@ -1,5 +1,7 @@
 package com.eve.own.auth.backend.domain.discord.controller;
 
+import com.eve.own.auth.backend.common.AccessRules;
+import com.eve.own.auth.backend.common.CurrentUser;
 import com.eve.own.auth.backend.domain.auth.repository.SystemRoleRepository;
 import com.eve.own.auth.backend.domain.auth.repository.TitleRoleMappingRepository;
 import com.eve.own.auth.backend.domain.character.entity.Character;
@@ -14,13 +16,24 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -74,11 +87,9 @@ public class DiscordAuthController {
     @GetMapping("/callback")
     public ResponseEntity<Void> discordCallback(@RequestParam("code") String code) {
         try {
-            Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
+            Long charId = CurrentUser.characterId();
             var tokenResp = discordBotService.exchangeCode(code, redirectUri);
             var userResp = discordBotService.getDiscordUserProfile(tokenResp.access_token());
-
-            assert charId != null;
             DiscordConnection conn = connectionRepo.findById(charId).orElse(new DiscordConnection());
             conn.setCharacterId(charId);
             conn.setDiscordUserId(userResp.id());
@@ -96,7 +107,7 @@ public class DiscordAuthController {
 
             List<String> expectedRoles = c.getRoles().stream()
                     .map(mappingRepo::findById)
-                    .filter(java.util.Optional::isPresent)
+                    .filter(Optional::isPresent)
                     .map(m -> m.get().getDiscordRoleId())
                     .toList();
 
@@ -119,21 +130,20 @@ public class DiscordAuthController {
     }
 
     @GetMapping("/status")
-    public ResponseEntity<java.util.Map<String, Boolean>> getConnectionStatus() {
-        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
-        assert charId != null;
+    public ResponseEntity<Map<String, Boolean>> getConnectionStatus() {
+        Long charId = CurrentUser.characterId();
         boolean isConnected = connectionRepo.existsById(charId);
-        return ResponseEntity.ok(java.util.Map.of("connected", isConnected));
+        return ResponseEntity.ok(Map.of("connected", isConnected));
     }
 
     // ========================================================
     // Admin Endpunkte für das Mapping (JETZT MIT ALLEN ROLLEN)
     // ========================================================
-    @PreAuthorize("hasAnyRole('ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_IT_ADMIN', 'ROLE_A38')")
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
     @GetMapping("/mappings")
-    public ResponseEntity<List<java.util.Map<String, String>>> getAllRolesWithMappings() {
+    public ResponseEntity<List<Map<String, String>>> getAllRolesWithMappings() {
         List<DiscordRoleMapping> mappings = mappingRepo.findAll();
-        List<java.util.Map<String, String>> result = new java.util.ArrayList<>();
+        List<Map<String, String>> result = new ArrayList<>();
 
         Set<String> allAuthRoles = new HashSet<>();
 
@@ -172,7 +182,7 @@ public class DiscordAuthController {
                 }
             }
 
-            result.add(java.util.Map.of(
+            result.add(Map.of(
                     "authRole", role,
                     "discordRoleId", discordId,
                     "description", description
@@ -185,7 +195,7 @@ public class DiscordAuthController {
         return ResponseEntity.ok(result);
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_IT_ADMIN', 'ROLE_A38')")
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
     @PostMapping("/mappings")
     public ResponseEntity<Void> saveMapping(@RequestBody DiscordRoleMapping dto) {
         if (dto.getDiscordRoleId() == null || dto.getDiscordRoleId().isBlank()) {
@@ -198,12 +208,10 @@ public class DiscordAuthController {
 
     @DeleteMapping("/disconnect")
     public ResponseEntity<Void> disconnectDiscord() {
-        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
-
-        assert charId != null;
+        Long charId = CurrentUser.characterId();
         connectionRepo.findById(charId).ifPresent(conn -> {
             try {
-                discordBotService.syncMemberData(conn.getDiscordUserId(), new java.util.ArrayList<>(), null);
+                discordBotService.syncMemberData(conn.getDiscordUserId(), new ArrayList<>(), null);
             } catch (Exception e) {
                 log.warn("Konnte Rollen beim Trennen für User {} nicht entfernen: {}", conn.getDiscordUserId(), e.getMessage());
             }

@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.assets.service;
 
+import com.eve.own.auth.backend.common.EveImageUrls;
 import com.eve.own.auth.backend.domain.assets.dto.AssetDtos;
 import com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository;
 import com.eve.own.auth.backend.domain.character.entity.Character;
@@ -164,7 +165,7 @@ public class MyAssetService {
         return queryRepo.suggestTypesForMain(mainId, term, limit).stream()
                 .map(t -> new AssetDtos.TypeSuggestionDto(
                         lng(t, "typeId"), str(t, "typeName"), str(t, "groupName"),
-                        "https://images.evetech.net/types/" + lng(t, "typeId") + "/icon?size=64",
+                        EveImageUrls.typeIcon(lng(t, "typeId")),
                         lng(t, "quantity")))
                 .toList();
     }

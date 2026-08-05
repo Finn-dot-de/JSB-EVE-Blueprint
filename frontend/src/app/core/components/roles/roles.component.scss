@@ -1,7 +1,8 @@
+@use '../../shared/tokens' as tokens;
 // Farb-Variablen passend zum EVE-Theme
 $eve-card-bg: #161925;
 $eve-border: #242b3d;
-$eve-green: #00dfa2;
+$eve-green: tokens.$success;
 $eve-blue: #3b82f6;
 $text-primary: #e2e8f0;
 $text-secondary: #7f8c9d;
@@ -78,11 +79,11 @@ $text-secondary: #7f8c9d;
   height: 28px;
 
   // Dynamische Rollenfarben
-  &.text-warning { color: #f5a623; }  // Gold/CEO/Director
+  &.text-warning { color: var(--highlight-color); }  // Gold/CEO/Director
   &.text-primary { color: #3b82f6; }  // Blau für FCs
-  &.text-success { color: #00dfa2; }  // Grün für Industry/Verified
+  &.text-success { color: var(--success-color); }  // Grün für Industry/Verified
   &.text-secondary { color: #4e5569; } // Grau für nicht gemappt
-  &.text-danger { color: #ff3366; }    // Rot
+  &.text-danger { color: var(--danger-color); }    // Rot
 }
 
 .role-name-box {

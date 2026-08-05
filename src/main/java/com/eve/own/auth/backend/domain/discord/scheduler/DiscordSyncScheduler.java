@@ -9,9 +9,10 @@ import com.eve.own.auth.backend.domain.discord.service.DiscordBotService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException; // <-- Wichtig für die spezifischen Exceptions
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -47,7 +48,7 @@ public class DiscordSyncScheduler {
 
                 List<String> expectedDiscordRoles = character.getRoles().stream()
                         .map(mappingRepo::findById)
-                        .filter(java.util.Optional::isPresent)
+                        .filter(Optional::isPresent)
                         .map(mapping -> mapping.get().getDiscordRoleId())
                         .toList();
 

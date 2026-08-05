@@ -1,3 +1,4 @@
+@use '../../shared/tokens' as tokens;
 .create-form {
   max-width: 500px;
   margin: 0 auto;
@@ -67,9 +68,9 @@
 .status-pulse {
   width: 12px;
   height: 12px;
-  background-color: #00dfa2;
+  background-color: var(--success-color);
   border-radius: 50%;
-  box-shadow: 0 0 10px #00dfa2;
+  box-shadow: 0 0 10px var(--success-color);
   animation: pulse 1.5s infinite;
 }
 
@@ -99,12 +100,12 @@
   &:hover { color: #fff; }
 }
 
-.expiry-note { color: #ff3366; font-size: 0.8rem; }
+.expiry-note { color: var(--danger-color); font-size: 0.8rem; }
 
 .btn-esi {
   background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid #00dfa2;
-  color: #00dfa2;
+  border: 1px solid var(--success-color);
+  color: var(--success-color);
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
   cursor: pointer;
@@ -123,12 +124,12 @@
   padding: 1rem;
   border-radius: 6px;
   background-color: rgba(0, 223, 162, 0.1);
-  color: #00dfa2;
+  color: var(--success-color);
   border: 1px solid rgba(0, 223, 162, 0.2);
 
   &.error {
     background-color: rgba(255, 51, 102, 0.1);
-    color: #ff3366;
+    color: var(--danger-color);
     border-color: rgba(255, 51, 102, 0.2);
   }
 }
@@ -178,7 +179,7 @@
 }
 
 .btn-danger-hover:hover {
-  background-color: #ff3366 !important;
+  background-color: var(--danger-color) !important;
   color: #fff !important;
 }
 
@@ -253,8 +254,8 @@
   background-color: var(--accent-color);
   border-radius: 4px;
   transition: width 0.4s ease;
-  &.green { background-color: #00dfa2; }
-  &.orange { background-color: #f5a623; }
+  &.green { background-color: var(--success-color); }
+  &.orange { background-color: var(--highlight-color); }
 }
 .ship-chips {
   display: flex;
@@ -270,12 +271,12 @@
   border: 1px solid rgba(0, 223, 162, 0.35);
   background: rgba(0, 223, 162, 0.1);
   font-size: 0.8rem;
-  color: #00dfa2;
+  color: var(--success-color);
   img { width: 20px; height: 20px; border-radius: 3px; }
   &.missing {
     border-color: rgba(255, 51, 102, 0.3);
     background: rgba(255, 51, 102, 0.08);
-    color: #ff3366;
+    color: var(--danger-color);
     img { opacity: 0.4; filter: grayscale(1); }
   }
 }
@@ -305,9 +306,9 @@
    Jita-Grün = bereit, Rot = fehlt, Orange =
    teilweise, Grau = keine Daten.
    ========================================= */
-$ready: #00dfa2;
-$missing: #ff3366;
-$warn: #f5a623;
+$ready: tokens.$success;
+$missing: tokens.$danger;
+$warn: tokens.$highlight;
 
 .bar-fill.red { background-color: $missing; }
 

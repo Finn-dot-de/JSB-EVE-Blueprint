@@ -1,7 +1,8 @@
+@use '../../shared/tokens' as tokens;
 $eve-bg-dark: #0f111a;
 $eve-card-bg: #161925;
 $eve-border: #242b3d;
-$eve-green: #00dfa2;
+$eve-green: tokens.$success;
 $eve-blue: #3b82f6;
 $text-primary: #e2e8f0;
 $text-secondary: #7f8c9d;

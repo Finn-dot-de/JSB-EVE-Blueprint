@@ -29,11 +29,55 @@ public class AssetQueryRepository {
     private static final String VALUE_EXPR =
             "(" + UNIT_PRICE_EXPR + " * a.quantity)";
 
+    /**
+     * Persoenliche und Corp-Bestaende in einer gemeinsamen Sicht.
+     *
+     * <p>Beide Quellen werden auf ein einheitliches Besitzer-Schema normalisiert,
+     * damit alle Auswertungen darunter unveraendert funktionieren:</p>
+     * <ul>
+     *   <li>{@code owner_id} / {@code owner_name} - die "Zeile", unter der ein
+     *       Bestand gefuehrt wird: bei Charakteren der Main-Account, bei
+     *       Corp-Bestaenden die Corporation selbst.</li>
+     *   <li>{@code holder_name} - wer es konkret haelt (Charakter bzw. Corp).</li>
+     *   <li>{@code is_corp} - unterscheidet die beiden Faelle im Frontend.</li>
+     * </ul>
+     *
+     * <p>Charakter- und Corporation-IDs stammen in EVE aus demselben ID-Raum und
+     * kollidieren nie, deshalb ist {@code owner_id} auch ueber beide Quellen
+     * hinweg eindeutig.</p>
+     */
+    private static final String ASSET_UNION = """
+            (
+                SELECT ca.item_id, ca.type_id, ca.quantity, ca.location_flag,
+                       ca.root_location_id, ca.is_singleton, ca.is_blueprint_copy, ca.custom_name,
+                       ca.character_id                                 AS character_id,
+                       ch.corporation_id                               AS corporation_id,
+                       COALESCE(ch.main_character_id, ch.character_id) AS owner_id,
+                       COALESCE(mch.name, ch.name)                     AS owner_name,
+                       ch.name                                         AS holder_name,
+                       FALSE                                           AS is_corp
+                FROM character_assets ca
+                JOIN characters ch ON ch.character_id = ca.character_id
+                LEFT JOIN characters mch ON mch.character_id = ch.main_character_id
+
+                UNION ALL
+
+                SELECT co.item_id, co.type_id, co.quantity, co.location_flag,
+                       co.root_location_id, co.is_singleton, co.is_blueprint_copy, co.custom_name,
+                       NULL::bigint       AS character_id,
+                       co.corporation_id  AS corporation_id,
+                       co.corporation_id  AS owner_id,
+                       cpo.name           AS owner_name,
+                       cpo.name           AS holder_name,
+                       TRUE               AS is_corp
+                FROM corporation_assets co
+                JOIN corporations cpo ON cpo.corporation_id = co.corporation_id
+            ) a
+            """;
+
     private static final String BASE_FROM = """
-            FROM character_assets a
-            JOIN characters c ON c.character_id = a.character_id
-            LEFT JOIN characters mc ON mc.character_id = c.main_character_id
-            LEFT JOIN corporations corp ON corp.corporation_id = c.corporation_id
+            FROM """ + ASSET_UNION + """
+            LEFT JOIN corporations corp ON corp.corporation_id = a.corporation_id
             JOIN evesde."invTypes" t ON t."typeID" = a.type_id
             LEFT JOIN evesde."invGroups" g ON g."groupID" = t."groupID"
             LEFT JOIN evesde."invCategories" cat ON cat."categoryID" = g."categoryID"
@@ -45,8 +89,8 @@ public class AssetQueryRepository {
             "value", VALUE_EXPR,
             "quantity", "a.quantity",
             "typeName", "t.\"typeName\"",
-            "characterName", "c.name",
-            "mainName", "COALESCE(mc.name, c.name)",
+            "characterName", "a.holder_name",
+            "mainName", "a.owner_name",
             "locationName", "loc.name",
             "corporationName", "corp.name",
             "groupName", "g.\"groupName\""
@@ -56,7 +100,7 @@ public class AssetQueryRepository {
             "value", "SUM(" + VALUE_EXPR + ")",
             "quantity", "SUM(a.quantity)",
             "typeName", "t.\"typeName\"",
-            "mainName", "COALESCE(mc.name, c.name)",
+            "mainName", "a.owner_name",
             "corporationName", "corp.name",
             "groupName", "g.\"groupName\""
     );
@@ -74,9 +118,9 @@ public class AssetQueryRepository {
         String sql = """
                 SELECT a.item_id AS "itemId",
                        a.character_id AS "characterId",
-                       c.name AS "characterName",
-                       COALESCE(c.main_character_id, c.character_id) AS "mainId",
-                       COALESCE(mc.name, c.name) AS "mainName",
+                       a.holder_name AS "characterName",
+                       a.owner_id AS "mainId",
+                       a.owner_name AS "mainName",
                        corp.corporation_id AS "corporationId",
                        corp.name AS "corporationName",
                        t."typeID" AS "typeId",
@@ -95,6 +139,7 @@ public class AssetQueryRepository {
                        -- Nach aussen ist das dasselbe wie "kein Name".
                        NULLIF(a.custom_name, '') AS "customName",
                        a.is_blueprint_copy AS "isBlueprintCopy",
+                       a.is_corp AS "isCorp",
                        """ + UNIT_PRICE_EXPR + """
                         AS "unitPrice",
                        """ + VALUE_EXPR + """
@@ -138,6 +183,7 @@ public class AssetQueryRepository {
                     bool(r, "singleton"),
                     str(r, "customName"),
                     bool(r, "isBlueprintCopy"),
+                    bool(r, "isCorp"),
                     dbl(r, "unitPrice"),
                     value
             ));
@@ -162,9 +208,9 @@ public class AssetQueryRepository {
 
         String groupBy = """
                  GROUP BY t."typeID", t."typeName", g."groupName", cat."categoryName",
-                          COALESCE(c.main_character_id, c.character_id),
-                          COALESCE(mc.name, c.name), corp.name, p.jita_buy, p.jita_sell,
-                          a.is_blueprint_copy
+                          a.owner_id,
+                          a.owner_name, corp.name, p.jita_buy, p.jita_sell,
+                          a.is_blueprint_copy, a.is_corp
                 """;
 
         String sql = """
@@ -172,10 +218,11 @@ public class AssetQueryRepository {
                        t."typeName" AS "typeName",
                        g."groupName" AS "groupName",
                        cat."categoryName" AS "categoryName",
-                       COALESCE(c.main_character_id, c.character_id) AS "mainId",
-                       COALESCE(mc.name, c.name) AS "mainName",
+                       a.owner_id AS "mainId",
+                       a.owner_name AS "mainName",
                        corp.name AS "corporationName",
                        a.is_blueprint_copy AS "isBlueprintCopy",
+                       a.is_corp AS "isCorp",
                        SUM(a.quantity) AS "quantity",
                        COUNT(DISTINCT a.root_location_id) AS "locationCount",
                        """ + UNIT_PRICE_EXPR + """
@@ -208,6 +255,7 @@ public class AssetQueryRepository {
                     str(r, "mainName"),
                     str(r, "corporationName"),
                     bool(r, "isBlueprintCopy"),
+                    bool(r, "isCorp"),
                     lng(r, "quantity"),
                     lng(r, "locationCount").intValue(),
                     dbl(r, "unitPrice"),
@@ -227,10 +275,10 @@ public class AssetQueryRepository {
     // ==================================================================
     public List<Tuple> findHoldersOfType(Long typeId) {
         String sql = """
-                SELECT COALESCE(c.main_character_id, c.character_id) AS "mainId",
-                       COALESCE(mc.name, c.name) AS "mainName",
-                       c.character_id AS "characterId",
-                       c.name AS "characterName",
+                SELECT a.owner_id AS "mainId",
+                       a.owner_name AS "mainName",
+                       a.character_id AS "characterId",
+                       a.holder_name AS "characterName",
                        corp.name AS "corporationName",
                        a.root_location_id AS "locationId",
                        loc.name AS "locationName",
@@ -239,15 +287,16 @@ public class AssetQueryRepository {
                        a.location_flag AS "locationFlag",
                        a.is_singleton AS "singleton",
                        NULLIF(a.custom_name, '') AS "customName",
+                       a.is_corp AS "isCorp",
                        SUM(a.quantity) AS "quantity",
                        SUM(""" + VALUE_EXPR + """
                        ) AS "value"
                 """ + BASE_FROM + """
                 WHERE a.type_id = :typeId
-                GROUP BY COALESCE(c.main_character_id, c.character_id),
-                         COALESCE(mc.name, c.name), c.character_id, c.name, corp.name,
+                GROUP BY a.owner_id,
+                         a.owner_name, a.character_id, a.holder_name, corp.name,
                          a.root_location_id, loc.name, loc.system_name, loc.region_name, a.location_flag,
-                         a.is_singleton, a.custom_name
+                         a.is_singleton, a.custom_name, a.is_corp
                 ORDER BY a.is_singleton NULLS FIRST, SUM(a.quantity) DESC, a.custom_name
                 """;
         Query q = em.createNativeQuery(sql, Tuple.class);
@@ -332,7 +381,7 @@ public class AssetQueryRepository {
                        COALESCE(SUM(a.quantity), 0) AS "quantity",
                        COALESCE(SUM(""" + VALUE_EXPR + """
                        ), 0) AS "value",
-                       COUNT(DISTINCT COALESCE(c.main_character_id, c.character_id)) AS "holders"
+                       COUNT(DISTINCT a.owner_id) AS "holders"
                 """ + BASE_FROM + """
                 GROUP BY t."typeID", t."typeName", g."groupName"
                 ORDER BY 5 DESC
@@ -347,8 +396,8 @@ public class AssetQueryRepository {
 
     public List<Tuple> topHolders(int limit) {
         String sql = """
-                SELECT COALESCE(c.main_character_id, c.character_id) AS "mainId",
-                       COALESCE(mc.name, c.name) AS "mainName",
+                SELECT a.owner_id AS "mainId",
+                       a.owner_name AS "mainName",
                        STRING_AGG(DISTINCT corp.name, ', ') AS "corporationName",
                        COUNT(*) AS "stacks",
                        COALESCE(SUM(""" + VALUE_EXPR + """
@@ -375,7 +424,7 @@ public class AssetQueryRepository {
                        COALESCE(SUM(""" + VALUE_EXPR + """
                        ), 0) AS "value"
                 """ + BASE_FROM + """
-                WHERE COALESCE(c.main_character_id, c.character_id) = :mainId
+                WHERE a.owner_id = :mainId
                 GROUP BY 1
                 ORDER BY 3 DESC
                 """;
@@ -396,7 +445,7 @@ public class AssetQueryRepository {
                        COALESCE(SUM(""" + VALUE_EXPR + """
                        ), 0) AS "value"
                 """ + BASE_FROM + """
-                WHERE COALESCE(c.main_character_id, c.character_id) = :mainId
+                WHERE a.owner_id = :mainId
                 GROUP BY 1, 2, 3, 4
                 ORDER BY 6 DESC
                 """;
@@ -412,8 +461,8 @@ public class AssetQueryRepository {
     // ==================================================================
     public List<Tuple> doctrineOwnership(List<Long> typeIds) {
         String sql = """
-                SELECT COALESCE(c.main_character_id, c.character_id) AS "mainId",
-                       COALESCE(mc.name, c.name) AS "mainName",
+                SELECT a.owner_id AS "mainId",
+                       a.owner_name AS "mainName",
                        corp.name AS "corporationName",
                        a.type_id AS "typeId",
                        SUM(a.quantity) AS "quantity"
@@ -432,7 +481,8 @@ public class AssetQueryRepository {
     // 7. Filter-Optionen / Typeahead
     // ==================================================================
     private static final String DISTINCT_TYPES = """
-            (SELECT DISTINCT type_id FROM character_assets) a
+            (SELECT DISTINCT type_id FROM character_assets
+             UNION SELECT DISTINCT type_id FROM corporation_assets) a
             JOIN evesde."invTypes" t ON t."typeID" = a.type_id
             LEFT JOIN evesde."invGroups" g ON g."groupID" = t."groupID"
             LEFT JOIN evesde."invCategories" cat ON cat."categoryID" = g."categoryID"
@@ -484,9 +534,11 @@ public class AssetQueryRepository {
 
     public List<String> distinctLocationFlags() {
         Query q = em.createNativeQuery("""
-                SELECT DISTINCT a.location_flag
-                FROM character_assets a
-                WHERE a.location_flag IS NOT NULL
+                SELECT DISTINCT flag AS location_flag FROM (
+                    SELECT location_flag AS flag FROM character_assets
+                    UNION SELECT location_flag FROM corporation_assets
+                ) x
+                WHERE flag IS NOT NULL
                 ORDER BY 1
                 """);
         @SuppressWarnings("unchecked")
@@ -498,18 +550,19 @@ public class AssetQueryRepository {
         return idNameQuery("""
                 SELECT DISTINCT corp.corporation_id AS "id", corp.name AS "name"
                 FROM corporations corp
-                JOIN characters c ON c.corporation_id = corp.corporation_id
                 WHERE corp.name IS NOT NULL
+                  AND (EXISTS (SELECT 1 FROM characters ch WHERE ch.corporation_id = corp.corporation_id)
+                       OR EXISTS (SELECT 1 FROM corporation_assets co WHERE co.corporation_id = corp.corporation_id))
                 ORDER BY 2
                 """);
     }
 
     public List<Tuple> distinctMains() {
         return idNameQuery("""
-                SELECT DISTINCT COALESCE(c.main_character_id, c.character_id) AS "id",
-                                COALESCE(mc.name, c.name) AS "name"
-                FROM characters c
-                LEFT JOIN characters mc ON mc.character_id = c.main_character_id
+                SELECT DISTINCT COALESCE(ch.main_character_id, ch.character_id) AS "id",
+                                COALESCE(mch.name, ch.name) AS "name"
+                FROM characters ch
+                LEFT JOIN characters mch ON mch.character_id = ch.main_character_id
                 ORDER BY 2
                 """);
     }
@@ -554,7 +607,7 @@ public class AssetQueryRepository {
      * Was "mein Account" bedeutet: der Main und alle seine Alts.
      * Bewusst eine Konstante, damit die Definition an keiner Stelle abweicht.
      */
-    private static final String MAIN_SCOPE = " COALESCE(c.main_character_id, c.character_id) = :mainId ";
+    private static final String MAIN_SCOPE = " a.owner_id = :mainId ";
 
     public List<Tuple> distinctCategoriesForMain(Long mainId) {
         return mainScopedTuples("""
@@ -609,12 +662,19 @@ public class AssetQueryRepository {
                 """, mainId);
     }
 
-    /** Die Charaktere des Accounts - fuer das "Charakter"-Dropdown der Mitglieder-Suche. */
+    /**
+     * Die Charaktere des Accounts - fuer das "Charakter"-Dropdown der Mitglieder-Suche.
+     *
+     * <p>Greift bewusst direkt auf {@code characters} zu und <em>nicht</em> auf die
+     * Asset-Union: gemeint sind alle Charaktere des Accounts, auch die ohne einen
+     * einzigen Gegenstand im Hangar. Der Alias heisst deshalb {@code ch} und nicht
+     * {@code a} - so bleibt die Query von der Union-Basis unabhaengig.</p>
+     */
     public List<Tuple> charactersOfMain(Long mainId) {
         String sql = """
-                SELECT c.character_id AS "id", c.name AS "name"
-                FROM characters c
-                WHERE COALESCE(c.main_character_id, c.character_id) = :mainId
+                SELECT ch.character_id AS "id", ch.name AS "name"
+                FROM characters ch
+                WHERE COALESCE(ch.main_character_id, ch.character_id) = :mainId
                 ORDER BY 2
                 """;
         Query q = em.createNativeQuery(sql, Tuple.class);
@@ -670,8 +730,8 @@ public class AssetQueryRepository {
         if (notBlank(req.q())) {
             conditions.add("""
                     (LOWER(t."typeName") LIKE LOWER(CONCAT('%', :q, '%'))
-                     OR LOWER(c.name) LIKE LOWER(CONCAT('%', :q, '%'))
-                     OR LOWER(COALESCE(mc.name, c.name)) LIKE LOWER(CONCAT('%', :q, '%'))
+                     OR LOWER(a.holder_name) LIKE LOWER(CONCAT('%', :q, '%'))
+                     OR LOWER(a.owner_name) LIKE LOWER(CONCAT('%', :q, '%'))
                      OR LOWER(COALESCE(loc.name, '')) LIKE LOWER(CONCAT('%', :q, '%'))
                      OR LOWER(COALESCE(g."groupName", '')) LIKE LOWER(CONCAT('%', :q, '%')))
                     """);
@@ -694,11 +754,11 @@ public class AssetQueryRepository {
             params.put("characterId", req.characterId());
         }
         if (req.mainId() != null) {
-            conditions.add("COALESCE(c.main_character_id, c.character_id) = :mainId");
+            conditions.add("a.owner_id = :mainId");
             params.put("mainId", req.mainId());
         }
         if (req.corporationId() != null) {
-            conditions.add("c.corporation_id = :corporationId");
+            conditions.add("a.corporation_id = :corporationId");
             params.put("corporationId", req.corporationId());
         }
         if (req.locationId() != null) {
@@ -723,6 +783,13 @@ public class AssetQueryRepository {
         }
         if (Boolean.TRUE.equals(req.shipsOnly())) {
             conditions.add("g.\"categoryID\" = 6");
+        }
+        // Besitzer-Herkunft: CHARACTER = nur persoenliche Bestaende,
+        // CORPORATION = nur Corp-Hangars, sonst beides.
+        if ("CHARACTER".equalsIgnoreCase(req.ownerType())) {
+            conditions.add("a.is_corp = FALSE");
+        } else if ("CORPORATION".equalsIgnoreCase(req.ownerType())) {
+            conditions.add("a.is_corp = TRUE");
         }
 
         if (conditions.isEmpty()) return " ";

@@ -32,6 +32,11 @@ public class AssetAnalyticsService {
         return "https://images.evetech.net/characters/" + characterId + "/portrait?size=" + size;
     }
 
+    /** Corp-Hangars bekommen das Corporation-Logo statt eines Portraets. */
+    private static String corpLogo(Long corporationId, int size) {
+        return "https://images.evetech.net/corporations/" + corporationId + "/logo?size=" + size;
+    }
+
     private static String typeIcon(Long typeId) {
         return "https://images.evetech.net/types/" + typeId + "/icon?size=64";
     }
@@ -74,6 +79,7 @@ public class AssetAnalyticsService {
 
             MainAcc main = mains.computeIfAbsent(mainId, k -> new MainAcc(
                     mainId, str(r, "mainName"), str(r, "corporationName")));
+            main.isCorp = bool(r, "isCorp");
             main.quantity += qty;
             main.value += value;
 
@@ -87,6 +93,7 @@ public class AssetAnalyticsService {
                     str(r, "locationFlag"),
                     bool(r, "singleton"),
                     str(r, "customName"),
+                    bool(r, "isCorp"),
                     qty
             ));
         }
@@ -94,7 +101,9 @@ public class AssetAnalyticsService {
         List<AssetDtos.HolderDto> holders = mains.values().stream()
                 .sorted(Comparator.comparingLong((MainAcc m) -> m.quantity).reversed())
                 .map(m -> new AssetDtos.HolderDto(
-                        m.mainId, m.mainName, portrait(m.mainId, 64), m.corporationName,
+                        m.mainId, m.mainName,
+                        m.isCorp ? corpLogo(m.mainId, 64) : portrait(m.mainId, 64),
+                        m.corporationName, m.isCorp,
                         m.quantity, m.value,
                         m.characters.values().stream()
                                 .sorted(Comparator.comparingLong((CharAcc c) -> c.quantity).reversed())
@@ -116,6 +125,8 @@ public class AssetAnalyticsService {
         final Long mainId;
         final String mainName;
         final String corporationName;
+        /** true = die Zeile ist ein Corp-Hangar statt eines Spieler-Accounts. */
+        boolean isCorp;
         long quantity;
         double value;
         final Map<Long, CharAcc> characters = new LinkedHashMap<>();
@@ -196,14 +207,14 @@ public class AssetAnalyticsService {
 
         AssetDtos.AssetSearchRequest topReq = new AssetDtos.AssetSearchRequest(
                 null, null, null, null, null, mainId, null, null, null, null,
-                null, null, null, "value", "desc", 0, 25, true);
+                null, null, null, null, "value", "desc", 0, 25, true);
         var topItems = queryRepo.searchGrouped(topReq);
 
         double totalValue = byCategory.stream().mapToDouble(AssetDtos.NamedValueDto::value).sum();
         long totalStacks = byLocation.stream().mapToLong(AssetDtos.LocationBucketDto::stacks).sum();
 
-        String mainName = topItems.content().isEmpty() ? "Unbekannt" : topItems.content().get(0).mainName();
-        String corpName = topItems.content().isEmpty() ? null : topItems.content().get(0).corporationName();
+        String mainName = topItems.content().isEmpty() ? "Unbekannt" : topItems.content().getFirst().mainName();
+        String corpName = topItems.content().isEmpty() ? null : topItems.content().getFirst().corporationName();
 
         return new AssetDtos.MemberAssetDetailDto(
                 mainId, mainName, portrait(mainId, 128), corpName,
@@ -339,7 +350,7 @@ public class AssetAnalyticsService {
                 req.q(), req.typeId(), req.groupId(), req.categoryId(), req.characterId(),
                 req.mainId(), req.corporationId(), req.locationId(), req.regionName(),
                 req.locationFlag(), req.minQuantity(), req.minValue(), req.shipsOnly(),
-                req.sort(), req.direction(), 0, 500, req.grouped());
+                req.ownerType(), req.sort(), req.direction(), 0, 500, req.grouped());
 
         StringBuilder sb = new StringBuilder();
 

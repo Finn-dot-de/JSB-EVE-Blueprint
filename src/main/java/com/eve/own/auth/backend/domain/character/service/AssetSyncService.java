@@ -5,6 +5,8 @@ import com.eve.own.auth.backend.domain.character.entity.CharacterAsset;
 import com.eve.own.auth.backend.domain.character.entity.CharacterLp;
 import com.eve.own.auth.backend.domain.character.entity.CharacterMining;
 import com.eve.own.auth.backend.domain.character.entity.CharacterSkill;
+import com.eve.own.auth.backend.domain.character.entity.CorporationAsset;
+import com.eve.own.auth.backend.domain.character.repository.CorporationAssetRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterActivityRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterAssetRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterLpRepository;
@@ -25,15 +27,17 @@ public class AssetSyncService {
     private final CharacterActivityRepository activityRepo;
     private final CharacterMiningRepository miningRepo;
     private final CharacterSkillRepository skillRepo;
+    private final CorporationAssetRepository corpAssetRepo;
 
     public AssetSyncService(CharacterAssetRepository assetRepo, CharacterLpRepository lpRepo,
                             CharacterActivityRepository activityRepo, CharacterMiningRepository miningRepo,
-                            CharacterSkillRepository skillRepo) {
+                            CharacterSkillRepository skillRepo, CorporationAssetRepository corpAssetRepo) {
         this.assetRepo = assetRepo;
         this.lpRepo = lpRepo;
         this.activityRepo = activityRepo;
         this.miningRepo = miningRepo;
         this.skillRepo = skillRepo;
+        this.corpAssetRepo = corpAssetRepo;
     }
 
     @Transactional
@@ -48,6 +52,13 @@ public class AssetSyncService {
         assetRepo.deleteByCharacterId(characterId);
         assetRepo.saveAll(newAssets);
         log.info("Asset-Snapshot für Charakter {} aktualisiert: {} Items.", characterId, newAssets.size());
+    }
+
+    @Transactional
+    public void replaceCorporationAssets(Long corporationId, List<CorporationAsset> newAssets) {
+        corpAssetRepo.deleteByCorporationId(corporationId);
+        corpAssetRepo.saveAll(newAssets);
+        log.info("Asset-Snapshot für Corporation {} aktualisiert: {} Items.", corporationId, newAssets.size());
     }
 
     @Transactional

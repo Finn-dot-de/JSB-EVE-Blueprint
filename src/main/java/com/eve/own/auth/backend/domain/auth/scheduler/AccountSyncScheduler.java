@@ -8,6 +8,7 @@ import com.eve.own.auth.backend.domain.auth.service.AuthService;
 import com.eve.own.auth.backend.domain.character.entity.*;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterAssetRepository;
+import com.eve.own.auth.backend.domain.character.repository.CorporationAssetRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterSkillRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterStatsRepository;
@@ -38,6 +39,7 @@ public class AccountSyncScheduler {
     private final CharacterStatsRepository statsRepo;
     private final CharacterSkillRepository skillRepo;
     private final CharacterAssetRepository assetRepo;
+    private final CorporationAssetRepository corpAssetRepo;
     private final AssetSyncService assetSyncService;
     private final InvTypeRepository invTypeRepo;
     private final CorporationRepository corpRepo;
@@ -52,6 +54,7 @@ public class AccountSyncScheduler {
     public AccountSyncScheduler(AuthService authService, EsiService esiService,
                                 CharacterRepository characterRepo, CharacterStatsRepository statsRepo,
                                 CharacterSkillRepository skillRepo, CharacterAssetRepository assetRepo,
+                                CorporationAssetRepository corpAssetRepo,
                                 AssetSyncService assetSyncService, InvTypeRepository invTypeRepo,
                                 CorporationRepository corpRepo, TitleRoleMappingRepository titleRepo,
                                 SystemRoleRepository systemRoleRepo, MiningTaxRateRepository taxRateRepo,
@@ -64,6 +67,7 @@ public class AccountSyncScheduler {
         this.statsRepo = statsRepo;
         this.skillRepo = skillRepo;
         this.assetRepo = assetRepo;
+        this.corpAssetRepo = corpAssetRepo;
         this.assetSyncService = assetSyncService;
         this.invTypeRepo = invTypeRepo;
         this.corpRepo = corpRepo;
@@ -156,6 +160,160 @@ public class AccountSyncScheduler {
         }
         taxRateRepo.saveAll(rates);
         log.info("Jita Preise erfolgreich synchronisiert (inkl. Compressed-Fallback 1:1).");
+    }
+
+    /**
+     * Spiegelt die Corp-Hangars aller zugelassenen Corporations.
+     *
+     * <p>Laeuft bewusst seltener als der Account-Sync: Corp-Bestaende aendern sich
+     * traeger, und der Endpunkt ist bei grossen Corps teuer (viele Seiten).</p>
+     *
+     * <p>ESI verlangt neben dem Scope die Ingame-Rolle Director. Welcher unserer
+     * Charaktere die hat, wissen wir nicht sicher - die Rollen in der Datenbank
+     * stammen aus Corp-<em>Titeln</em>, nicht aus den echten Corp-Rollen. Deshalb
+     * werden die aussichtsreichsten Kandidaten der Reihe nach durchprobiert, bis
+     * einer durchkommt.</p>
+     */
+    @Scheduled(fixedRate = 3600000)
+    public void syncCorporationAssets() {
+        log.info("Starte Corp-Asset-Sync...");
+        for (Long corpId : getAllowedCorps()) {
+            try {
+                syncSingleCorporation(corpId);
+            } catch (Exception e) {
+                log.error("Corp-Asset-Sync für Corporation {} fehlgeschlagen: {}", corpId, e.getMessage());
+            }
+        }
+        log.info("Corp-Asset-Sync abgeschlossen.");
+    }
+
+    private void syncSingleCorporation(Long corpId) {
+        List<Character> candidates = characterRepo.findAllWithCorporation().stream()
+                .filter(c -> c.getCorporation() != null && corpId.equals(c.getCorporation().getId()))
+                .filter(c -> c.getRefreshToken() != null)
+                .sorted((a, b) -> Integer.compare(directorRank(b), directorRank(a)))
+                .toList();
+
+        if (candidates.isEmpty()) {
+            log.debug("Keine Charaktere mit Token in Corporation {} - Corp-Assets werden übersprungen.", corpId);
+            return;
+        }
+
+        for (Character candidate : candidates) {
+            // Aussichtslose Kandidaten gar nicht erst anfragen: ohne jede
+            // Fuehrungsrolle antwortet ESI ohnehin mit 403 und wir verbrennen
+            // nur Error-Budget.
+            if (directorRank(candidate) == 0) continue;
+
+            try {
+                String token = authService.getValidAccessToken(candidate);
+                if (token == null) continue;
+
+                var response = esiService.getAllCorporationAssets(corpId, token);
+
+                if (response.notModified() && !corpAssetRepo.hasPendingCustomNames(corpId)) {
+                    log.debug("Corp-Assets von {} unverändert, Neuschreiben übersprungen.", corpId);
+                    return;
+                }
+
+                List<EsiService.EsiAssetResponse> esiAssets = response.dataOr(List.of());
+                if (esiAssets.isEmpty()) return;
+
+                Map<Long, Long> itemToLocation = new HashMap<>();
+                for (var ea : esiAssets) {
+                    if (ea.item_id() != null) itemToLocation.put(ea.item_id(), ea.location_id());
+                }
+
+                Map<Long, String> customNames = fetchCorpCustomNames(corpId, token, esiAssets);
+
+                List<CorporationAsset> mapped = esiAssets.stream().map(ea -> {
+                    CorporationAsset a = new CorporationAsset();
+                    a.setItemId(ea.item_id());
+                    a.setCorporationId(corpId);
+                    a.setTypeId(ea.type_id());
+                    a.setLocationId(ea.location_id());
+                    a.setRootLocationId(assetLocationService.resolveRootLocation(itemToLocation, ea.location_id()));
+                    a.setLocationFlag(ea.location_flag());
+                    a.setLocationType(ea.location_type());
+                    a.setSingleton(ea.is_singleton());
+                    a.setBlueprintCopy(ea.is_blueprint_copy());
+                    a.setCustomName(customNames.get(ea.item_id()));
+                    a.setQuantity(ea.quantity() != null ? ea.quantity() : 1);
+                    return a;
+                }).collect(Collectors.toList());
+
+                assetSyncService.replaceCorporationAssets(corpId, mapped);
+                return; // Kandidat hat funktioniert, fertig fuer diese Corp
+
+            } catch (org.springframework.web.client.RestClientResponseException e) {
+                int status = e.getStatusCode().value();
+                if (status == 403) {
+                    log.debug("{} hat keine Director-Rechte in Corp {}, nächster Kandidat.",
+                            candidate.getName(), corpId);
+                    continue;
+                }
+                if (status == 420) throw e;
+                log.warn("Corp-Assets für {} über {} nicht abrufbar: {}", corpId, candidate.getName(), status);
+            } catch (Exception e) {
+                log.warn("Corp-Assets für {} über {} fehlgeschlagen: {}", corpId, candidate.getName(), e.getMessage());
+            }
+        }
+
+        log.info("Kein Charakter mit Director-Rechten für Corporation {} gefunden - Corp-Assets bleiben leer.", corpId);
+    }
+
+    /** Wie aussichtsreich ist ein Charakter als Director-Token-Geber. */
+    private int directorRank(Character c) {
+        if (c.getRoles() == null) return 0;
+        if (c.getRoles().contains("ROLE_CEO")) return 3;
+        if (c.getRoles().contains("ROLE_DIRECTOR")) return 2;
+        if (c.getRoles().contains("ROLE_IT_ADMIN")) return 1;
+        return 0;
+    }
+
+    /** Wie {@link #fetchCustomNames}, nur gegen den Corp-Endpunkt. */
+    private Map<Long, String> fetchCorpCustomNames(Long corpId, String token,
+                                                   List<EsiService.EsiAssetResponse> esiAssets) {
+        List<EsiService.EsiAssetResponse> singletons = esiAssets.stream()
+                .filter(ea -> Boolean.TRUE.equals(ea.is_singleton()))
+                .filter(ea -> ea.item_id() != null && ea.type_id() != null)
+                .toList();
+
+        if (singletons.isEmpty()) return Map.of();
+
+        Set<Long> nameableTypes = new HashSet<>(invTypeRepo.findNameableTypeIds(
+                singletons.stream().map(EsiService.EsiAssetResponse::type_id).distinct().toList()));
+
+        List<Long> itemIds = singletons.stream()
+                .filter(ea -> nameableTypes.contains(ea.type_id()))
+                .map(EsiService.EsiAssetResponse::item_id)
+                .distinct()
+                .toList();
+
+        if (itemIds.isEmpty()) return Map.of();
+
+        Map<Long, String> names = new HashMap<>();
+        for (int start = 0; start < itemIds.size(); start += EsiService.ASSET_NAMES_MAX_IDS) {
+            List<Long> batch = itemIds.subList(
+                    start, Math.min(start + EsiService.ASSET_NAMES_MAX_IDS, itemIds.size()));
+            try {
+                var response = esiService.getCorporationAssetNames(corpId, token, batch);
+                if (response == null) continue;
+                batch.forEach(id -> names.put(id, ""));
+                for (var entry : response) {
+                    if (entry.item_id() == null) continue;
+                    names.put(entry.item_id(), normalizeAssetName(entry.name()));
+                }
+            } catch (org.springframework.web.client.RestClientResponseException e) {
+                if (e.getStatusCode().value() == 420) throw e;
+                log.warn("Corp-Asset-Namen für {} (Batch ab {}) nicht abrufbar: {} - {}",
+                        corpId, start, e.getStatusCode(), e.getResponseBodyAsString());
+                if (e.getStatusCode().value() == 404) {
+                    batch.forEach(id -> names.putIfAbsent(id, ""));
+                }
+            }
+        }
+        return names;
     }
 
     @Scheduled(fixedRate = 600000)

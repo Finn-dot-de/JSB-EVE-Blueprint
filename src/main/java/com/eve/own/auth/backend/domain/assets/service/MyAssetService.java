@@ -77,6 +77,10 @@ public class MyAssetService {
      *       zu einer Fehlermeldung fuehrt.</li>
      *   <li>{@code corporationId} wird verworfen: eine Corp-weite Auswertung
      *       ist genau das, was diese Sicht nicht leisten soll.</li>
+     *   <li>{@code ownerType} wird auf CHARACTER festgenagelt. Die Bestaende der
+     *       Corp-Hangars gehoeren ins Director-Audit, nicht in die
+     *       Selbstauskunft - der Account-Filter allein wuerde sie zwar auch
+     *       ausschliessen, aber diese Zeile macht es unmissverstaendlich.</li>
      * </ul>
      */
     private AssetDtos.AssetSearchRequest scoped(AssetDtos.AssetSearchRequest req, Long mainId,
@@ -97,6 +101,7 @@ public class MyAssetService {
                 null,
                 req.locationId(), req.regionName(), req.locationFlag(),
                 req.minQuantity(), req.minValue(), req.shipsOnly(),
+                "CHARACTER",
                 req.sort(), req.direction(), req.page(), req.size(), req.grouped());
     }
 

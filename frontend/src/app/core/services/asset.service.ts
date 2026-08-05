@@ -31,6 +31,8 @@ export interface AssetRowDto {
   /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
   customName: string | null;
   isBlueprintCopy: boolean | null;
+  /** true = Bestand aus einem Corp-Hangar, false = persönlicher Besitz. */
+  isCorp: boolean | null;
   unitPrice: number;
   totalValue: number;
 }
@@ -44,6 +46,8 @@ export interface AssetStackDto {
   mainName: string;
   corporationName: string;
   isBlueprintCopy: boolean | null;
+  /** true = Bestand aus einem Corp-Hangar, false = persönlicher Besitz. */
+  isCorp: boolean | null;
   quantity: number;
   locationCount: number;
   unitPrice: number;
@@ -75,6 +79,8 @@ export interface HolderLocationDto {
   singleton: boolean | null;
   /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
   customName: string | null;
+  /** true = Bestand aus einem Corp-Hangar. */
+  isCorp: boolean | null;
   quantity: number;
 }
 
@@ -91,6 +97,8 @@ export interface HolderDto {
   mainName: string;
   portraitUrl: string;
   corporationName: string;
+  /** true = die Zeile ist ein Corp-Hangar, kein Spieler-Account. */
+  isCorp: boolean | null;
   totalQuantity: number;
   totalValue: number;
   characters: HolderCharacterDto[];
@@ -200,6 +208,8 @@ export interface AssetSearchParams {
   minQuantity?: number | null;
   minValue?: number | null;
   shipsOnly?: boolean | null;
+  /** 'CHARACTER' | 'CORPORATION' | null für beides. */
+  ownerType?: string | null;
   sort?: string;
   direction?: string;
   page?: number;

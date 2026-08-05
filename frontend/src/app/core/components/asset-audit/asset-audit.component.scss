@@ -510,6 +510,14 @@
     border-color: rgba(255, 176, 32, 0.35);
     margin-left: 6px;
   }
+
+  /* Corp-Bestaende heben sich vom persoenlichen Besitz ab, ohne zu schreien. */
+  &.corp {
+    background: rgba(59, 130, 246, 0.14);
+    color: var(--accent-color);
+    border-color: rgba(59, 130, 246, 0.35);
+    margin-right: 4px;
+  }
 }
 
 /* ================= Ergebnis-Kopf & Pagination ================= */

@@ -14,15 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 
-/**
- * Asset-Audit fuer die Fuehrungsebene.
- *
- * Hinweis zur Absicherung: hier wird bewusst hasAnyAuthority statt hasAnyRole
- * verwendet. hasAnyRole setzt intern das Praefix "ROLE_" davor - da die Rollen
- * in diesem Projekt bereits als "ROLE_DIRECTOR" gespeichert sind, wuerde daraus
- * "ROLE_ROLE_DIRECTOR" und der Check schluege immer fehl. Die Rollen-Hierarchie
- * aus dem SecurityConfig greift bei hasAnyAuthority ebenfalls.
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/assets")
@@ -61,6 +52,7 @@ public class AssetController {
             @RequestParam(required = false) Long minQuantity,
             @RequestParam(required = false) Double minValue,
             @RequestParam(required = false) Boolean shipsOnly,
+            @RequestParam(required = false) String ownerType,
             @RequestParam(defaultValue = "value") String sort,
             @RequestParam(defaultValue = "desc") String direction,
             @RequestParam(defaultValue = "0") Integer page,
@@ -70,7 +62,7 @@ public class AssetController {
         AssetDtos.AssetSearchRequest req = new AssetDtos.AssetSearchRequest(
                 q, typeId, groupId, categoryId, characterId, mainId, corporationId,
                 locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
-                sort, direction, page, size, grouped);
+                ownerType, sort, direction, page, size, grouped);
 
         try {
             return ResponseEntity.ok(Boolean.TRUE.equals(grouped)
@@ -164,6 +156,7 @@ public class AssetController {
             @RequestParam(required = false) Long minQuantity,
             @RequestParam(required = false) Double minValue,
             @RequestParam(required = false) Boolean shipsOnly,
+            @RequestParam(required = false) String ownerType,
             @RequestParam(defaultValue = "value") String sort,
             @RequestParam(defaultValue = "desc") String direction,
             @RequestParam(defaultValue = "false") Boolean grouped) {
@@ -171,7 +164,7 @@ public class AssetController {
         AssetDtos.AssetSearchRequest req = new AssetDtos.AssetSearchRequest(
                 q, typeId, groupId, categoryId, characterId, mainId, corporationId,
                 locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
-                sort, direction, 0, 500, grouped);
+                ownerType, sort, direction, 0, 500, grouped);
 
         String csv = analyticsService.exportCsv(req);
         // BOM, damit Excel die Umlaute korrekt als UTF-8 liest

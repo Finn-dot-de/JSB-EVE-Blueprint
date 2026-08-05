@@ -83,7 +83,7 @@ public class MyAssetController {
         AssetDtos.AssetSearchRequest req = new AssetDtos.AssetSearchRequest(
                 q, typeId, groupId, categoryId, characterId, null, null,
                 locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
-                sort, direction, page, size, grouped);
+                null, sort, direction, page, size, grouped);
 
         try {
             Long me = currentCharacterId();
@@ -151,7 +151,7 @@ public class MyAssetController {
         AssetDtos.AssetSearchRequest req = new AssetDtos.AssetSearchRequest(
                 q, typeId, groupId, categoryId, characterId, null, null,
                 locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
-                sort, direction, 0, 500, grouped);
+                null, sort, direction, 0, 500, grouped);
 
         String csv = myAssetService.exportCsv(currentCharacterId(), req);
         // BOM, damit Excel die Umlaute korrekt als UTF-8 liest

@@ -64,3 +64,4 @@ build/
 
 /npm/data/database.sqlite
 /npm/data/keys.json
+/.claude

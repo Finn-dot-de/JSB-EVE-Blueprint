@@ -36,6 +36,8 @@ public class AssetDtos {
             /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
             String customName,
             Boolean isBlueprintCopy,
+            /** true = Bestand aus einem Corp-Hangar, false = persoenlicher Besitz. */
+            Boolean isCorp,
             Double unitPrice,
             Double totalValue
     ) {}
@@ -50,6 +52,8 @@ public class AssetDtos {
             String mainName,
             String corporationName,
             Boolean isBlueprintCopy,
+            /** true = Bestand aus einem Corp-Hangar, false = persoenlicher Besitz. */
+            Boolean isCorp,
             Long quantity,
             Integer locationCount,
             Double unitPrice,
@@ -81,6 +85,8 @@ public class AssetDtos {
             Long minQuantity,
             Double minValue,
             Boolean shipsOnly,
+            /** "CHARACTER", "CORPORATION" oder null/leer fuer beides. */
+            String ownerType,
             String sort,
             String direction,
             Integer page,
@@ -97,6 +103,8 @@ public class AssetDtos {
             String mainName,
             String portraitUrl,
             String corporationName,
+            /** true = die Zeile ist ein Corp-Hangar, kein Spieler-Account. */
+            Boolean isCorp,
             Long totalQuantity,
             Double totalValue,
             List<HolderCharacterDto> characters
@@ -127,6 +135,8 @@ public class AssetDtos {
             Boolean singleton,
             /** Ingame vergebener Name, nur bei zusammengebauten Items. Sonst null. */
             String customName,
+            /** true = Bestand aus einem Corp-Hangar. */
+            Boolean isCorp,
             Long quantity
     ) {}
 

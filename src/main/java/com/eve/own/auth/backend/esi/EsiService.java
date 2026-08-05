@@ -129,6 +129,37 @@ public class EsiService {
         return executor.get("/corporations/{id}/members/", new Object[]{corporationId}, token, Long[].class);
     }
 
+    /**
+     * Alle Corp-Bestaende. Paginierter Endpunkt, jede Seite wird per ETag geprueft.
+     *
+     * <p>Verlangt den Scope {@code esi-assets.read_corporation_assets.v1} <em>und</em>
+     * die Ingame-Rolle Director beim Token-Charakter. Ohne die Rolle antwortet ESI
+     * mit 403 - deshalb probiert der Aufrufer mehrere Kandidaten durch.</p>
+     */
+    public EsiResponse<List<EsiAssetResponse>> getAllCorporationAssets(Long corporationId, String token) {
+        return executor.getAllPages("/corporations/{id}/assets/", new Object[]{corporationId}, token,
+                EsiAssetResponse[].class);
+    }
+
+    /** Custom-Namen von Corp-Bestaenden. Gleiches 1000er-Limit wie bei Charakteren. */
+    public EsiAssetNameResponse[] getCorporationAssetNames(Long corporationId, String token, List<Long> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return new EsiAssetNameResponse[0];
+        }
+        if (itemIds.size() > ASSET_NAMES_MAX_IDS) {
+            throw new IllegalArgumentException(
+                    "ESI akzeptiert maximal " + ASSET_NAMES_MAX_IDS + " item_ids pro Request, erhalten: " + itemIds.size());
+        }
+        return executor.post("/corporations/{id}/assets/names/", new Object[]{corporationId},
+                itemIds.toArray(new Long[0]), token, EsiAssetNameResponse[].class);
+    }
+
+    /** Namen der sieben Corp-Hangar-Divisionen (CorpSAG1 - CorpSAG7). */
+    public EsiResponse<EsiDivisionsResponse> getCorporationDivisions(Long corporationId, String token) {
+        return executor.get("/corporations/{id}/divisions/", new Object[]{corporationId}, token,
+                EsiDivisionsResponse.class);
+    }
+
     // ==================================================================
     // Fleet
     // ==================================================================
@@ -214,6 +245,8 @@ public class EsiService {
                                    Boolean is_singleton, String location_flag, String location_type,
                                    Boolean is_blueprint_copy) {}
     public record EsiAssetNameResponse(Long item_id, String name) {}
+    public record EsiDivisionsResponse(EsiDivision[] hangar, EsiDivision[] wallet) {}
+    public record EsiDivision(Integer division, String name) {}
     public record EsiStructureResponse(String name, Long owner_id, Long solar_system_id, Long type_id) {}
     public record EsiCharacterResponse(String name, Long corporation_id) {}
     public record EsiCorporationResponse(String name, String ticker, Long alliance_id, Long faction_id) {}

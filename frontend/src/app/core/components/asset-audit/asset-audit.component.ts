@@ -47,7 +47,7 @@ export class AssetAuditComponent implements OnInit {
     q: '', typeId: null, groupId: null, categoryId: null,
     characterId: null, mainId: null, corporationId: null, locationId: null,
     regionName: null, locationFlag: null, minQuantity: null, minValue: null,
-    shipsOnly: false, sort: 'value', direction: 'desc', page: 0, size: 50
+    shipsOnly: false, ownerType: null, sort: 'value', direction: 'desc', page: 0, size: 50
   };
 
   // --- Typeahead ---
@@ -211,7 +211,7 @@ export class AssetAuditComponent implements OnInit {
       q: '', typeId: null, groupId: null, categoryId: null,
       characterId: null, mainId: null, corporationId: null, locationId: null,
       regionName: null, locationFlag: null, minQuantity: null, minValue: null,
-      shipsOnly: false, sort: 'value', direction: 'desc', page: 0, size: 50
+      shipsOnly: false, ownerType: null, sort: 'value', direction: 'desc', page: 0, size: 50
     };
     this.loadFilters();
     this.runSearch();

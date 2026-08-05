@@ -245,6 +245,14 @@
                 </select>
               </div>
               <div class="form-group">
+                <label>Herkunft</label>
+                <select [(ngModel)]="f.ownerType" (ngModelChange)="runSearch()">
+                  <option [ngValue]="null">Alle Bestände</option>
+                  <option [ngValue]="'CHARACTER'">Nur Charaktere</option>
+                  <option [ngValue]="'CORPORATION'">Nur Corp-Hangars</option>
+                </select>
+              </div>
+              <div class="form-group">
                 <label>Corporation</label>
                 <select [(ngModel)]="f.corporationId" (ngModelChange)="runSearch()">
                   <option [ngValue]="null">Alle</option>
@@ -346,7 +354,14 @@
                             </div>
                           </div>
                         </td>
-                        <td><a class="link" (click)="openMember(row.mainId)">{{ row.mainName }}</a></td>
+                        <td>
+                          @if (row.isCorp) {
+                            <span class="badge corp" title="Bestand aus einem Corp-Hangar">🏢 Corp</span>
+                            <span style="margin-left: 6px;">{{ row.mainName }}</span>
+                          } @else {
+                            <a class="link" (click)="openMember(row.mainId)">{{ row.mainName }}</a>
+                          }
+                        </td>
                         <td style="color: var(--text-secondary);">{{ row.corporationName }}</td>
                         <td style="text-align: right; font-weight: 500;">{{ formatNumber(row.quantity) }}</td>
                         <td style="text-align: right; color: var(--text-secondary);">{{ row.locationCount }}</td>
@@ -414,8 +429,16 @@
                           </div>
                         </td>
                         <td>
-                          <div class="item-name">{{ row.characterName }}</div>
-                          <div class="item-group">Account: {{ row.mainName }}</div>
+                          @if (row.isCorp) {
+                            <div class="item-name">
+                              <span class="badge corp" title="Bestand aus einem Corp-Hangar">🏢 Corp</span>
+                              {{ row.mainName }}
+                            </div>
+                            <div class="item-group">Hangar-Division</div>
+                          } @else {
+                            <div class="item-name">{{ row.characterName }}</div>
+                            <div class="item-group">Account: {{ row.mainName }}</div>
+                          }
                         </td>
                         <td>
                           <div class="item-name">{{ row.locationName }}</div>
@@ -494,8 +517,15 @@
                      [ngClass]="isHolderExpanded(holder.mainId) ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
                   <img [src]="holder.portraitUrl" (error)="onPortraitError($event)" [alt]="holder.mainName" class="portrait">
                   <div class="holder-name">
-                    <div class="item-name">{{ holder.mainName }}</div>
-                    <div class="item-group">{{ holder.corporationName }}</div>
+                    <div class="item-name">
+                      @if (holder.isCorp) {
+                        <span class="badge corp" title="Corp-Hangar">🏢 Corp</span>
+                      }
+                      {{ holder.mainName }}
+                    </div>
+                    <div class="item-group">
+                      @if (holder.isCorp) { Corporation-Hangar } @else { {{ holder.corporationName }} }
+                    </div>
                   </div>
                   <div class="holder-qty">{{ formatNumber(holder.totalQuantity) }}x</div>
                   <div class="holder-value">{{ formatIsk(holder.totalValue) }}</div>

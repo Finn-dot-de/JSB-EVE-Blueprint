@@ -151,20 +151,45 @@ export class MyAssetsComponent implements OnInit {
     this.runSearch();
   }
 
+  /**
+   * Laufende Nummer der jüngsten Suchanfrage.
+   *
+   * <p>Ohne diese Absicherung kann eine ältere, langsamere Antwort eine neuere
+   * überschreiben - genau das passierte beim Sprung aus der Standort-Liste in
+   * die Suche: die ungefilterte Anfrage brauchte länger als die gefilterte und
+   * landete zuletzt im Signal.</p>
+   */
+  private searchSeq = 0;
+
   runSearch(resetPage: boolean = true) {
     if (resetPage) this.f.page = 0;
     this.loadingSearch.set(true);
     this.showSuggestions.set(false);
 
+    const seq = ++this.searchSeq;
+    const isCurrent = () => seq === this.searchSeq;
+
     if (this.grouped()) {
       this.myAssetService.searchGrouped(this.f).subscribe({
-        next: (res) => { this.groupedResult.set(res); this.flatResult.set(null); this.loadingSearch.set(false); },
-        error: () => { this.loadingSearch.set(false); this.toastService.error('Suche fehlgeschlagen.'); }
+        next: (res) => {
+          if (!isCurrent()) return;
+          this.groupedResult.set(res); this.flatResult.set(null); this.loadingSearch.set(false);
+        },
+        error: () => {
+          if (!isCurrent()) return;
+          this.loadingSearch.set(false); this.toastService.error('Suche fehlgeschlagen.');
+        }
       });
     } else {
       this.myAssetService.search(this.f).subscribe({
-        next: (res) => { this.flatResult.set(res); this.groupedResult.set(null); this.loadingSearch.set(false); },
-        error: () => { this.loadingSearch.set(false); this.toastService.error('Suche fehlgeschlagen.'); }
+        next: (res) => {
+          if (!isCurrent()) return;
+          this.flatResult.set(res); this.groupedResult.set(null); this.loadingSearch.set(false);
+        },
+        error: () => {
+          if (!isCurrent()) return;
+          this.loadingSearch.set(false); this.toastService.error('Suche fehlgeschlagen.');
+        }
       });
     }
   }
@@ -199,13 +224,18 @@ export class MyAssetsComponent implements OnInit {
     }
   }
 
-  resetFilters() {
-    this.f = {
+  /** Die Ausgangswerte der Suche - bewusst ohne Seiteneffekte. */
+  private defaultFilters(): MyAssetSearchParams {
+    return {
       q: '', typeId: null, groupId: null, categoryId: null,
       characterId: null, locationId: null, regionName: null, locationFlag: null,
       minQuantity: null, minValue: null, shipsOnly: false,
       sort: 'value', direction: 'desc', page: 0, size: 50
     };
+  }
+
+  resetFilters() {
+    this.f = this.defaultFilters();
     this.loadFilters();
     this.runSearch();
   }
@@ -225,11 +255,18 @@ export class MyAssetsComponent implements OnInit {
     });
   }
 
-  /** Springt aus der Übersicht heraus gefiltert in die Suche. */
+  /**
+   * Springt aus der Übersicht heraus gefiltert in die Suche.
+   *
+   * <p>Setzt die Filter direkt zurück statt über {@link resetFilters} - das würde
+   * sonst eine zusätzliche, ungefilterte Suche auslösen, die mit der gefilterten
+   * um das Ergebnis konkurriert.</p>
+   */
   drillIntoLocation(locationId: number) {
-    this.resetFilters();
-    this.f.locationId = locationId;
+    this.f = { ...this.defaultFilters(), locationId };
     this.activeTab.set('SEARCH');
+    // Filterpanel aufklappen, damit sichtbar ist, dass ein Ort gesetzt wurde.
+    this.showAdvancedFilters.set(true);
     this.runSearch();
   }
 

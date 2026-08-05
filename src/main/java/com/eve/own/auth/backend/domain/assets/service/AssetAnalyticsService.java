@@ -173,9 +173,17 @@ public class AssetAnalyticsService {
                                 dbl(t, "value"), lng(t, "holders")))
                         .toList(),
                 queryRepo.topHolders(15).stream()
-                        .map(t -> new AssetDtos.TopHolderDto(
-                                lng(t, "mainId"), str(t, "mainName"), portrait(lng(t, "mainId"), 64),
-                                str(t, "corporationName"), lng(t, "stacks"), dbl(t, "value")))
+                        .map(t -> {
+                            // Bei Corp-Zeilen ist die owner_id die corporation_id - ein
+                            // Charakter-Portraet gibt es dafuer nicht, nur das Corp-Logo.
+                            boolean isCorp = bool(t, "isCorp");
+                            Long ownerId = lng(t, "mainId");
+                            return new AssetDtos.TopHolderDto(
+                                    ownerId, str(t, "mainName"),
+                                    isCorp ? corpLogo(ownerId, 64) : portrait(ownerId, 64),
+                                    str(t, "corporationName"), isCorp,
+                                    lng(t, "stacks"), dbl(t, "value"));
+                        })
                         .toList(),
                 mapNamedValues(queryRepo.valueByRegion())
         );

@@ -125,7 +125,10 @@ export interface TopTypeDto {
 
 export interface TopHolderDto {
   mainId: number; mainName: string; portraitUrl: string;
-  corporationName: string; stacks: number; value: number;
+  corporationName: string;
+  /** true = Corp-Hangar statt Spieler-Account. */
+  isCorp: boolean | null;
+  stacks: number; value: number;
 }
 
 export interface SummaryDto {

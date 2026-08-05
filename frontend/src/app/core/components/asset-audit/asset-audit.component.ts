@@ -328,7 +328,15 @@ export class AssetAuditComponent implements OnInit {
     target.src = 'https://images.evetech.net/types/34/icon?size=64';
   }
 
-  onPortraitError(event: Event) {
-    (event.target as HTMLImageElement).src = 'https://images.evetech.net/characters/1/portrait?size=64';
+  /**
+   * Platzhalter für ein nicht ladbares Besitzer-Bild.
+   *
+   * <p>Für Corp-Hangars muss der Platzhalter ein Corp-Logo sein - die Charakter-Silhouette
+   * würde die Corp genau so als Spieler ausgeben, wie es das fehlende Logo ohnehin schon tut.</p>
+   */
+  onPortraitError(event: Event, isCorp: boolean | null = false) {
+    (event.target as HTMLImageElement).src = isCorp
+      ? 'https://images.evetech.net/corporations/1/logo?size=64'
+      : 'https://images.evetech.net/characters/1/portrait?size=64';
   }
 }

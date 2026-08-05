@@ -174,8 +174,12 @@ public class AssetDtos {
     public record TopTypeDto(Long typeId, String typeName, String groupName,
                             String iconUrl, Long quantity, Double value, Long holders) {}
 
+    /** Eine Zeile der Vermoegens-Rangliste - Spieler-Account oder Corp-Hangar. */
     public record TopHolderDto(Long mainId, String mainName, String portraitUrl,
-                               String corporationName, Long stacks, Double value) {}
+                               String corporationName,
+                               /** true = die Zeile ist ein Corp-Hangar, kein Spieler-Account. */
+                               Boolean isCorp,
+                               Long stacks, Double value) {}
 
     // ------------------------------------------------------------------
     // Member-Detail

@@ -394,6 +394,16 @@ public class AssetQueryRepository {
         return res;
     }
 
+    /**
+     * Die wertvollsten Bestaende je Besitzer-Zeile - Spieler-Accounts <em>und</em> Corp-Hangars.
+     *
+     * <p>{@code isCorp} steht bewusst als letzte Spalte: {@code GROUP BY 1, 2} und
+     * {@code ORDER BY 5} adressieren die Spalten ueber ihre Position, eine Einfuegung
+     * weiter vorne wuerde beide still verschieben. Als Aggregat ({@code BOOL_OR})
+     * braucht die Spalte ausserdem keinen eigenen GROUP-BY-Eintrag - und da eine
+     * {@code owner_id} entweder aus dem Charakter- oder aus dem Corp-Zweig der Union
+     * stammt, nie aus beiden, ist der Wert je Gruppe ohnehin eindeutig.</p>
+     */
     public List<Tuple> topHolders(int limit) {
         String sql = """
                 SELECT a.owner_id AS "mainId",
@@ -401,7 +411,8 @@ public class AssetQueryRepository {
                        STRING_AGG(DISTINCT corp.name, ', ') AS "corporationName",
                        COUNT(*) AS "stacks",
                        COALESCE(SUM(""" + VALUE_EXPR + """
-                       ), 0) AS "value"
+                       ), 0) AS "value",
+                       BOOL_OR(a.is_corp) AS "isCorp"
                 """ + BASE_FROM + """
                 GROUP BY 1, 2
                 ORDER BY 5 DESC

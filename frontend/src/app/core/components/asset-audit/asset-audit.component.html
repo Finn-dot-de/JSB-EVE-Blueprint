@@ -120,20 +120,29 @@
             <table class="eve-table">
               <thead>
               <tr>
-                <th>Account</th>
+                <th>Account / Corp</th>
                 <th style="text-align: right;">Stacks</th>
                 <th style="text-align: right;">Wert</th>
               </tr>
               </thead>
               <tbody>
                 @for (h of s.topHolders; track $index) {
-                  <tr class="clickable" (click)="openMember(h.mainId)">
+                  <!-- Corp-Hangars stehen gleichberechtigt in der Rangliste, sind aber kein
+                       Spieler-Account: kein Member-Detail dahinter, also auch kein Klick. -->
+                  <tr [class.clickable]="!h.isCorp" (click)="h.isCorp ? null : openMember(h.mainId)">
                     <td>
                       <div class="item-cell">
-                        <img [src]="h.portraitUrl" (error)="onPortraitError($event)" [alt]="h.mainName" class="portrait" loading="lazy">
+                        <img [src]="h.portraitUrl" (error)="onPortraitError($event, h.isCorp)" [alt]="h.mainName" class="portrait" loading="lazy">
                         <div>
-                          <div class="item-name">{{ h.mainName }}</div>
-                          <div class="item-group">{{ h.corporationName }}</div>
+                          <div class="item-name">
+                            @if (h.isCorp) {
+                              <span class="badge corp" title="Bestand aus einem Corp-Hangar">🏢 Corp</span>
+                            }
+                            {{ h.mainName }}
+                          </div>
+                          <div class="item-group">
+                            @if (h.isCorp) { Corporation-Hangar } @else { {{ h.corporationName }} }
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -515,7 +524,7 @@
                 <div class="holder-row" (click)="toggleHolder(holder.mainId)">
                   <i class="chevron" [class.open]="isHolderExpanded(holder.mainId)"
                      [ngClass]="isHolderExpanded(holder.mainId) ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
-                  <img [src]="holder.portraitUrl" (error)="onPortraitError($event)" [alt]="holder.mainName" class="portrait">
+                  <img [src]="holder.portraitUrl" (error)="onPortraitError($event, holder.isCorp)" [alt]="holder.mainName" class="portrait">
                   <div class="holder-name">
                     <div class="item-name">
                       @if (holder.isCorp) {

@@ -206,8 +206,7 @@ export class DoctrinesComponent implements OnInit {
     navigator.clipboard.writeText(eftString).then(() => {
       this.toastService.info('Fitting kopiert! Öffne Ingame dein Fitting-Fenster und wähle "Import from Clipboard".');
       this.closeModals();
-    }).catch(err => {
-      console.error('Konnte Link nicht kopieren: ', err);
+    }).catch(() => {
       this.toastService.error('Fehler beim Kopieren in die Zwischenablage.');
     });
   }

@@ -38,8 +38,8 @@ export class ServicesComponent implements OnInit {
         this.isDiscordConnected.set(res.connected);
         this.isLoading.set(false);
       },
-      error: (err) => {
-        console.error('Konnte Discord Status nicht laden', err);
+      error: () => {
+        this.toastService.error('Der Discord-Status konnte nicht geladen werden.');
         this.isLoading.set(false);
       }
     });

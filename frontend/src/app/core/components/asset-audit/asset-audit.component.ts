@@ -1,7 +1,7 @@
 import {Component, OnInit, inject, signal, computed, ViewChild, ElementRef, HostListener} from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { map } from 'rxjs/operators';
 import { FormsModule } from '@angular/forms';
-import { Subject, debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 import {
   AssetService, AssetRowDto, AssetStackDto, PageDto, SummaryDto,
   FilterOptionsDto, TypeSuggestionDto, TypeHoldersDto,
@@ -11,9 +11,14 @@ import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
 import { barWidth, formatIsk, formatIskFull, formatNumber, maxValue } from '../../shared/eve-format.util';
 import { handlePortraitError, handleTypeImageError, typeIcon } from '../../shared/eve-image.util';
+import { latestRequest } from '../../shared/latest-request.util';
 
-// DOKTRIN WURDE ENTFERNT
 type Tab = 'OVERVIEW' | 'SEARCH' | 'HOLDERS' | 'MEMBER';
+
+/** Ein Suchergebnis samt der Darstellung, für die es angefordert wurde. */
+type SearchOutcome =
+  | { readonly grouped: true; readonly page: PageDto<AssetStackDto> }
+  | { readonly grouped: false; readonly page: PageDto<AssetRowDto> };
 
 @Component({
   selector: 'app-asset-audit',
@@ -66,7 +71,22 @@ export class AssetAuditComponent implements OnInit {
   // --- Typeahead ---
   suggestions = signal<TypeSuggestionDto[]>([]);
   showSuggestions = signal(false);
-  private searchTerms = new Subject<string>();
+
+  /**
+   * Typeahead: wartet den Tippfluss ab und wertet immer nur die jüngste
+   * Eingabe aus. Ein Fehlschlag leert die Liste, lässt den Auslöser aber
+   * benutzbar - sonst bliebe das Feld für den Rest der Sitzung stumm.
+   */
+  private readonly requestSuggestions = latestRequest<string, TypeSuggestionDto[]>({
+    debounceMs: 250,
+    distinct: true,
+    run: (term) => this.assetService.suggestTypes(term),
+    next: (found) => {
+      this.suggestions.set(found);
+      this.showSuggestions.set(found.length > 0);
+    },
+    error: () => this.suggestions.set([]),
+  });
 
   @ViewChild('typeaheadWrapper') typeaheadWrapper?: ElementRef;
 
@@ -108,14 +128,6 @@ export class AssetAuditComponent implements OnInit {
   ngOnInit() {
     this.loadSummary();
     this.loadFilters();
-    this.searchTerms.pipe(
-      debounceTime(250),
-      distinctUntilChanged(),
-      switchMap(term => this.assetService.suggestTypes(term))
-    ).subscribe({
-      next: (res) => { this.suggestions.set(res); this.showSuggestions.set(res.length > 0); },
-      error: () => this.suggestions.set([])
-    });
   }
 
   setTab(tab: Tab) {
@@ -153,7 +165,7 @@ export class AssetAuditComponent implements OnInit {
 
   onTypeAhead(term: string) {
     this.f.q = term;
-    if (term && term.length >= 2) this.searchTerms.next(term);
+    if (term && term.length >= 2) this.requestSuggestions(term);
     else this.showSuggestions.set(false);
   }
 
@@ -171,22 +183,41 @@ export class AssetAuditComponent implements OnInit {
     this.runSearch();
   }
 
+  /**
+   * Stösst die Suche an - eine noch laufende wird dabei abgebrochen.
+   *
+   * <p>Nötig, weil eine ältere, langsamere Antwort sonst eine neuere
+   * überschreibt: die breite, ungefilterte Abfrage braucht länger als die enge
+   * und landete zuletzt im Signal - der Nutzer sähe ein Ergebnis, das zu seinen
+   * Filtern nicht passt.</p>
+   */
+  private readonly requestSearch = latestRequest<boolean, SearchOutcome>({
+    run: (grouped) =>
+      grouped
+        ? this.assetService
+            .searchGrouped(this.f)
+            .pipe(map((page): SearchOutcome => ({ grouped: true, page })))
+        : this.assetService
+            .search(this.f)
+            .pipe(map((page): SearchOutcome => ({ grouped: false, page }))),
+    next: (outcome) => {
+      this.groupedResult.set(outcome.grouped ? outcome.page : null);
+      this.flatResult.set(outcome.grouped ? null : outcome.page);
+      this.loadingSearch.set(false);
+    },
+    error: () => {
+      this.loadingSearch.set(false);
+      this.toastService.error('Suche fehlgeschlagen.');
+    },
+  });
+
   runSearch(resetPage: boolean = true) {
     if (resetPage) this.f.page = 0;
     this.loadingSearch.set(true);
     this.showSuggestions.set(false);
-
-    if (this.grouped()) {
-      this.assetService.searchGrouped(this.f).subscribe({
-        next: (res) => { this.groupedResult.set(res); this.flatResult.set(null); this.loadingSearch.set(false); },
-        error: () => { this.loadingSearch.set(false); this.toastService.error('Suche fehlgeschlagen.'); }
-      });
-    } else {
-      this.assetService.search(this.f).subscribe({
-        next: (res) => { this.flatResult.set(res); this.groupedResult.set(null); this.loadingSearch.set(false); },
-        error: () => { this.loadingSearch.set(false); this.toastService.error('Suche fehlgeschlagen.'); }
-      });
-    }
+    // Die gewünschte Darstellung wandert mit: zwischen Absenden und Antwort
+    // kann umgeschaltet worden sein.
+    this.requestSearch(this.grouped());
   }
 
   toggleGrouped() {

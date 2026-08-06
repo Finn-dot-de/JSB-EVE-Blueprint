@@ -75,11 +75,22 @@ public class AssetMapper {
             commonFields.accept(asset, source);
             rootLocationSetter.accept(asset,
                     assetLocationService.resolveRootLocation(locationByItem, source.location_id()));
-            customNameSetter.accept(asset, customNames.get(source.item_id()));
+            customNameSetter.accept(asset, customNameOf(customNames, source.item_id()));
             quantitySetter.accept(asset,
                     source.quantity() != null ? source.quantity() : DEFAULT_QUANTITY);
             return asset;
         }).toList();
+    }
+
+    /**
+     * Der Custom-Name zu einem Bestand.
+     *
+     * <p>Die fehlende item_id wird ausdruecklich abgefangen: die Namensliste ist
+     * eine unveraenderliche Map, und die wirft beim Nachschlagen mit {@code null}
+     * eine NullPointerException statt schlicht nichts zu finden.</p>
+     */
+    private static String customNameOf(Map<Long, String> customNames, Long itemId) {
+        return itemId != null ? customNames.get(itemId) : null;
     }
 
     /**

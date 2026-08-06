@@ -1,5 +1,6 @@
 import {Component, OnInit, inject, signal, computed} from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ToastService } from '../../services/toast.service';
 import { HttpClient } from '@angular/common/http';
 import {environment} from '../../../../environments/environment';
 import { formatCompact } from '../../shared/eve-format.util';
@@ -56,6 +57,7 @@ export interface DashboardDto {
 })
 export class DashboardComponent implements OnInit {
   private http = inject(HttpClient);
+  private toastService = inject(ToastService);
 
   /** Paragon - die NPC-Corporation, deren Loyalitaetspunkte als Evermarks gelten. */
   private static readonly PARAGON_CORPORATION_ID = 1000419;
@@ -135,7 +137,7 @@ export class DashboardComponent implements OnInit {
   ngOnInit() {
     this.http.get<DashboardDto>(`${environment.apiUrl}/dashboard`).subscribe({
       next: (data) => this.dashboardData.set(data),
-      error: (err) => console.error('Fehler beim Laden des Dashboards', err)
+      error: () => this.toastService.error('Die Übersicht konnte nicht geladen werden.')
     });
   }
 

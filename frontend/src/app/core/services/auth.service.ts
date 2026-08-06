@@ -2,6 +2,7 @@ import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { catchError, of, tap } from 'rxjs';
 import { Router } from '@angular/router';
+import { ToastService } from './toast.service';
 import {environment} from '../../../environments/environment';
 import { SIZE_LARGE, portrait } from '../shared/eve-image.util';
 
@@ -18,6 +19,7 @@ export interface AuthUser {
 export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
+  private toastService = inject(ToastService);
 
   currentUser = signal<AuthUser | null>(null);
   loading = signal<boolean>(true);
@@ -72,7 +74,7 @@ export class AuthService {
         this.currentUser.set(null);
         this.router.navigate(['/home']);
       },
-      error: (err) => console.error('Logout fehlgeschlagen', err)
+      error: () => this.toastService.error('Abmelden fehlgeschlagen.')
     });
   }
 }

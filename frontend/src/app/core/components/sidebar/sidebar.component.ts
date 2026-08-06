@@ -1,6 +1,7 @@
 import {Component, OnInit, inject, signal} from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { ToastService } from '../../services/toast.service';
 import { HttpClient } from '@angular/common/http';
 import {environment} from '../../../../environments/environment';
 
@@ -31,6 +32,7 @@ export interface MenuItem {
 })
 export class SidebarComponent implements OnInit {
   private http = inject(HttpClient);
+  private toastService = inject(ToastService);
 
   menuItems = signal<MenuItem[]>([]);
 
@@ -62,7 +64,7 @@ export class SidebarComponent implements OnInit {
   loadNavigation() {
     this.http.get<NavigationLinkDto[]>(`${environment.apiUrl}/navigation`).subscribe({
       next: (links) => this.buildMenu(links),
-      error: (err) => console.error('Fehler beim Laden der Navigation', err)
+      error: () => this.toastService.error('Die Navigation konnte nicht geladen werden.')
     });
   }
 

@@ -42,7 +42,15 @@ public class CharacterActivity {
     @Column(name = "is_manual", columnDefinition = "boolean default false")
     private Boolean isManual = false;
 
-    public void setActivityType(ActivityType type) {
+    /**
+     * Setzt die Kennzahl typsicher.
+     *
+     * <p>Bewusst nicht {@code setActivityType} genannt: Lombok erzeugt einen
+     * Setter nur, wenn noch keine Methode dieses Namens existiert. Eine
+     * Ueberladung haette den erzeugten {@code setActivityType(String)}
+     * verdraengt - und damit jede Zuweisung eines roh gelesenen Werts.</p>
+     */
+    public void setType(ActivityType type) {
         this.activityType = type.dbValue();
     }
 
@@ -54,7 +62,7 @@ public class CharacterActivity {
     public static CharacterActivity of(Long characterId, ActivityType type, double value, Instant timestamp) {
         CharacterActivity activity = new CharacterActivity();
         activity.setCharacterId(characterId);
-        activity.setActivityType(type);
+        activity.setType(type);
         activity.setValue(value);
         activity.setTimestamp(timestamp);
         return activity;

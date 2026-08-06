@@ -23,8 +23,7 @@ export class DiscordAdminComponent implements OnInit {
         this.mappings.set(data);
         this.loading.set(false);
       },
-      error: (err) => {
-        console.error('Fehler beim Laden der Mappings:', err);
+      error: () => {
         this.toastService.error('Zugriff verweigert oder Fehler beim Laden der Rollen!');
         this.loading.set(false);
       }

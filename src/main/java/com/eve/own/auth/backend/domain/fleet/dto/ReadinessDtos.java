@@ -29,31 +29,31 @@ public class ReadinessDtos {
      * @param canFly Rumpf <em>und</em> alle Module bedienbar
      * @param canFlyHull nur der Rumpf bedienbar - trennt "kann das Schiff gar
      *     nicht fliegen" von "es fehlen bloss ein paar Modul-Skills"
-     * @param missingSkills alle Luecken des gesamten Fits, hoechste Anforderung je Skill
-     * @param fullySkilled zusaetzlich zum Fit auch der hinterlegte Skillplan erfuellt
-     * @param missingPlanSkills was zum Skillplan noch fehlt - getrennt gefuehrt,
-     *     weil es die Einsatzfaehigkeit nicht verhindert, sondern die Leistung begrenzt
+     * @param canFly Rumpf, Module <em>und</em> der hinterlegte Skillplan erfuellt
+     * @param missingSkills was aus Rumpf und Modulen fehlt, hoechste Anforderung je Skill
+     * @param missingPlanSkills was allein der Skillplan zusaetzlich verlangt. Getrennt
+     *     gefuehrt allein zur Erklaerung - fuer das Urteil zaehlt beides gleich.
+     *     Skills, die in beiden Quellen stehen, erscheinen nur in {@code missingSkills},
+     *     dort mit der hoeheren der beiden Anforderungen.
      */
     public record CharacterReadinessDto(
             Long characterId, String characterName, String portraitUrl, boolean main,
             long owned, boolean skillDataAvailable, boolean canFly, boolean canFlyHull,
             int skillsMet, int skillsRequired,
             List<MissingSkillDto> missingSkills,
-            boolean fullySkilled, List<MissingSkillDto> missingPlanSkills
+            List<MissingSkillDto> missingPlanSkills
     ) {}
 
     /**
      * Ein Account gegen einen Fit.
      *
      * @param isReady ein und derselbe Charakter hat die Huelle und kann den Fit fliegen
-     * @param fullyReady dieser Charakter erfuellt zusaetzlich den Skillplan
      */
     public record AccountReadinessDto(
             Long mainId, String mainName, String portraitUrl, String corporationName,
             long owned, int charactersOwning,
             boolean canFly, int pilotsCapable, boolean skillDataAvailable, int bestSkillsMet, int skillsRequired,
             boolean hasShip, boolean hasSkills, boolean isReady,
-            boolean fullyReady, int pilotsFullySkilled,
             List<CharacterReadinessDto> characters
     ) {}
 
@@ -65,9 +65,10 @@ public class ReadinessDtos {
      * @param hullSkillsRequired davon der Anteil, der allein auf den Rumpf entfaellt
      * @param unresolved Eintraege des EFT-Texts, die die Stammdaten nicht kannten -
      *     sie konnten nicht geprueft werden und fehlen im Ergebnis
+     * @param requiredSkills was Rumpf und Module verlangen
      * @param planNames die an diesem Fitting haengenden Skillplaene
-     * @param planSkills was diese Plaene zusaetzlich verlangen, hoechste Stufe je Skill
-     * @param accountsFullyReady wie viele Accounts auch den Skillplan erfuellen
+     * @param planSkills was diese Plaene zusaetzlich verlangen. Ebenfalls Pflicht -
+     *     getrennt gefuehrt, damit erkennbar bleibt, woher eine Anforderung stammt.
      */
     public record FitReadinessDto(
             Long fitId, String fitName,
@@ -76,7 +77,7 @@ public class ReadinessDtos {
             List<RequiredSkillDto> requiredSkills, int hullSkillsRequired,
             List<String> unresolved,
             List<String> planNames, List<RequiredSkillDto> planSkills,
-            long hullsTotal, int accountsReady, int accountsFullyReady,
+            long hullsTotal, int accountsReady,
             int accountsTotal, double coverage,
             List<AccountReadinessDto> ready,
             List<AccountReadinessDto> notReady
@@ -96,15 +97,16 @@ public class ReadinessDtos {
      *
      * @param bestCharacterName der Charakter, an dem die Auskunft haengt - der
      *     mit den besten Aussichten auf dieses Fitting
-     * @param missingSkills was diesem Charakter fehlt, um den Fit zu bedienen
-     * @param missingPlanSkills was ihm darueber hinaus zum Skillplan fehlt
+     * @param canFly Rumpf, Module und Skillplan zusammen erfuellt
+     * @param missingSkills was aus Rumpf und Modulen fehlt
+     * @param missingPlanSkills was allein der Skillplan zusaetzlich verlangt
      */
     public record MyFitDto(
             Long fitId, String fitName, String doctrineName,
             Long typeId, String typeName, String iconUrl, String renderUrl,
             int moduleCount, List<String> planNames,
             boolean hasShip, long owned,
-            boolean canFly, boolean fullySkilled, boolean skillDataAvailable,
+            boolean canFly, boolean skillDataAvailable,
             String bestCharacterName,
             List<MissingSkillDto> missingSkills,
             List<MissingSkillDto> missingPlanSkills

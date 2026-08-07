@@ -490,24 +490,27 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
   margin: 0.75rem 0 0 0;
   padding: 0.5rem 0.75rem;
+  border: none;
   border-radius: 6px;
   font-size: 0.85rem;
   font-weight: 600;
+  font-family: inherit;
+  text-align: left;
   cursor: pointer;
   box-sizing: border-box;
+
+  // Ohne fehlende Skills gibt es nichts zu öffnen - dann ist es nur ein Schild.
+  &:disabled { cursor: default; }
 
   // Die Bedeutungsfarben sind in beiden Themen dieselben Neontöne. Als
   // Schrift auf hellem Grund wären sie unlesbar, deshalb zur Textfarbe hin
   // gemischt - genau wie bei den Abzeichen der Rechteverwaltung.
-  &.standing-FULL {
+  &.standing-READY {
     background-color: color-mix(in srgb, var(--success-color) 16%, var(--bg-surface));
     color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary));
-  }
-  &.standing-CAN_FLY {
-    background-color: color-mix(in srgb, var(--accent-color) 14%, var(--bg-surface));
-    color: color-mix(in srgb, var(--accent-color) 70%, var(--text-primary));
   }
   &.standing-MISSING {
     background-color: color-mix(in srgb, var(--danger-color) 14%, var(--bg-surface));
@@ -527,17 +530,53 @@
   white-space: nowrap;
 }
 
-.standing-chevron {
-  transition: transform 0.2s ease;
-  &.open { transform: rotate(180deg); }
+.standing-count {
+  padding: 1px 7px;
+  border-radius: 10px;
+  background-color: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  font-size: 0.75rem;
 }
 
-.own-details {
-  margin-top: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: default;
+.standing-chevron { opacity: 0.7; }
+
+/* =========================================
+   DIALOG: fehlende Skills
+   ========================================= */
+.skills-modal { max-width: 640px; }
+
+.skills-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.skills-modal-title {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.05rem;
+  }
+}
+
+.skills-modal-count {
+  color: var(--danger-color);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.skills-modal-body {
+  // Lange Listen scrollen im Dialog, statt ihn über den Bildschirm zu treiben.
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 1rem 0;
 }
 
 .own-character {
@@ -567,11 +606,6 @@
   &.missing {
     background-color: color-mix(in srgb, var(--danger-color) 14%, var(--bg-surface));
     color: color-mix(in srgb, var(--danger-color) 55%, var(--text-primary));
-  }
-  // Plan-Skills verhindern das Undocken nicht - sie sind gedämpfter.
-  &.plan {
-    background-color: color-mix(in srgb, var(--warning-color) 16%, var(--bg-surface));
-    color: color-mix(in srgb, var(--warning-color) 40%, var(--text-primary));
   }
 }
 
@@ -753,15 +787,6 @@
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 1.5rem;
-}
-
-.own-details-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.5rem;
 }
 
 .copy-skills {

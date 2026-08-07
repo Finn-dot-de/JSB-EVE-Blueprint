@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -107,9 +108,20 @@ public class FleetReadinessService {
 
         List<ReadinessDtos.RequiredSkillDto> required =
                 context.requirementsOf(fit.skillRelevantTypeIds());
-        int skillsRequired = required.size();
         int hullSkillsRequired = context.requirementsOf(List.of(fit.hullTypeId())).size();
         List<ReadinessDtos.RequiredSkillDto> planSkills = plans.requiredFor(fit.fitId());
+
+        /*
+         * Der Skillplan ist Pflicht, nicht Empfehlung: ohne die
+         * Unterstuetzungs-Skills bekommt der Pilot das Fitting zwar an, richtet
+         * damit aber nichts aus. Fuer das Urteil zaehlen deshalb beide Quellen
+         * zusammen - mit der jeweils hoeheren Anforderung, falls ein Skill in
+         * beiden steht.
+         */
+        Set<Long> prerequisiteSkillIds = required.stream()
+                .map(ReadinessDtos.RequiredSkillDto::skillTypeId)
+                .collect(Collectors.toSet());
+        int skillsRequired = highestRequired(required, planSkills).size();
 
         List<ReadinessDtos.AccountReadinessDto> ready = new ArrayList<>();
         List<ReadinessDtos.AccountReadinessDto> notReady = new ArrayList<>();
@@ -122,9 +134,7 @@ public class FleetReadinessService {
             boolean accountAnySkillData = false;
             int pilotsCapable = 0;
             int pilotsReady = 0;
-            int pilotsFullySkilled = 0;
             int bestMet = 0;
-            boolean accountFullyReady = false;
 
             List<ReadinessDtos.CharacterReadinessDto> characters = new ArrayList<>();
 
@@ -135,20 +145,31 @@ public class FleetReadinessService {
                 accountOwned += owned;
 
                 boolean hasData = context.charactersWithData.contains(ref.characterId());
-                List<ReadinessDtos.MissingSkillDto> gaps = hasData
+                List<ReadinessDtos.MissingSkillDto> moduleGaps = hasData
                         ? context.gapsOf(ref.characterId(), fit.skillRelevantTypeIds())
                         : List.of();
-                boolean canFly = hasData && gaps.isEmpty();
-                boolean canFlyHull = hasData
-                        && context.gapsOf(ref.characterId(), List.of(fit.hullTypeId())).isEmpty();
-                int met = hasData ? skillsRequired - gaps.size() : 0;
-
-                // Der Skillplan verhindert das Undocken nicht - er entscheidet,
-                // ob der Pilot damit auch etwas ausrichtet. Deshalb getrennt.
-                List<ReadinessDtos.MissingSkillDto> planGaps = hasData
+                List<ReadinessDtos.MissingSkillDto> rawPlanGaps = hasData
                         ? plans.gapsFor(ref.characterId(), fit.fitId())
                         : List.of();
-                boolean fullySkilled = canFly && planGaps.isEmpty();
+
+                // Beide Quellen zusammen entscheiden. Steht ein Skill in beiden,
+                // gilt die hoehere Anforderung und er erscheint nur einmal.
+                List<ReadinessDtos.MissingSkillDto> allGaps =
+                        highestMissing(moduleGaps, rawPlanGaps);
+
+                // Fuer die Anzeige nach Herkunft getrennt - ohne Dubletten:
+                // was auch Modul-Voraussetzung ist, steht bei den Modulen.
+                List<ReadinessDtos.MissingSkillDto> gaps = allGaps.stream()
+                        .filter(gap -> prerequisiteSkillIds.contains(gap.skillTypeId()))
+                        .toList();
+                List<ReadinessDtos.MissingSkillDto> planGaps = allGaps.stream()
+                        .filter(gap -> !prerequisiteSkillIds.contains(gap.skillTypeId()))
+                        .toList();
+
+                boolean canFly = hasData && allGaps.isEmpty();
+                boolean canFlyHull = hasData
+                        && context.gapsOf(ref.characterId(), List.of(fit.hullTypeId())).isEmpty();
+                int met = hasData ? skillsRequired - allGaps.size() : 0;
 
                 if (hasData) accountAnySkillData = true;
                 if (canFly) {
@@ -158,16 +179,11 @@ public class FleetReadinessService {
                     // Schiff und Skills muessen bei demselben Charakter liegen.
                     if (owned > 0) pilotsReady++;
                 }
-                if (fullySkilled) {
-                    pilotsFullySkilled++;
-                    if (owned > 0) accountFullyReady = true;
-                }
                 if (hasData && met > bestMet) bestMet = met;
 
                 characters.add(new ReadinessDtos.CharacterReadinessDto(
                         ref.characterId(), ref.name(), EveImageUrls.portrait(ref.characterId()), ref.main(),
-                        owned, hasData, canFly, canFlyHull, met, skillsRequired, gaps,
-                        fullySkilled, planGaps));
+                        owned, hasData, canFly, canFlyHull, met, skillsRequired, gaps, planGaps));
             }
 
             hullsTotal += accountOwned;
@@ -202,8 +218,7 @@ public class FleetReadinessService {
                     account.mainId, account.mainName, EveImageUrls.portrait(account.mainId),
                     account.corporationName,
                     accountOwned, charactersOwning, accountCanFly, pilotsCapable, accountAnySkillData,
-                    bestMet, skillsRequired, hasShip, accountCanFly, isReady,
-                    accountFullyReady, pilotsFullySkilled, characters);
+                    bestMet, skillsRequired, hasShip, accountCanFly, isReady, characters);
 
             if (isReady) ready.add(row);
             else notReady.add(row);
@@ -223,17 +238,13 @@ public class FleetReadinessService {
         int accountsTotal = roster.accounts.size();
         double coverage = accountsTotal == 0 ? 0d : (double) ready.size() / accountsTotal;
 
-        int accountsFullyReady = (int) ready.stream()
-                .filter(ReadinessDtos.AccountReadinessDto::fullyReady)
-                .count();
-
         return new ReadinessDtos.FitReadinessDto(
                 fit.fitId(), fit.fitName(),
                 fit.hullTypeId(), fit.hullTypeName(),
                 EftParserService.icon(fit.hullTypeId()), EftParserService.render(fit.hullTypeId()),
                 fit.moduleCount(), required, hullSkillsRequired, fit.unresolved(),
                 plans.namesFor(fit.fitId()), planSkills,
-                hullsTotal, ready.size(), accountsFullyReady, accountsTotal, coverage,
+                hullsTotal, ready.size(), accountsTotal, coverage,
                 ready, notReady);
     }
 
@@ -323,7 +334,6 @@ public class FleetReadinessService {
                 account != null && account.hasShip(),
                 account == null ? 0L : account.owned(),
                 account != null && account.canFly(),
-                account != null && account.fullyReady(),
                 account != null && account.skillDataAvailable(),
                 best == null ? null : best.characterName(),
                 best == null ? List.of() : best.missingSkills(),
@@ -659,6 +669,39 @@ public class FleetReadinessService {
             this.mainName = mainName;
             this.corporationName = corporationName;
         }
+    }
+
+    /** Zwei Anforderungslisten zu einer, je Skill die hoechste Stufe. */
+    private static List<ReadinessDtos.RequiredSkillDto> highestRequired(
+            List<ReadinessDtos.RequiredSkillDto> first, List<ReadinessDtos.RequiredSkillDto> second) {
+        Map<Long, ReadinessDtos.RequiredSkillDto> highest = new LinkedHashMap<>();
+        for (ReadinessDtos.RequiredSkillDto skill : first) {
+            highest.put(skill.skillTypeId(), skill);
+        }
+        for (ReadinessDtos.RequiredSkillDto skill : second) {
+            highest.merge(skill.skillTypeId(), skill,
+                    (existing, candidate) -> existing.level() >= candidate.level()
+                            ? existing : candidate);
+        }
+        return List.copyOf(highest.values());
+    }
+
+    /** Zwei Luecken-Listen zu einer, je Skill die hoechste Anforderung. */
+    private static List<ReadinessDtos.MissingSkillDto> highestMissing(
+            List<ReadinessDtos.MissingSkillDto> first, List<ReadinessDtos.MissingSkillDto> second) {
+        Map<Long, ReadinessDtos.MissingSkillDto> highest = new LinkedHashMap<>();
+        for (ReadinessDtos.MissingSkillDto gap : first) {
+            highest.put(gap.skillTypeId(), gap);
+        }
+        for (ReadinessDtos.MissingSkillDto gap : second) {
+            highest.merge(gap.skillTypeId(), gap,
+                    (existing, candidate) -> existing.requiredLevel() >= candidate.requiredLevel()
+                            ? existing : candidate);
+        }
+        return highest.values().stream()
+                .sorted(Comparator.comparing(ReadinessDtos.MissingSkillDto::skillName,
+                        String.CASE_INSENSITIVE_ORDER))
+                .toList();
     }
 
     private static Long lng(Tuple tuple, String alias) {

@@ -627,7 +627,7 @@ class FleetReadinessServiceTest {
     }
 
     @Nested
-    @DisplayName("Skillplan als dritte Stufe")
+    @DisplayName("Skillplan als Pflicht")
     class SkillPlanTier {
 
         /** Ein Fitting mit hinterlegtem Plan, der diesen Skill auf dieser Stufe verlangt. */
@@ -648,10 +648,11 @@ class FleetReadinessServiceTest {
         }
 
         @Test
-        @DisplayName("laesst einen fehlenden Plan-Skill die Einsatzbereitschaft nicht verhindern")
-        void planGapDoesNotBlockReadiness() {
-            // Das ist der Kern der dritten Stufe: der Pilot kommt mit, er holt
-            // nur nicht heraus, was der Fit hergibt.
+        @DisplayName("laesst einen fehlenden Plan-Skill die Bereitschaft verhindern")
+        void planGapBlocksReadiness() {
+            // Der Plan ist Pflicht, nicht Empfehlung: ohne die
+            // Unterstuetzungs-Skills bekommt der Pilot das Fitting zwar an,
+            // richtet damit aber nichts aus.
             planRequires(900L, 5);
             rosterOf(MAIN_ID);
             ownsHull(MAIN_ID, 1);
@@ -660,17 +661,15 @@ class FleetReadinessServiceTest {
 
             ReadinessDtos.FitReadinessDto fit = board();
 
-            assertThat(fit.ready()).singleElement().satisfies(account -> {
-                assertThat(account.isReady()).isTrue();
-                assertThat(account.fullyReady()).isFalse();
-            });
-            assertThat(fit.accountsReady()).isEqualTo(1);
-            assertThat(fit.accountsFullyReady()).isZero();
+            assertThat(fit.ready()).isEmpty();
+            assertThat(fit.accountsReady()).isZero();
+            assertThat(fit.notReady()).singleElement()
+                    .satisfies(account -> assertThat(account.canFly()).isFalse());
         }
 
         @Test
-        @DisplayName("meldet voll ausgeskillt, wenn auch der Plan erfuellt ist")
-        void fullySkilledWhenPlanIsMet() {
+        @DisplayName("gilt als bereit, sobald auch der Plan erfuellt ist")
+        void readyWhenPlanIsMet() {
             planRequires(900L, 3);
             rosterOf(MAIN_ID);
             ownsHull(MAIN_ID, 1);
@@ -679,13 +678,15 @@ class FleetReadinessServiceTest {
 
             ReadinessDtos.FitReadinessDto fit = board();
 
-            assertThat(fit.accountsFullyReady()).isEqualTo(1);
-            assertThat(fit.ready().getFirst().characters().getFirst().fullySkilled()).isTrue();
+            assertThat(fit.accountsReady()).isEqualTo(1);
+            assertThat(fit.ready().getFirst().characters().getFirst().canFly()).isTrue();
         }
 
         @Test
-        @DisplayName("fuehrt die Plan-Luecken getrennt von den Voraussetzungen")
+        @DisplayName("weist die Plan-Luecken getrennt aus, obwohl beide gleich zaehlen")
         void keepsPlanGapsSeparate() {
+            // Getrennt allein zur Erklaerung: erkennbar bleiben soll, woher
+            // eine Anforderung stammt.
             planRequires(900L, 4);
             rosterOf(MAIN_ID);
             ownsHull(MAIN_ID, 1);
@@ -693,8 +694,9 @@ class FleetReadinessServiceTest {
             hasSkillLevel(MAIN_ID, 900L, 1);
 
             ReadinessDtos.CharacterReadinessDto pilot =
-                    board().ready().getFirst().characters().getFirst();
+                    board().notReady().getFirst().characters().getFirst();
 
+            assertThat(pilot.canFly()).isFalse();
             assertThat(pilot.missingSkills()).isEmpty();
             assertThat(pilot.missingPlanSkills()).singleElement().satisfies(gap -> {
                 assertThat(gap.requiredLevel()).isEqualTo(4);
@@ -710,9 +712,48 @@ class FleetReadinessServiceTest {
             ownsHull(MAIN_ID, 1);
             hasSkillData(MAIN_ID);
 
-            assertThat(board().ready().getFirst().characters().getFirst().missingPlanSkills())
+            assertThat(board().notReady().getFirst().characters().getFirst().missingPlanSkills())
                     .singleElement()
                     .satisfies(gap -> assertThat(gap.currentLevel()).isZero());
+        }
+
+        @Test
+        @DisplayName("zaehlt Plan-Skills in die Gesamtzahl der noetigen Skills")
+        void countsPlanSkillsInTheTotal() {
+            planRequires(900L, 3);
+            requires(NESTOR, 1L, 3);
+            rosterOf(MAIN_ID);
+            hasSkillData(MAIN_ID);
+
+            assertThat(board().notReady().getFirst().skillsRequired()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("fuehrt einen Skill aus beiden Quellen nur einmal, mit der hoeheren Stufe")
+        void mergesASkillFromBothSources() {
+            // Verlangt das Modul Stufe 2 und der Plan Stufe 5, ist 5 bindend -
+            // und der Skill steht einmal bei den Modulen, nicht zweimal.
+            when(doctrineRepo.findAll())
+                    .thenReturn(List.of(withId(doctrineWithEft("Armor", "Fit"), 5L)));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Fit"));
+            when(skillPlanService.skillsByDoctrine(any())).thenReturn(Map.of(
+                    5L, new SkillPlanService.DoctrineSkillsDto(
+                            List.of("Magic 14"),
+                            List.of(new SkillPlanDtos.SkillEntryDto(7L, "Skill 7", 5)))));
+            requires(NESTOR, 7L, 2);
+            rosterOf(MAIN_ID);
+            hasSkillData(MAIN_ID);
+            misses(MAIN_ID, NESTOR, 7L, 2, 1);
+            when(queryRepo.skillLevels(anyList(), anyList())).thenReturn(List.of(FakeTuple.of(
+                    "characterId", MAIN_ID, "skillTypeId", 7L, "activeLevel", 1L)));
+
+            ReadinessDtos.AccountReadinessDto account = board().notReady().getFirst();
+            ReadinessDtos.CharacterReadinessDto pilot = account.characters().getFirst();
+
+            assertThat(pilot.missingSkills()).singleElement()
+                    .satisfies(gap -> assertThat(gap.requiredLevel()).isEqualTo(5));
+            assertThat(pilot.missingPlanSkills()).isEmpty();
+            assertThat(account.skillsRequired()).isEqualTo(1);
         }
 
         @Test
@@ -729,15 +770,14 @@ class FleetReadinessServiceTest {
         }
 
         @Test
-        @DisplayName("gilt ohne hinterlegten Plan als voll ausgeskillt, sobald er fliegen kann")
-        void fullyySkilledWithoutAnyPlan() {
-            // Kein Plan heisst: nichts darueber hinaus gefordert.
+        @DisplayName("verlangt ohne hinterlegten Plan nichts darueber hinaus")
+        void nothingExtraWithoutAnyPlan() {
             rosterOf(MAIN_ID);
             ownsHull(MAIN_ID, 1);
             hasSkillData(MAIN_ID);
             hullRequiresSkills(1);
 
-            assertThat(board().accountsFullyReady()).isEqualTo(1);
+            assertThat(board().accountsReady()).isEqualTo(1);
         }
 
         @Test

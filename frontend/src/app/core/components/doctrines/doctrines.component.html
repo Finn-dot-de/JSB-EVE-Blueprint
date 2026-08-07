@@ -136,12 +136,15 @@
                 }
               </div>
 
-              <!-- Der eigene Stand: sofort sichtbar, ohne Klick -->
+              <!-- Der eigene Stand: sofort sichtbar, ohne Klick.
+                   Die Einzelheiten öffnen einen Dialog statt die Karte zu
+                   verlängern - im Raster zöge das die Nachbarkarte mit. -->
               @if (myFit(doc.id); as mine) {
-                <div class="own-standing" [ngClass]="'standing-' + standing(doc.id)"
-                     (click)="toggleFitDetails(doc.id); $event.stopPropagation()">
+                <button class="own-standing" [ngClass]="'standing-' + standing(doc.id)"
+                        [disabled]="!hasMissingSkills(doc.id)"
+                        (click)="openSkillDetails(doc); $event.stopPropagation()">
                   <i class="fa-solid"
-                     [class.fa-circle-check]="standing(doc.id) === 'FULL' || standing(doc.id) === 'CAN_FLY'"
+                     [class.fa-circle-check]="standing(doc.id) === 'READY'"
                      [class.fa-circle-exclamation]="standing(doc.id) === 'MISSING'"
                      [class.fa-circle-question]="standing(doc.id) === 'UNKNOWN'"></i>
                   <span class="standing-label">{{ standingLabel(doc.id) }}</span>
@@ -151,53 +154,13 @@
                       <i class="fa-solid fa-warehouse"></i> {{ mine.owned }}&times;
                     </span>
                   }
-                  @if (mine.missingSkills.length + mine.missingPlanSkills.length > 0) {
-                    <i class="fa-solid fa-chevron-down standing-chevron"
-                       [class.open]="expandedFitId() === doc.id"></i>
+                  @if (hasMissingSkills(doc.id)) {
+                    <span class="standing-count">
+                      {{ mine.missingSkills.length + mine.missingPlanSkills.length }}
+                    </span>
+                    <i class="fa-solid fa-chevron-right standing-chevron"></i>
                   }
-                </div>
-
-                @if (expandedFitId() === doc.id) {
-                  <div class="own-details" (click)="$event.stopPropagation()">
-                    <div class="own-details-head">
-                      @if (mine.bestCharacterName) {
-                        <span class="own-character">
-                          Bester Pilot: <strong>{{ mine.bestCharacterName }}</strong>
-                        </span>
-                      }
-                      @if (hasMissingSkills(doc.id)) {
-                        <button class="btn-secondary copy-skills" (click)="copyMissingSkills(doc.id)">
-                          <i class="fa-solid fa-copy"></i> Fehlende Skills kopieren
-                        </button>
-                      }
-                    </div>
-
-                    @if (mine.missingSkills.length > 0) {
-                      <div class="skill-block">
-                        <span class="skill-block-title">Zum Fliegen fehlt:</span>
-                        @for (skill of mine.missingSkills; track skill.skillTypeId) {
-                          <span class="skill-pill missing">
-                            {{ skill.skillName }} <b>{{ skill.currentLevel }}/{{ skill.requiredLevel }}</b>
-                          </span>
-                        }
-                      </div>
-                    }
-
-                    @if (mine.missingPlanSkills.length > 0) {
-                      <div class="skill-block">
-                        <span class="skill-block-title">
-                          Zum Skillplan fehlt
-                          @if (mine.planNames.length > 0) { ({{ mine.planNames.join(', ') }}) }:
-                        </span>
-                        @for (skill of mine.missingPlanSkills; track skill.skillTypeId) {
-                          <span class="skill-pill plan">
-                            {{ skill.skillName }} <b>{{ skill.currentLevel }}/{{ skill.requiredLevel }}</b>
-                          </span>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
+                </button>
               }
 
               <div class="doc-footer">
@@ -229,6 +192,75 @@
     }
   </div>
 </div>
+
+<!-- ========================================================
+     MODAL: Was mir zu diesem Fitting fehlt
+     ======================================================== -->
+@if (skillDetails(); as doc) {
+  @if (myFit(doc.id); as mine) {
+    <div class="modal-overlay" (click)="closeSkillDetails()">
+      <div class="surface-panel modal-content skills-modal" (click)="$event.stopPropagation()">
+
+        <div class="skills-modal-head">
+          <div class="doc-image-box">
+            @if (doc.shipTypeId) {
+              <img [src]="typeRender(doc.shipTypeId, 64)" [alt]="doc.shipType">
+            } @else {
+              <i class="fa-solid fa-rocket" style="font-size: 2rem; color: var(--text-secondary);"></i>
+            }
+          </div>
+          <div class="skills-modal-title">
+            <h3>{{ doc.name }}</h3>
+            <span class="doc-shiptype">{{ doc.shipType }}</span>
+            @if (mine.bestCharacterName) {
+              <span class="own-character">
+                Bester Pilot: <strong>{{ mine.bestCharacterName }}</strong>
+              </span>
+            }
+          </div>
+          <span class="skills-modal-count">
+            {{ mine.missingSkills.length + mine.missingPlanSkills.length }} Skills fehlen
+          </span>
+        </div>
+
+        <div class="skills-modal-body">
+          @if (mine.missingSkills.length > 0) {
+            <div class="skill-block">
+              <span class="skill-block-title">Zum Fliegen fehlt:</span>
+              @for (skill of mine.missingSkills; track skill.skillTypeId) {
+                <span class="skill-pill missing">
+                  {{ skill.skillName }} <b>{{ skill.currentLevel }}/{{ skill.requiredLevel }}</b>
+                </span>
+              }
+            </div>
+          }
+
+          @if (mine.missingPlanSkills.length > 0) {
+            <div class="skill-block">
+              <span class="skill-block-title">
+                Aus dem Skillplan
+                @if (mine.planNames.length > 0) { ({{ mine.planNames.join(', ') }}) }
+                &ndash; ebenfalls nötig:
+              </span>
+              @for (skill of mine.missingPlanSkills; track skill.skillTypeId) {
+                <span class="skill-pill missing">
+                  {{ skill.skillName }} <b>{{ skill.currentLevel }}/{{ skill.requiredLevel }}</b>
+                </span>
+              }
+            </div>
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn-secondary" (click)="closeSkillDetails()">Schließen</button>
+          <button class="btn-primary" (click)="copyMissingSkills(doc.id)">
+            <i class="fa-solid fa-copy"></i> Fehlende Skills kopieren
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+}
 
 <!-- ========================================================
      MODAL: Skillpläne verwalten

@@ -407,7 +407,7 @@
             &middot;
             <i class="fa-solid fa-graduation-cap" style="margin-left: 8px"></i>
             {{ fit.planNames.join(', ') }}
-            <span class="sub-detail">({{ fit.accountsFullyReady }} voll ausgeskillt)</span>
+            <span class="sub-detail">(Pflicht)</span>
           }
         </div>
       </div>
@@ -445,12 +445,12 @@
       </div>
 
       @if (fit.planSkills.length > 0) {
-        <!-- Der Skillplan steht getrennt: er verhindert das Undocken nicht,
-             er entscheidet, ob der Pilot damit etwas ausrichtet. -->
+        <!-- Ebenfalls Pflicht, nur aus anderer Quelle: getrennt gezeigt, damit
+             erkennbar bleibt, was aus dem Fitting und was aus dem Plan kommt. -->
         <div class="required-skills">
-          <span class="required-label">Empfohlen:</span>
+          <span class="required-label">Skillplan:</span>
           @for (s of fit.planSkills; track s.skillTypeId) {
-            <span class="skill-pill plan">{{ s.skillName }} <b>{{ s.level }}</b></span>
+            <span class="skill-pill">{{ s.skillName }} <b>{{ s.level }}</b></span>
           }
         </div>
       }
@@ -548,7 +548,6 @@
                 <span [class]="c.canFly ? 'text-ready' : (!c.skillDataAvailable ? 'text-unknown' : 'text-missing')">
                   <i class="fa-solid fa-graduation-cap"></i>
                   @if (!c.skillDataAvailable) { Keine Skilldaten }
-                  @else if (c.fullySkilled) { Voll ausgeskillt }
                   @else if (c.canFly) { Fliegt das komplette Fit }
                   @else if (c.canFlyHull) {
                     <!-- Wichtiger Unterschied: das Schiff geht, nur Module fehlen -
@@ -575,13 +574,13 @@
                 </button>
               }
 
-              <!-- Getrennt vom Rest: der Pilot fliegt bereits, er holt nur
-                   nicht heraus, was der Fit hergibt. -->
-              @if (c.canFly && c.missingPlanSkills.length > 0) {
+              <!-- Getrennt gezeigt, damit die Herkunft erkennbar bleibt -
+                   fuer das Urteil zaehlen beide Listen gleich. -->
+              @if (c.missingPlanSkills.length > 0) {
                 <div class="missing-skills">
-                  <span class="plan-gap-label">Skillplan:</span>
+                  <span class="plan-gap-label">Aus dem Skillplan:</span>
                   @for (m of c.missingPlanSkills; track m.skillTypeId) {
-                    <span class="skill-pill plan" [title]="'Aktuell Level ' + m.currentLevel">
+                    <span class="skill-pill missing" [title]="'Aktuell Level ' + m.currentLevel">
                       {{ m.skillName }} <b>{{ m.currentLevel }}/{{ m.requiredLevel }}</b>
                     </span>
                   }

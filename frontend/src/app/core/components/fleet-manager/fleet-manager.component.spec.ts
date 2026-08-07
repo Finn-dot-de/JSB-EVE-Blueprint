@@ -26,8 +26,6 @@ function account(mainName: string, characterNames: string[] = []): AccountReadin
     hasShip: true,
     hasSkills: true,
     isReady: true,
-    fullyReady: true,
-    pilotsFullySkilled: 1,
     characters: characterNames.map((characterName) => ({
       characterId: 1,
       characterName,
@@ -40,7 +38,6 @@ function account(mainName: string, characterNames: string[] = []): AccountReadin
       skillsMet: 1,
       skillsRequired: 1,
       missingSkills: [],
-      fullySkilled: true,
       missingPlanSkills: [],
     })),
   } as AccountReadinessDto;
@@ -72,7 +69,6 @@ function board(fits: Array<{ fitId: number; typeId: number }>): DoctrineReadines
       planSkills: [],
       hullsTotal: 1,
       accountsReady: 1,
-      accountsFullyReady: 1,
       accountsTotal: 1,
       coverage: 1,
       ready: [],

@@ -24,7 +24,6 @@ function myFit(overrides: Partial<MyFitDto> = {}): MyFitDto {
     hasShip: true,
     owned: 1,
     canFly: true,
-    fullySkilled: true,
     skillDataAvailable: true,
     bestCharacterName: 'Pilot Eins',
     missingSkills: [],

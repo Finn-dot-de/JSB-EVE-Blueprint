@@ -36,7 +36,6 @@ function myFit(overrides: Partial<MyFitDto> = {}): MyFitDto {
     hasShip: true,
     owned: 1,
     canFly: true,
-    fullySkilled: true,
     skillDataAvailable: true,
     bestCharacterName: 'Pilot Eins',
     missingSkills: [],
@@ -105,20 +104,17 @@ describe('Fitting-Seite: Selbstauskunft und Skillpläne', () => {
       expect(component.myFit(1)?.typeName).toBe('Nestor');
     });
 
-    it('unterscheidet die drei Stufen', () => {
+    it('kennt nur bereit und nicht bereit', () => {
+      // Der Skillplan ist Pflicht - eine Zwischenstufe gibt es nicht mehr.
       readinessService['myReadiness'].mockReturnValue(
-        of([
-          myFit({ fitId: 1, canFly: true, fullySkilled: true }),
-          myFit({ fitId: 2, canFly: true, fullySkilled: false }),
-          myFit({ fitId: 3, canFly: false, fullySkilled: false }),
-        ]),
+        of([myFit({ fitId: 1, canFly: true }), myFit({ fitId: 2, canFly: false })]),
       );
       component.loadMyReadiness();
 
-      expect(component.standing(1)).toBe('FULL');
-      expect(component.standing(2)).toBe('CAN_FLY');
-      expect(component.standing(3)).toBe('MISSING');
-      expect(component.standingLabel(2)).toBe('Kannst du fliegen');
+      expect(component.standing(1)).toBe('READY');
+      expect(component.standing(2)).toBe('MISSING');
+      expect(component.standingLabel(1)).toBe('Kannst du fliegen');
+      expect(component.standingLabel(2)).toBe('Skills fehlen');
     });
 
     it('meldet ohne Skilldaten weder "kann" noch "kann nicht"', () => {
@@ -149,12 +145,14 @@ describe('Fitting-Seite: Selbstauskunft und Skillpläne', () => {
       expect(toastService['error']).not.toHaveBeenCalled();
     });
 
-    it('klappt die Details auf und wieder zu', () => {
-      component.toggleFitDetails(1);
-      expect(component.expandedFitId()).toBe(1);
+    it('öffnet die Einzelheiten als Dialog und schließt ihn wieder', () => {
+      // Ein Dialog statt einer aufklappenden Karte: im Raster zöge eine
+      // wachsende Karte ihre Nachbarin auf dieselbe Höhe mit.
+      component.openSkillDetails(doctrine());
+      expect(component.skillDetails()?.id).toBe(1);
 
-      component.toggleFitDetails(1);
-      expect(component.expandedFitId()).toBeNull();
+      component.closeSkillDetails();
+      expect(component.skillDetails()).toBeNull();
     });
   });
 

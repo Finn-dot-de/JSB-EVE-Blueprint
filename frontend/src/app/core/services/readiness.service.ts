@@ -33,12 +33,12 @@ export interface CharacterReadinessDto {
   canFlyHull: boolean;
   skillsMet: number;
   skillsRequired: number;
+  /** Was aus Rumpf und Modulen fehlt. */
   missingSkills: MissingSkillDto[];
-  /** Zusätzlich zum Fit auch der hinterlegte Skillplan erfüllt. */
-  fullySkilled: boolean;
   /**
-   * Was zum Skillplan noch fehlt. Getrennt geführt, weil es das Undocken
-   * nicht verhindert, sondern die Leistung begrenzt.
+   * Was allein der Skillplan zusätzlich verlangt. Getrennt geführt nur zur
+   * Erklärung - für das Urteil zählt beides gleich. Skills, die in beiden
+   * Quellen stehen, erscheinen nur in `missingSkills`.
    */
   missingPlanSkills: MissingSkillDto[];
 }
@@ -59,9 +59,6 @@ export interface AccountReadinessDto {
   hasSkills: boolean;
   /** Ein und derselbe Charakter hat die Hülle und kann den Fit fliegen. */
   isReady: boolean;
-  /** Dieser Charakter erfüllt zusätzlich den Skillplan. */
-  fullyReady: boolean;
-  pilotsFullySkilled: number;
   characters: CharacterReadinessDto[];
 }
 
@@ -89,11 +86,13 @@ export interface FitReadinessDto {
   unresolved: string[];
   /** Die an diesem Fitting hängenden Skillpläne. */
   planNames: string[];
-  /** Was diese Pläne zusätzlich verlangen, höchste Stufe je Skill. */
+  /**
+   * Was diese Pläne zusätzlich verlangen - ebenfalls Pflicht. Getrennt
+   * geführt, damit erkennbar bleibt, woher eine Anforderung stammt.
+   */
   planSkills: RequiredSkillDto[];
   hullsTotal: number;
   accountsReady: number;
-  accountsFullyReady: number;
   accountsTotal: number;
   coverage: number;
   ready: AccountReadinessDto[];
@@ -157,8 +156,8 @@ export interface MyFitDto {
   planNames: string[];
   hasShip: boolean;
   owned: number;
+  /** Rumpf, Module und Skillplan zusammen erfüllt. */
   canFly: boolean;
-  fullySkilled: boolean;
   skillDataAvailable: boolean;
   /** Der Charakter, an dem die Auskunft hängt. */
   bestCharacterName: string | null;

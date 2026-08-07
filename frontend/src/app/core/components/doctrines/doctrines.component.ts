@@ -18,8 +18,13 @@ import { copyText } from '../../shared/clipboard.util';
 import { toPlanLines, toSkillPlanText } from '../../shared/skill-plan.util';
 import { latestRequest } from '../../shared/latest-request.util';
 
-/** Wie ein Fitting für den Angemeldeten dasteht. */
-export type FitStanding = 'FULL' | 'CAN_FLY' | 'MISSING' | 'UNKNOWN';
+/**
+ * Wie ein Fitting für den Angemeldeten dasteht.
+ *
+ * Nur zwei Urteile plus "unbekannt": der Skillplan ist Pflicht, nicht
+ * Empfehlung - grün wird es erst, wenn Rumpf, Module und Plan zusammen sitzen.
+ */
+export type FitStanding = 'READY' | 'MISSING' | 'UNKNOWN';
 
 @Component({
   selector: 'app-doctrines',
@@ -43,7 +48,15 @@ export class DoctrinesComponent implements OnInit {
 
   // --- Selbstauskunft: was kann ich fliegen? ---
   myFits = signal<Map<number, MyFitDto>>(new Map());
-  expandedFitId = signal<number | null>(null);
+
+  /**
+   * Das Fitting, dessen fehlende Skills gerade im Dialog stehen.
+   *
+   * Bewusst ein Dialog statt einer aufklappenden Karte: die Karten stehen in
+   * einem Raster, und eine wachsende Karte zieht ihre Nachbarin in derselben
+   * Zeile auf dieselbe Höhe mit.
+   */
+  skillDetails = signal<FleetDoctrine | null>(null);
 
   // --- Skillplan-Verwaltung ---
   plans = signal<SkillPlanDto[]>([]);
@@ -195,22 +208,23 @@ export class DoctrinesComponent implements OnInit {
   standing(doctrineId: number): FitStanding {
     const fit = this.myFit(doctrineId);
     if (!fit || !fit.skillDataAvailable) return 'UNKNOWN';
-    if (fit.fullySkilled) return 'FULL';
-    if (fit.canFly) return 'CAN_FLY';
-    return 'MISSING';
+    return fit.canFly ? 'READY' : 'MISSING';
   }
 
   standingLabel(doctrineId: number): string {
     switch (this.standing(doctrineId)) {
-      case 'FULL': return 'Voll ausgeskillt';
-      case 'CAN_FLY': return 'Kannst du fliegen';
+      case 'READY': return 'Kannst du fliegen';
       case 'MISSING': return 'Skills fehlen';
       default: return 'Keine Skilldaten';
     }
   }
 
-  toggleFitDetails(doctrineId: number) {
-    this.expandedFitId.update((current) => (current === doctrineId ? null : doctrineId));
+  openSkillDetails(doc: FleetDoctrine) {
+    this.skillDetails.set(doc);
+  }
+
+  closeSkillDetails() {
+    this.skillDetails.set(null);
   }
 
   // ================= Skillpläne =================

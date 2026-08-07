@@ -1065,13 +1065,6 @@ $warn: tokens.$highlight;
   &::after { margin-left: 1.5rem; }
 }
 
-/* Skillplan-Lücken: gedämpfter als echte Voraussetzungen - sie verhindern
-   das Undocken nicht, sie begrenzen nur die Leistung. */
-.skill-pill.plan {
-  background-color: color-mix(in srgb, var(--warning-color) 16%, var(--bg-surface));
-  color: color-mix(in srgb, var(--warning-color) 40%, var(--text-primary));
-}
-
 .plan-gap-label {
   display: inline-block;
   margin-right: 6px;

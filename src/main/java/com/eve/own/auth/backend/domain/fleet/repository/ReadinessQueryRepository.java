@@ -94,23 +94,66 @@ public class ReadinessQueryRepository {
         return res;
     }
 
+    /**
+     * Nur der Account, zu dem dieser Charakter gehoert - Main samt aller Alts.
+     *
+     * <p>Fuer die Selbstauskunft eines Mitglieds. Der volle Roster waere hier
+     * nicht nur Verschwendung, sondern gaebe fremde Daten in eine Auswertung,
+     * die niemanden ausser den Anfragenden etwas angeht.</p>
+     */
+    public List<Tuple> accountRosterOf(Long characterId) {
+        String sql = """
+                SELECT c.character_id                              AS "characterId",
+                       c.name                                      AS "characterName",
+                       COALESCE(c.main_character_id, c.character_id) AS "mainId",
+                       COALESCE(mc.name, c.name)                   AS "mainName",
+                       corp.name                                   AS "corporationName"
+                FROM characters c
+                LEFT JOIN characters mc ON mc.character_id = c.main_character_id
+                LEFT JOIN corporations corp
+                       ON corp.corporation_id = COALESCE(mc.corporation_id, c.corporation_id)
+                WHERE COALESCE(c.main_character_id, c.character_id) = (
+                          SELECT COALESCE(self.main_character_id, self.character_id)
+                          FROM characters self
+                          WHERE self.character_id = :characterId)
+                ORDER BY 4, 2
+                """;
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("characterId", characterId);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
     // ==================================================================
     // 2. Hangar-Check
     // ==================================================================
 
     /** Wie viele Exemplare der gesuchten Huellen jeder einzelne Charakter besitzt. */
     public List<Tuple> hullOwnership(List<Long> typeIds) {
+        return hullOwnership(typeIds, List.of());
+    }
+
+    /**
+     * Dasselbe, auf bestimmte Charaktere eingegrenzt.
+     *
+     * @param characterIds leer bedeutet: alle Charaktere
+     */
+    public List<Tuple> hullOwnership(List<Long> typeIds, List<Long> characterIds) {
         if (typeIds == null || typeIds.isEmpty()) return List.of();
+        boolean scoped = characterIds != null && !characterIds.isEmpty();
         String sql = """
                 SELECT a.character_id AS "characterId",
                        a.type_id      AS "typeId",
                        SUM(a.quantity) AS "quantity"
                 FROM character_assets a
                 WHERE a.type_id IN (:typeIds)
-                GROUP BY 1, 2
-                """;
+                """
+                + (scoped ? "  AND a.character_id IN (:characterIds)\n" : "")
+                + "GROUP BY 1, 2";
         Query q = em.createNativeQuery(sql, Tuple.class);
         q.setParameter("typeIds", typeIds);
+        if (scoped) q.setParameter("characterIds", characterIds);
         @SuppressWarnings("unchecked")
         List<Tuple> res = q.getResultList();
         return res;
@@ -154,7 +197,24 @@ public class ReadinessQueryRepository {
      * "kann nichts fliegen" erscheinen statt als "unbekannt".</p>
      */
     public List<Tuple> skillGaps(List<Long> typeIds) {
+        return skillGaps(typeIds, List.of());
+    }
+
+    /**
+     * Dasselbe, auf bestimmte Charaktere eingegrenzt.
+     *
+     * <p>Die Eingrenzung sitzt bewusst im {@code known}-Unterausdruck: sie
+     * verkleinert damit das Kreuzprodukt, statt erst hinterher zu filtern.</p>
+     *
+     * @param characterIds leer bedeutet: alle Charaktere
+     */
+    public List<Tuple> skillGaps(List<Long> typeIds, List<Long> characterIds) {
         if (typeIds == null || typeIds.isEmpty()) return List.of();
+        boolean scoped = characterIds != null && !characterIds.isEmpty();
+        String known = scoped
+                ? "(SELECT DISTINCT character_id FROM character_skills "
+                        + "WHERE character_id IN (:characterIds)) known"
+                : "(SELECT DISTINCT character_id FROM character_skills) known";
         String sql = "WITH RECURSIVE " + DIRECT_REQUIREMENTS + ", " + REQUIREMENT_TREE + """
                 , reqs AS (
                     SELECT t.root_id AS type_id,
@@ -169,7 +229,8 @@ public class ReadinessQueryRepository {
                        st."typeName"            AS "skillName",
                        r.required_level         AS "requiredLevel",
                        COALESCE(cs.active_level, 0) AS "currentLevel"
-                FROM (SELECT DISTINCT character_id FROM character_skills) known
+                FROM """ + known + """
+
                 CROSS JOIN reqs r
                 LEFT JOIN character_skills cs
                        ON cs.character_id = known.character_id
@@ -180,6 +241,7 @@ public class ReadinessQueryRepository {
                 """;
         Query q = em.createNativeQuery(sql, Tuple.class);
         q.setParameter("typeIds", typeIds);
+        if (scoped) q.setParameter("characterIds", characterIds);
         @SuppressWarnings("unchecked")
         List<Tuple> res = q.getResultList();
         return res;
@@ -235,6 +297,96 @@ public class ReadinessQueryRepository {
                 """;
         Query q = em.createNativeQuery(sql, Tuple.class);
         q.setParameter("names", lowerCaseNames);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
+    // ==================================================================
+    // 5. Skills fuer die Skillplaene
+    // ==================================================================
+
+    /** Kategorie der Skills in der SDE. */
+    private static final long CATEGORY_SKILL = 16L;
+
+    /**
+     * Skills nach Namen durchsuchen - fuer die Auswahl beim Zusammenstellen
+     * eines Plans.
+     *
+     * <p>Eingeschraenkt auf Kategorie 16: sonst faende die Suche nach
+     * "Shield" vor allem Module.</p>
+     */
+    public List<Tuple> searchSkills(String query, int limit) {
+        String sql = """
+                SELECT t."typeID" AS "typeId", t."typeName" AS "typeName"
+                FROM evesde."invTypes" t
+                JOIN evesde."invGroups" g ON g."groupID" = t."groupID"
+                WHERE g."categoryID" = :categoryId
+                  AND t."typeName" ILIKE :pattern
+                ORDER BY LENGTH(t."typeName"), t."typeName"
+                LIMIT :limit
+                """;
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("categoryId", CATEGORY_SKILL);
+        q.setParameter("pattern", "%" + query + "%");
+        q.setParameter("limit", limit);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
+    /** Loest Skill-Namen (kleingeschrieben) auf - fuer eingefuegte Plantexte. */
+    public List<Tuple> resolveSkillsByName(List<String> lowerCaseNames) {
+        if (lowerCaseNames == null || lowerCaseNames.isEmpty()) return List.of();
+        String sql = """
+                SELECT DISTINCT ON (LOWER(t."typeName"))
+                       LOWER(t."typeName") AS "lookup",
+                       t."typeID"          AS "typeId",
+                       t."typeName"        AS "typeName"
+                FROM evesde."invTypes" t
+                JOIN evesde."invGroups" g ON g."groupID" = t."groupID"
+                WHERE g."categoryID" = :categoryId
+                  AND LOWER(t."typeName") IN (:names)
+                ORDER BY LOWER(t."typeName"), t."typeID"
+                """;
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("categoryId", CATEGORY_SKILL);
+        q.setParameter("names", lowerCaseNames);
+        @SuppressWarnings("unchecked")
+        List<Tuple> res = q.getResultList();
+        return res;
+    }
+
+    /**
+     * Der aktuelle Stand der genannten Skills je Charakter.
+     *
+     * <p>Anders als {@link #skillGaps} nicht aus dem Voraussetzungsbaum
+     * abgeleitet, sondern zu einer vorgegebenen Liste - ein Skillplan nennt
+     * seine Skills ausdruecklich.</p>
+     */
+    public List<Tuple> skillLevels(List<Long> skillTypeIds) {
+        return skillLevels(skillTypeIds, List.of());
+    }
+
+    /**
+     * Dasselbe, auf bestimmte Charaktere eingegrenzt.
+     *
+     * @param characterIds leer bedeutet: alle Charaktere
+     */
+    public List<Tuple> skillLevels(List<Long> skillTypeIds, List<Long> characterIds) {
+        if (skillTypeIds == null || skillTypeIds.isEmpty()) return List.of();
+        boolean scoped = characterIds != null && !characterIds.isEmpty();
+        String sql = """
+                SELECT cs.character_id  AS "characterId",
+                       cs.skill_type_id AS "skillTypeId",
+                       cs.active_level  AS "activeLevel"
+                FROM character_skills cs
+                WHERE cs.skill_type_id IN (:skillTypeIds)
+                """
+                + (scoped ? "  AND cs.character_id IN (:characterIds)" : "");
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        q.setParameter("skillTypeIds", skillTypeIds);
+        if (scoped) q.setParameter("characterIds", characterIds);
         @SuppressWarnings("unchecked")
         List<Tuple> res = q.getResultList();
         return res;

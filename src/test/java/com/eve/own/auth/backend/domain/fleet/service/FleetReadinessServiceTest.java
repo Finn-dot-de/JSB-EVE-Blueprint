@@ -1,11 +1,16 @@
 package com.eve.own.auth.backend.domain.fleet.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.eve.own.auth.backend.domain.fleet.dto.ReadinessDtos;
+import com.eve.own.auth.backend.domain.fleet.dto.SkillPlanDtos;
 import com.eve.own.auth.backend.domain.fleet.entity.FleetDoctrine;
 import com.eve.own.auth.backend.domain.fleet.repository.FleetDoctrineRepository;
 import com.eve.own.auth.backend.domain.fleet.repository.ReadinessQueryRepository;
@@ -14,6 +19,7 @@ import jakarta.persistence.Tuple;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -43,6 +49,7 @@ class FleetReadinessServiceTest {
     @Mock private FleetDoctrineRepository doctrineRepo;
     @Mock private ReadinessQueryRepository queryRepo;
     @Mock private EftParserService eftParser;
+    @Mock private SkillPlanService skillPlanService;
 
     private FleetReadinessService service;
 
@@ -52,16 +59,18 @@ class FleetReadinessServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new FleetReadinessService(doctrineRepo, queryRepo, eftParser);
+        service = new FleetReadinessService(doctrineRepo, queryRepo, eftParser, skillPlanService);
         requirementRows.clear();
         gapRows.clear();
 
         when(doctrineRepo.findAll()).thenReturn(List.of(doctrine("Armor", NESTOR, "Nestor")));
         when(queryRepo.resolveTypesByName(anyList())).thenReturn(List.of());
         when(queryRepo.accountRoster()).thenReturn(List.of());
-        when(queryRepo.hullOwnership(anyList())).thenReturn(List.of());
+        when(queryRepo.hullOwnership(anyList(), anyList())).thenReturn(List.of());
         when(queryRepo.skillRequirements(anyList())).thenReturn(requirementRows);
-        when(queryRepo.skillGaps(anyList())).thenReturn(gapRows);
+        when(queryRepo.skillGaps(anyList(), anyList())).thenReturn(gapRows);
+        when(queryRepo.skillLevels(anyList(), anyList())).thenReturn(List.of());
+        when(skillPlanService.skillsByDoctrine(any())).thenReturn(Map.of());
         when(queryRepo.charactersWithSkillData()).thenReturn(List.of());
     }
 
@@ -83,6 +92,12 @@ class FleetReadinessServiceTest {
         FleetDoctrine fit = doctrine(doctrineName, NESTOR, "Nestor");
         fit.setName(fitName);
         fit.setEftString("[Nestor, " + fitName + "]");
+        return fit;
+    }
+
+    /** Setzt die ID einer Doktrin-Zeile - sie ist der Schluessel zum Skillplan. */
+    private static FleetDoctrine withId(FleetDoctrine fit, Long id) {
+        fit.setId(id);
         return fit;
     }
 
@@ -113,7 +128,7 @@ class FleetReadinessServiceTest {
     }
 
     private void ownsHull(Long characterId, long quantity) {
-        when(queryRepo.hullOwnership(anyList())).thenReturn(List.of(FakeTuple.of(
+        when(queryRepo.hullOwnership(anyList(), anyList())).thenReturn(List.of(FakeTuple.of(
                 "characterId", characterId, "typeId", NESTOR, "quantity", quantity)));
     }
 
@@ -471,7 +486,7 @@ class FleetReadinessServiceTest {
             // fliegen, hat aber keins. Zusammengezaehlt saehe das nach
             // Einsatzbereitschaft aus - undocken kann trotzdem niemand.
             rosterOf(MAIN_ID, ALT_ID);
-            when(queryRepo.hullOwnership(anyList())).thenReturn(List.of(
+            when(queryRepo.hullOwnership(anyList(), anyList())).thenReturn(List.of(
                     FakeTuple.of("characterId", MAIN_ID, "typeId", NESTOR, "quantity", 1L)));
             hasSkillData(MAIN_ID, ALT_ID);
             hullRequiresSkills(1);
@@ -526,7 +541,7 @@ class FleetReadinessServiceTest {
         @DisplayName("stellt je Account den einsatzfaehigen Charakter nach oben")
         void sortsCapableCharacterFirst() {
             rosterOf(MAIN_ID, ALT_ID);
-            when(queryRepo.hullOwnership(anyList())).thenReturn(List.of(
+            when(queryRepo.hullOwnership(anyList(), anyList())).thenReturn(List.of(
                     FakeTuple.of("characterId", ALT_ID, "typeId", NESTOR, "quantity", 1L)));
             hasSkillData(MAIN_ID, ALT_ID);
             hullRequiresSkills(1);
@@ -541,7 +556,7 @@ class FleetReadinessServiceTest {
         @DisplayName("summiert die Huellen ueber alle Charaktere des Accounts")
         void sumsHullsAcrossAccount() {
             rosterOf(MAIN_ID, ALT_ID);
-            when(queryRepo.hullOwnership(anyList())).thenReturn(List.of(
+            when(queryRepo.hullOwnership(anyList(), anyList())).thenReturn(List.of(
                     FakeTuple.of("characterId", MAIN_ID, "typeId", NESTOR, "quantity", 2L),
                     FakeTuple.of("characterId", ALT_ID, "typeId", NESTOR, "quantity", 3L)));
             hasSkillData(MAIN_ID);
@@ -557,7 +572,7 @@ class FleetReadinessServiceTest {
                             "characterId", 1L, "characterName", "A"),
                     FakeTuple.of("mainId", 2L, "mainName", "Hat Schiff", "corporationName", "C",
                             "characterId", 2L, "characterName", "B")));
-            when(queryRepo.hullOwnership(anyList())).thenReturn(List.of(
+            when(queryRepo.hullOwnership(anyList(), anyList())).thenReturn(List.of(
                     FakeTuple.of("characterId", 2L, "typeId", NESTOR, "quantity", 1L)));
             hullRequiresSkills(1);
 
@@ -608,6 +623,196 @@ class FleetReadinessServiceTest {
 
             assertThat(fit.accountsTotal()).isZero();
             assertThat(fit.coverage()).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("Skillplan als dritte Stufe")
+    class SkillPlanTier {
+
+        /** Ein Fitting mit hinterlegtem Plan, der diesen Skill auf dieser Stufe verlangt. */
+        private void planRequires(long skillTypeId, int level) {
+            when(doctrineRepo.findAll()).thenReturn(List.of(withId(doctrineWithEft("Armor", "Fit"), 5L)));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Fit"));
+            when(skillPlanService.skillsByDoctrine(any())).thenReturn(Map.of(
+                    5L, new SkillPlanService.DoctrineSkillsDto(
+                            List.of("Magic 14"),
+                            List.of(new SkillPlanDtos.SkillEntryDto(
+                                    skillTypeId, "Support " + skillTypeId, level)))));
+        }
+
+        private void hasSkillLevel(Long characterId, long skillTypeId, int level) {
+            when(queryRepo.skillLevels(anyList(), anyList())).thenReturn(List.of(FakeTuple.of(
+                    "characterId", characterId, "skillTypeId", skillTypeId,
+                    "activeLevel", (long) level)));
+        }
+
+        @Test
+        @DisplayName("laesst einen fehlenden Plan-Skill die Einsatzbereitschaft nicht verhindern")
+        void planGapDoesNotBlockReadiness() {
+            // Das ist der Kern der dritten Stufe: der Pilot kommt mit, er holt
+            // nur nicht heraus, was der Fit hergibt.
+            planRequires(900L, 5);
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+            hasSkillLevel(MAIN_ID, 900L, 2);
+
+            ReadinessDtos.FitReadinessDto fit = board();
+
+            assertThat(fit.ready()).singleElement().satisfies(account -> {
+                assertThat(account.isReady()).isTrue();
+                assertThat(account.fullyReady()).isFalse();
+            });
+            assertThat(fit.accountsReady()).isEqualTo(1);
+            assertThat(fit.accountsFullyReady()).isZero();
+        }
+
+        @Test
+        @DisplayName("meldet voll ausgeskillt, wenn auch der Plan erfuellt ist")
+        void fullySkilledWhenPlanIsMet() {
+            planRequires(900L, 3);
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+            hasSkillLevel(MAIN_ID, 900L, 5);
+
+            ReadinessDtos.FitReadinessDto fit = board();
+
+            assertThat(fit.accountsFullyReady()).isEqualTo(1);
+            assertThat(fit.ready().getFirst().characters().getFirst().fullySkilled()).isTrue();
+        }
+
+        @Test
+        @DisplayName("fuehrt die Plan-Luecken getrennt von den Voraussetzungen")
+        void keepsPlanGapsSeparate() {
+            planRequires(900L, 4);
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+            hasSkillLevel(MAIN_ID, 900L, 1);
+
+            ReadinessDtos.CharacterReadinessDto pilot =
+                    board().ready().getFirst().characters().getFirst();
+
+            assertThat(pilot.missingSkills()).isEmpty();
+            assertThat(pilot.missingPlanSkills()).singleElement().satisfies(gap -> {
+                assertThat(gap.requiredLevel()).isEqualTo(4);
+                assertThat(gap.currentLevel()).isEqualTo(1);
+            });
+        }
+
+        @Test
+        @DisplayName("zaehlt einen gar nicht trainierten Plan-Skill als Stufe null")
+        void treatsUntrainedSkillAsZero() {
+            planRequires(900L, 3);
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+
+            assertThat(board().ready().getFirst().characters().getFirst().missingPlanSkills())
+                    .singleElement()
+                    .satisfies(gap -> assertThat(gap.currentLevel()).isZero());
+        }
+
+        @Test
+        @DisplayName("nennt die Plaene und ihre Anforderungen am Fitting")
+        void namesThePlans() {
+            planRequires(900L, 3);
+            rosterOf(MAIN_ID);
+
+            ReadinessDtos.FitReadinessDto fit = board();
+
+            assertThat(fit.planNames()).containsExactly("Magic 14");
+            assertThat(fit.planSkills()).singleElement()
+                    .satisfies(skill -> assertThat(skill.level()).isEqualTo(3));
+        }
+
+        @Test
+        @DisplayName("gilt ohne hinterlegten Plan als voll ausgeskillt, sobald er fliegen kann")
+        void fullyySkilledWithoutAnyPlan() {
+            // Kein Plan heisst: nichts darueber hinaus gefordert.
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+            hullRequiresSkills(1);
+
+            assertThat(board().accountsFullyReady()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("prueft in der Sandbox keinen Plan")
+        void sandboxHasNoPlan() {
+            // Ein eingefuegtes Fitting haengt an keiner Doktrin.
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Frei"));
+
+            assertThat(service.sandbox("[Nestor, Frei]").board().planNames()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("Selbstauskunft eines Mitglieds")
+    class MyReadiness {
+
+        @Test
+        @DisplayName("wertet nur den eigenen Account aus")
+        void looksAtOwnAccountOnly() {
+            // Der Endpunkt steht jedem Mitglied offen - er darf deshalb keine
+            // fremden Charaktere heranziehen.
+            when(queryRepo.accountRosterOf(MAIN_ID)).thenReturn(List.of(FakeTuple.of(
+                    "mainId", MAIN_ID, "mainName", "Der Main", "corporationName", "Corp",
+                    "characterId", MAIN_ID, "characterName", "Der Main")));
+            when(queryRepo.hullOwnership(anyList(), anyList())).thenReturn(List.of(FakeTuple.of(
+                    "characterId", MAIN_ID, "typeId", NESTOR, "quantity", 2L)));
+            hasSkillData(MAIN_ID);
+            hullRequiresSkills(1);
+
+            List<ReadinessDtos.MyFitDto> mine = service.myReadiness(MAIN_ID);
+
+            assertThat(mine).singleElement().satisfies(fit -> {
+                assertThat(fit.canFly()).isTrue();
+                assertThat(fit.hasShip()).isTrue();
+                assertThat(fit.owned()).isEqualTo(2L);
+                assertThat(fit.bestCharacterName()).isEqualTo("Der Main");
+            });
+            // Der volle Roster darf gar nicht erst geladen werden.
+            verify(queryRepo, never()).accountRoster();
+        }
+
+        @Test
+        @DisplayName("meldet fehlende Skills des besten eigenen Charakters")
+        void reportsGapsOfTheBestOwnCharacter() {
+            when(queryRepo.accountRosterOf(MAIN_ID)).thenReturn(List.of(FakeTuple.of(
+                    "mainId", MAIN_ID, "mainName", "Der Main", "corporationName", "Corp",
+                    "characterId", MAIN_ID, "characterName", "Der Main")));
+            hasSkillData(MAIN_ID);
+            hullRequiresSkills(2);
+            missesSkill(MAIN_ID, 2L);
+
+            assertThat(service.myReadiness(MAIN_ID)).singleElement().satisfies(fit -> {
+                assertThat(fit.canFly()).isFalse();
+                assertThat(fit.missingSkills()).singleElement()
+                        .satisfies(gap -> assertThat(gap.skillTypeId()).isEqualTo(2L));
+            });
+        }
+
+        @Test
+        @DisplayName("liefert nichts, wenn der Charakter unbekannt ist")
+        void emptyForUnknownCharacter() {
+            when(queryRepo.accountRosterOf(anyLong())).thenReturn(List.of());
+
+            assertThat(service.myReadiness(9999L)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("nennt die Doktrin zu jedem Fitting, damit sich gruppieren laesst")
+        void namesTheDoctrine() {
+            when(queryRepo.accountRosterOf(MAIN_ID)).thenReturn(List.of(FakeTuple.of(
+                    "mainId", MAIN_ID, "mainName", "Der Main", "corporationName", "Corp",
+                    "characterId", MAIN_ID, "characterName", "Der Main")));
+
+            assertThat(service.myReadiness(MAIN_ID)).singleElement()
+                    .satisfies(fit -> assertThat(fit.doctrineName()).isEqualTo("Armor"));
         }
     }
 

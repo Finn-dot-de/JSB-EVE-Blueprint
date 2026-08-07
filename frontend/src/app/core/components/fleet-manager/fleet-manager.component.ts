@@ -10,6 +10,7 @@ import { ConfirmService } from '../../services/confirm.service';
 import { DoctrinesComponent } from '../doctrines/doctrines.component';
 import {
   ReadinessService,
+  CharacterReadinessDto,
   DoctrineReadinessDto,
   FitReadinessDto,
   SandboxResultDto,
@@ -17,6 +18,8 @@ import {
 } from '../../services/readiness.service';
 import { formatNumber } from '../../shared/eve-format.util';
 import { handlePortraitError, handleTypeImageError, portrait } from '../../shared/eve-image.util';
+import { copyText } from '../../shared/clipboard.util';
+import { toPlanLines, toSkillPlanText } from '../../shared/skill-plan.util';
 
 type TabId = 'FLEETS' | 'DOCTRINES' | 'BOARD' | 'SANDBOX';
 
@@ -191,13 +194,11 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     }
   }
 
-  copyLinkToClipboard(code: string) {
-    const url = this.getJoinUrlFor(code);
-    navigator.clipboard.writeText(url).then(() => {
-      this.toastService.success('PAP-Link erfolgreich kopiert!');
-    }).catch(err => {
-      this.toastService.error('Fehler beim Kopieren des PAP-Links.');
-    });
+  copyLinkToClipboard(code: string): Promise<void> {
+    return copyText(this.getJoinUrlFor(code)).then((ok) =>
+      ok
+        ? this.toastService.success('PAP-Link erfolgreich kopiert!')
+        : this.toastService.error('Fehler beim Kopieren des PAP-Links.'));
   }
 
   getJoinUrlFor(code: string): string {
@@ -337,10 +338,37 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     return 'red';
   }
 
-  copyFitToClipboard(eft: string) {
-    navigator.clipboard.writeText(eft).then(() => {
-      this.toastService.info('Fitting kopiert! Ingame das Fitting-Fenster öffnen und "Import from Clipboard" wählen.');
-    }).catch(() => this.toastService.error('Fehler beim Kopieren in die Zwischenablage.'));
+  copyFitToClipboard(eft: string): Promise<void> {
+    return copyText(eft).then((ok) =>
+      ok
+        ? this.toastService.info(
+            'Fitting kopiert! Ingame das Fitting-Fenster öffnen und "Import from Clipboard" wählen.')
+        : this.toastService.error('Fehler beim Kopieren in die Zwischenablage.'));
+  }
+
+  /**
+   * Legt die fehlenden Skills eines Piloten als Plantext in die Zwischenablage.
+   *
+   * Beide Quellen zusammen - Voraussetzungen und Skillplan. So kann ein FC
+   * einem Piloten genau die Liste geben, die er ingame einfügen muss.
+   */
+  copyMissingSkills(character: CharacterReadinessDto): Promise<void> {
+    const text = toSkillPlanText(
+      toPlanLines([...character.missingSkills, ...character.missingPlanSkills]));
+    if (!text) {
+      this.toastService.info(`${character.characterName} fehlt nichts.`);
+      return Promise.resolve();
+    }
+
+    return copyText(text).then((ok) =>
+      ok
+        ? this.toastService.success(`Fehlende Skills von ${character.characterName} kopiert.`)
+        : this.toastService.error('Fehler beim Kopieren in die Zwischenablage.'));
+  }
+
+  /** Ob es bei diesem Piloten überhaupt etwas zu kopieren gibt. */
+  hasMissingSkills(character: CharacterReadinessDto): boolean {
+    return character.missingSkills.length + character.missingPlanSkills.length > 0;
   }
 
     

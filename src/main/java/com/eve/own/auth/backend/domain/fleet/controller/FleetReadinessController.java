@@ -1,6 +1,7 @@
 package com.eve.own.auth.backend.domain.fleet.controller;
 
 import com.eve.own.auth.backend.common.AccessRules;
+import com.eve.own.auth.backend.common.CurrentUser;
 import com.eve.own.auth.backend.domain.fleet.dto.ReadinessDtos;
 import com.eve.own.auth.backend.domain.fleet.service.FleetReadinessService;
 import java.util.List;
@@ -28,6 +29,20 @@ public class FleetReadinessController {
 
     public FleetReadinessController(FleetReadinessService readinessService) {
         this.readinessService = readinessService;
+    }
+
+    /**
+     * Die Selbstauskunft: was der Anfragende selbst fliegen kann.
+     *
+     * <p>Das {@code @PreAuthorize} der Klasse gilt hier ausdruecklich nicht -
+     * jedes Mitglied soll seinen eigenen Stand sehen. Vertretbar ist das nur,
+     * weil die Auswertung ausschliesslich den eigenen Account umfasst; die
+     * Charakter-ID kommt aus der Sitzung und nicht aus der Anfrage.</p>
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/mine")
+    public ResponseEntity<List<ReadinessDtos.MyFitDto>> myReadiness() {
+        return ResponseEntity.ok(readinessService.myReadiness(CurrentUser.characterId()));
     }
 
     @GetMapping("/doctrines")

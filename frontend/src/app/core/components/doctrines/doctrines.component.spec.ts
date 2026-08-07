@@ -5,7 +5,45 @@ import { DoctrinesComponent } from './doctrines.component';
 import { AuthService } from '../../services/auth.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { DoctrineService, FleetDoctrine } from '../../services/doctrine.service';
+import { MyFitDto, ReadinessService } from '../../services/readiness.service';
+import { SkillPlanDto, SkillPlanService } from '../../services/skill-plan.service';
 import { ToastService } from '../../services/toast.service';
+
+/** Der eigene Stand zu einem Fitting, wie ihn die Selbstauskunft liefert. */
+function myFit(overrides: Partial<MyFitDto> = {}): MyFitDto {
+  return {
+    fitId: 1,
+    fitName: 'Logi',
+    doctrineName: 'Armor',
+    typeId: 33472,
+    typeName: 'Nestor',
+    iconUrl: '',
+    renderUrl: '',
+    moduleCount: 5,
+    planNames: [],
+    hasShip: true,
+    owned: 1,
+    canFly: true,
+    fullySkilled: true,
+    skillDataAvailable: true,
+    bestCharacterName: 'Pilot Eins',
+    missingSkills: [],
+    missingPlanSkills: [],
+    ...overrides,
+  };
+}
+
+/** Ein Skillplan, wie ihn der Server liefert. */
+function plan(overrides: Partial<SkillPlanDto> = {}): SkillPlanDto {
+  return {
+    id: 10,
+    name: 'Magic 14',
+    description: 'Die Grundlagen',
+    skills: [{ skillTypeId: 3413, skillName: 'Power Grid Management', level: 5 }],
+    usedByFittings: 2,
+    ...overrides,
+  };
+}
 
 /** Ein gespeichertes Fitting, wie es der Server liefert. */
 function doctrine(overrides: Partial<FleetDoctrine> = {}): FleetDoctrine {
@@ -24,6 +62,8 @@ describe('DoctrinesComponent', () => {
   let doctrineService: Record<string, ReturnType<typeof vi.fn>>;
   let toastService: Record<string, ReturnType<typeof vi.fn>>;
   let confirmService: { ask: ReturnType<typeof vi.fn> };
+  let readinessService: Record<string, ReturnType<typeof vi.fn>>;
+  let skillPlanService: Record<string, ReturnType<typeof vi.fn>>;
   let clipboard: { writeText: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
@@ -35,6 +75,15 @@ describe('DoctrinesComponent', () => {
     };
     toastService = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
     confirmService = { ask: vi.fn().mockResolvedValue(true) };
+    readinessService = { myReadiness: vi.fn().mockReturnValue(of([myFit()])) };
+    skillPlanService = {
+      list: vi.fn().mockReturnValue(of([plan()])),
+      searchSkills: vi.fn().mockReturnValue(of([{ typeId: 3426, typeName: 'CPU Management' }])),
+      save: vi.fn().mockReturnValue(of(plan())),
+      delete: vi.fn().mockReturnValue(of(null)),
+      importPlanText: vi.fn().mockReturnValue(of({ skills: [], unresolved: [] })),
+      assign: vi.fn().mockReturnValue(of(null)),
+    };
 
     clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
     vi.stubGlobal('navigator', { clipboard });
@@ -45,6 +94,8 @@ describe('DoctrinesComponent', () => {
         { provide: ToastService, useValue: toastService },
         { provide: ConfirmService, useValue: confirmService },
         { provide: AuthService, useValue: { hasAnyRole: vi.fn().mockReturnValue(true) } },
+        { provide: ReadinessService, useValue: readinessService },
+        { provide: SkillPlanService, useValue: skillPlanService },
       ],
     });
     component = TestBed.runInInjectionContext(() => new DoctrinesComponent());
@@ -258,8 +309,7 @@ describe('DoctrinesComponent', () => {
     it('kopiert ein Fitting und schließt den Dialog', async () => {
       component.openDetails(doctrine());
 
-      component.copyToClipboard('[Nestor, Logi]');
-      await Promise.resolve();
+      await component.copyToClipboard('[Nestor, Logi]');
 
       expect(clipboard.writeText).toHaveBeenCalledWith('[Nestor, Logi]');
       expect(toastService['info']).toHaveBeenCalled();
@@ -275,8 +325,7 @@ describe('DoctrinesComponent', () => {
     it('meldet, wenn die Zwischenablage nicht mitspielt', async () => {
       clipboard.writeText.mockRejectedValue(new Error('verweigert'));
 
-      component.copyToClipboard('[Nestor, Logi]');
-      await Promise.resolve();
+      await component.copyToClipboard('[Nestor, Logi]');
       await Promise.resolve();
 
       expect(toastService['error']).toHaveBeenCalled();

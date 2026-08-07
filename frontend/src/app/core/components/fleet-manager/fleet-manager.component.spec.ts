@@ -26,6 +26,8 @@ function account(mainName: string, characterNames: string[] = []): AccountReadin
     hasShip: true,
     hasSkills: true,
     isReady: true,
+    fullyReady: true,
+    pilotsFullySkilled: 1,
     characters: characterNames.map((characterName) => ({
       characterId: 1,
       characterName,
@@ -38,6 +40,8 @@ function account(mainName: string, characterNames: string[] = []): AccountReadin
       skillsMet: 1,
       skillsRequired: 1,
       missingSkills: [],
+      fullySkilled: true,
+      missingPlanSkills: [],
     })),
   } as AccountReadinessDto;
 }
@@ -64,8 +68,11 @@ function board(fits: Array<{ fitId: number; typeId: number }>): DoctrineReadines
       requiredSkills: [],
       hullSkillsRequired: 0,
       unresolved: [],
+      planNames: [],
+      planSkills: [],
       hullsTotal: 1,
       accountsReady: 1,
+      accountsFullyReady: 1,
       accountsTotal: 1,
       coverage: 1,
       ready: [],
@@ -259,8 +266,7 @@ describe('FleetManagerComponent', () => {
     });
 
     it('bestätigt das Kopieren in die Zwischenablage', async () => {
-      component.copyLinkToClipboard('abc-123');
-      await Promise.resolve();
+      await component.copyLinkToClipboard('abc-123');
 
       expect(clipboard.writeText).toHaveBeenCalledWith(
         'https://auth.example.org/fleet/join/abc-123',
@@ -271,16 +277,14 @@ describe('FleetManagerComponent', () => {
     it('meldet, wenn die Zwischenablage nicht mitspielt', async () => {
       clipboard.writeText.mockRejectedValue(new Error('verweigert'));
 
-      component.copyLinkToClipboard('abc-123');
-      await Promise.resolve();
+      await component.copyLinkToClipboard('abc-123');
       await Promise.resolve();
 
       expect(toastService['error']).toHaveBeenCalled();
     });
 
     it('kopiert ein Fitting in die Zwischenablage', async () => {
-      component.copyFitToClipboard('[Nestor, Fit]');
-      await Promise.resolve();
+      await component.copyFitToClipboard('[Nestor, Fit]');
 
       expect(clipboard.writeText).toHaveBeenCalledWith('[Nestor, Fit]');
       expect(toastService['info']).toHaveBeenCalled();

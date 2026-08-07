@@ -8,6 +8,7 @@ import { DiscordService } from './discord.service';
 import { DoctrineService } from './doctrine.service';
 import { FleetService } from './fleet.service';
 import { GroupService } from './group.service';
+import { SkillPlanService } from './skill-plan.service';
 import { MyAssetService } from './my-asset.service';
 import { ReadinessService } from './readiness.service';
 
@@ -27,6 +28,7 @@ describe('HTTP-Dienste', () => {
         DoctrineService,
         FleetService,
         GroupService,
+        SkillPlanService,
         MyAssetService,
         ReadinessService,
         provideHttpClient(),
@@ -264,6 +266,65 @@ describe('HTTP-Dienste', () => {
       const remove = httpMock.expectOne(`${apiUrl}/disconnect`);
       expect(remove.request.method).toBe('DELETE');
       remove.flush(null);
+    });
+  });
+
+  describe('SkillPlanService', () => {
+    const base = `${environment.apiUrl}/skill-plans`;
+
+    it('lädt die Pläne', () => {
+      TestBed.inject(SkillPlanService).list().subscribe();
+
+      httpMock.expectOne(base).flush([]);
+    });
+
+    it('sucht Skills über den Suchbegriff', () => {
+      TestBed.inject(SkillPlanService).searchSkills('power').subscribe();
+
+      httpMock.expectOne(`${base}/skills?q=power`).flush([]);
+    });
+
+    it('speichert einen Plan', () => {
+      const plan = { id: null, name: 'Magic 14', description: null, skills: [] };
+      TestBed.inject(SkillPlanService).save(plan).subscribe();
+
+      const request = httpMock.expectOne(base);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual(plan);
+      request.flush(null);
+    });
+
+    it('löscht einen Plan', () => {
+      TestBed.inject(SkillPlanService).delete(10).subscribe();
+
+      const request = httpMock.expectOne(`${base}/10`);
+      expect(request.request.method).toBe('DELETE');
+      request.flush(null);
+    });
+
+    it('schickt einen Plantext zum Einlesen', () => {
+      TestBed.inject(SkillPlanService).importPlanText('Hull Upgrades V').subscribe();
+
+      const request = httpMock.expectOne(`${base}/import`);
+      expect(request.request.body).toEqual({ planText: 'Hull Upgrades V' });
+      request.flush({ skills: [], unresolved: [] });
+    });
+
+    it('ordnet Pläne einem Fitting zu', () => {
+      TestBed.inject(SkillPlanService).assign(5, [1, 2]).subscribe();
+
+      const request = httpMock.expectOne(`${base}/assign/5`);
+      expect(request.request.method).toBe('PUT');
+      expect(request.request.body).toEqual({ planIds: [1, 2] });
+      request.flush(null);
+    });
+  });
+
+  describe('ReadinessService – Selbstauskunft', () => {
+    it('holt den eigenen Stand', () => {
+      TestBed.inject(ReadinessService).myReadiness().subscribe();
+
+      httpMock.expectOne(`${environment.apiUrl}/fleet/readiness/mine`).flush([]);
     });
   });
 

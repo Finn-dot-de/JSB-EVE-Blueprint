@@ -34,6 +34,13 @@ export interface CharacterReadinessDto {
   skillsMet: number;
   skillsRequired: number;
   missingSkills: MissingSkillDto[];
+  /** Zusätzlich zum Fit auch der hinterlegte Skillplan erfüllt. */
+  fullySkilled: boolean;
+  /**
+   * Was zum Skillplan noch fehlt. Getrennt geführt, weil es das Undocken
+   * nicht verhindert, sondern die Leistung begrenzt.
+   */
+  missingPlanSkills: MissingSkillDto[];
 }
 
 export interface AccountReadinessDto {
@@ -50,7 +57,11 @@ export interface AccountReadinessDto {
   skillsRequired: number;
   hasShip: boolean;
   hasSkills: boolean;
+  /** Ein und derselbe Charakter hat die Hülle und kann den Fit fliegen. */
   isReady: boolean;
+  /** Dieser Charakter erfüllt zusätzlich den Skillplan. */
+  fullyReady: boolean;
+  pilotsFullySkilled: number;
   characters: CharacterReadinessDto[];
 }
 
@@ -76,8 +87,13 @@ export interface FitReadinessDto {
   hullSkillsRequired: number;
   /** Einträge des EFT-Texts, die die Stammdaten nicht kannten - ungeprüft. */
   unresolved: string[];
+  /** Die an diesem Fitting hängenden Skillpläne. */
+  planNames: string[];
+  /** Was diese Pläne zusätzlich verlangen, höchste Stufe je Skill. */
+  planSkills: RequiredSkillDto[];
   hullsTotal: number;
   accountsReady: number;
+  accountsFullyReady: number;
   accountsTotal: number;
   coverage: number;
   ready: AccountReadinessDto[];
@@ -123,6 +139,33 @@ export interface SandboxResultDto {
   board: FitReadinessDto;
 }
 
+/**
+ * Ein Fitting aus Sicht des eigenen Accounts - die Selbstauskunft.
+ *
+ * Bewusst schmaler als das Board: hier geht es nicht um die Mannschaft,
+ * sondern um die eine Frage "kann ich das fliegen?".
+ */
+export interface MyFitDto {
+  fitId: number;
+  fitName: string | null;
+  doctrineName: string | null;
+  typeId: number;
+  typeName: string;
+  iconUrl: string;
+  renderUrl: string;
+  moduleCount: number;
+  planNames: string[];
+  hasShip: boolean;
+  owned: number;
+  canFly: boolean;
+  fullySkilled: boolean;
+  skillDataAvailable: boolean;
+  /** Der Charakter, an dem die Auskunft hängt. */
+  bestCharacterName: string | null;
+  missingSkills: MissingSkillDto[];
+  missingPlanSkills: MissingSkillDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReadinessService {
   private http = inject(HttpClient);
@@ -136,6 +179,11 @@ export class ReadinessService {
     let params = new HttpParams();
     if (doctrineName) params = params.set('doctrineName', doctrineName);
     return this.http.get<DoctrineReadinessDto>(`${this.apiUrl}/board`, { params });
+  }
+
+  /** Was der Angemeldete selbst fliegen kann - über alle Doktrinen hinweg. */
+  myReadiness(): Observable<MyFitDto[]> {
+    return this.http.get<MyFitDto[]>(`${this.apiUrl}/mine`);
   }
 
   sandbox(eftString: string): Observable<SandboxResultDto> {

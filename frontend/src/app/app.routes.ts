@@ -1,5 +1,8 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/auth/auth.guard';
+import { authGuard, roleGuard } from './core/auth/auth.guard';
+
+/** Wer die Rechteverwaltung öffnen darf - dieselbe Grenze wie im Server. */
+const LEADERSHIP_OR_IT = ['ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN'];
 
 export const routes: Routes = [
   { path: '', redirectTo: 'home', pathMatch: 'full' },
@@ -14,7 +17,7 @@ export const routes: Routes = [
   },
   {
     path: 'groups/rights',
-    canActivate: [authGuard],
+    canActivate: [roleGuard(LEADERSHIP_OR_IT)],
     loadComponent: () => import('./core/components/roles/roles.component').then(m => m.RolesComponent)
   },
   {

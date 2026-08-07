@@ -11,6 +11,7 @@ import { DoctrinesComponent } from '../doctrines/doctrines.component';
 import {
   ReadinessService,
   DoctrineReadinessDto,
+  FitReadinessDto,
   SandboxResultDto,
   AccountReadinessDto
 } from '../../services/readiness.service';
@@ -69,8 +70,8 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
   memberFilter = signal('');
 
-  expandedHulls = signal<Set<number>>(new Set());
-  expandedAccounts = signal<Set<string>>(new Set()); // Key: "typeId:mainId"
+  expandedFits = signal<Set<number>>(new Set());
+  expandedAccounts = signal<Set<string>>(new Set()); // Key: "fitKey:mainId"
 
   // --- Sandbox State ---
   sandboxInput = signal('');
@@ -220,7 +221,7 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
   onDoctrineChange() {
     this.board.set(null);
-    this.expandedHulls.set(new Set());
+    this.expandedFits.set(new Set());
     this.expandedAccounts.set(new Set());
 
     if (this.activeTab() === 'BOARD') this.loadBoard();
@@ -233,7 +234,7 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.board.set(data);
         this.loadingBoard.set(false);
-        if (data.hulls.length > 0) this.expandedHulls.set(new Set([data.hulls[0].typeId]));
+        if (data.fits.length > 0) this.expandedFits.set(new Set([this.fitKey(data.fits[0])]));
       },
       error: (err) => {
         this.loadingBoard.set(false);
@@ -273,20 +274,31 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
   // ================= Aufklapp-Logik =================
 
-  toggleHull(typeId: number) {
-    this.expandedHulls.update(current => {
+  /**
+   * Ein stabiler Schlüssel je Fit.
+   *
+   * Nicht die typeId: eine Doktrin kann zwei Fits derselben Hülle enthalten,
+   * die sich sonst den Aufklapp-Zustand teilen würden. Der Sandbox-Fit hat
+   * keine ID - er steht ohnehin allein und immer offen.
+   */
+  fitKey(fit: FitReadinessDto): number {
+    return fit.fitId ?? -fit.typeId;
+  }
+
+  toggleFit(key: number) {
+    this.expandedFits.update(current => {
       const next = new Set(current);
-      next.has(typeId) ? next.delete(typeId) : next.add(typeId);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   }
 
-  isHullExpanded(typeId: number): boolean {
-    return this.expandedHulls().has(typeId);
+  isFitExpanded(key: number): boolean {
+    return this.expandedFits().has(key);
   }
 
-  toggleAccount(typeId: number, mainId: number) {
-    const key = `${typeId}:${mainId}`;
+  toggleAccount(fitKey: number, mainId: number) {
+    const key = `${fitKey}:${mainId}`;
     this.expandedAccounts.update(current => {
       const next = new Set(current);
       next.has(key) ? next.delete(key) : next.add(key);
@@ -294,8 +306,8 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     });
   }
 
-  isAccountExpanded(typeId: number, mainId: number): boolean {
-    return this.expandedAccounts().has(`${typeId}:${mainId}`);
+  isAccountExpanded(fitKey: number, mainId: number): boolean {
+    return this.expandedAccounts().has(`${fitKey}:${mainId}`);
   }
 
   // ================= Filter =================

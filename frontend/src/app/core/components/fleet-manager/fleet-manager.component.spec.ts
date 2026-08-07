@@ -34,6 +34,7 @@ function account(mainName: string, characterNames: string[] = []): AccountReadin
       owned: 1,
       skillDataAvailable: true,
       canFly: true,
+      canFlyHull: true,
       skillsMet: 1,
       skillsRequired: 1,
       missingSkills: [],
@@ -41,17 +42,28 @@ function account(mainName: string, characterNames: string[] = []): AccountReadin
   } as AccountReadinessDto;
 }
 
-function board(typeIds: number[]): DoctrineReadinessDto {
+/**
+ * Ein Board mit einem Fit je übergebener ID.
+ *
+ * Die fitId ist bewusst mitgeführt: sie ist der Aufklapp-Schlüssel, nicht die
+ * typeId - eine Doktrin darf zwei Fits derselben Hülle enthalten.
+ */
+function board(fits: Array<{ fitId: number; typeId: number }>): DoctrineReadinessDto {
   return {
     doctrineName: 'Armor',
     accountsTotal: 1,
-    hullsChecked: typeIds.length,
-    hulls: typeIds.map((typeId) => ({
+    fitsChecked: fits.length,
+    fits: fits.map(({ fitId, typeId }) => ({
+      fitId,
+      fitName: `Fit ${fitId}`,
       typeId,
       typeName: `Huelle ${typeId}`,
       iconUrl: '',
       renderUrl: '',
+      moduleCount: 3,
       requiredSkills: [],
+      hullSkillsRequired: 0,
+      unresolved: [],
       hullsTotal: 1,
       accountsReady: 1,
       accountsTotal: 1,
@@ -85,7 +97,7 @@ describe('FleetManagerComponent', () => {
     };
     readinessService = {
       doctrines: vi.fn().mockReturnValue(of(['Armor', 'Shield'])),
-      checkBoard: vi.fn().mockReturnValue(of(board([33472]))),
+      checkBoard: vi.fn().mockReturnValue(of(board([{ fitId: 7, typeId: 33472 }]))),
       sandbox: vi.fn().mockReturnValue(of({ fit: {}, board: {} })),
     };
     toastService = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
@@ -294,12 +306,13 @@ describe('FleetManagerComponent', () => {
       expect(readinessService['doctrines']).not.toHaveBeenCalled();
     });
 
-    it('klappt beim Laden die erste Hülle auf', () => {
+    it('klappt beim Laden das erste Fitting auf', () => {
       component.selectedDoctrine = 'Armor';
 
       component.loadBoard();
 
-      expect(component.isHullExpanded(33472)).toBe(true);
+      // Der Schlüssel ist die fitId, nicht die typeId.
+      expect(component.isFitExpanded(7)).toBe(true);
       expect(component.loadingBoard()).toBe(false);
     });
 
@@ -343,20 +356,42 @@ describe('FleetManagerComponent', () => {
   });
 
   describe('Aufklappen', () => {
-    it('klappt eine Hülle auf und wieder zu', () => {
-      component.toggleHull(1);
-      expect(component.isHullExpanded(1)).toBe(true);
+    it('klappt ein Fitting auf und wieder zu', () => {
+      component.toggleFit(1);
+      expect(component.isFitExpanded(1)).toBe(true);
 
-      component.toggleHull(1);
-      expect(component.isHullExpanded(1)).toBe(false);
+      component.toggleFit(1);
+      expect(component.isFitExpanded(1)).toBe(false);
     });
 
-    it('klappt einen Account je Hülle getrennt auf', () => {
-      // Derselbe Account kann unter zwei Hüllen unterschiedlich aufgeklappt sein.
+    it('klappt einen Account je Fitting getrennt auf', () => {
+      // Derselbe Account kann unter zwei Fittings unterschiedlich aufgeklappt sein.
       component.toggleAccount(1, 1000);
 
       expect(component.isAccountExpanded(1, 1000)).toBe(true);
       expect(component.isAccountExpanded(2, 1000)).toBe(false);
+    });
+
+    it('hält zwei Fittings derselben Hülle auseinander', () => {
+      // Über die typeId würden beide denselben Aufklapp-Zustand teilen.
+      const data = board([
+        { fitId: 11, typeId: 33472 },
+        { fitId: 12, typeId: 33472 },
+      ]);
+
+      const [erstes, zweites] = data.fits;
+
+      expect(component.fitKey(erstes)).not.toBe(component.fitKey(zweites));
+
+      component.toggleFit(component.fitKey(erstes));
+      expect(component.isFitExpanded(component.fitKey(erstes))).toBe(true);
+      expect(component.isFitExpanded(component.fitKey(zweites))).toBe(false);
+    });
+
+    it('vergibt auch dem Sandbox-Fitting ohne ID einen Schlüssel', () => {
+      const sandboxFit = { ...board([{ fitId: 1, typeId: 33472 }]).fits[0], fitId: null };
+
+      expect(component.fitKey(sandboxFit)).toBe(-33472);
     });
   });
 

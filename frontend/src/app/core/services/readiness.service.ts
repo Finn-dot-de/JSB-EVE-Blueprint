@@ -23,7 +23,14 @@ export interface CharacterReadinessDto {
   main: boolean;
   owned: number;
   skillDataAvailable: boolean;
+  /** Rumpf und alle Module bedienbar. */
   canFly: boolean;
+  /**
+   * Nur der Rumpf bedienbar. Trennt "kann das Schiff gar nicht fliegen" von
+   * "es fehlen bloß ein paar Modul-Skills" - zwei sehr verschiedene Abstände
+   * zur Einsatzbereitschaft.
+   */
+  canFlyHull: boolean;
   skillsMet: number;
   skillsRequired: number;
   missingSkills: MissingSkillDto[];
@@ -47,12 +54,28 @@ export interface AccountReadinessDto {
   characters: CharacterReadinessDto[];
 }
 
-export interface HullReadinessDto {
+/**
+ * Ein Fit und wer ihn stellen kann.
+ *
+ * Geprüft wird der komplette Fit: der Hangar auf den Rumpf, die Skills auf
+ * Rumpf, Module, Drohnen und Ladung. Zwei Fits derselben Hülle stehen darum
+ * getrennt im Board - sie verlangen Unterschiedliches.
+ */
+export interface FitReadinessDto {
+  fitId: number | null;
+  fitName: string | null;
   typeId: number;
   typeName: string;
   iconUrl: string;
   renderUrl: string;
+  /** Verbaute Module, Drohnen und Ladung. */
+  moduleCount: number;
+  /** Die Vereinigung über Rumpf und alle Module, höchste Stufe je Skill. */
   requiredSkills: RequiredSkillDto[];
+  /** Davon der Anteil, der allein auf den Rumpf entfällt. */
+  hullSkillsRequired: number;
+  /** Einträge des EFT-Texts, die die Stammdaten nicht kannten - ungeprüft. */
+  unresolved: string[];
   hullsTotal: number;
   accountsReady: number;
   accountsTotal: number;
@@ -64,8 +87,8 @@ export interface HullReadinessDto {
 export interface DoctrineReadinessDto {
   doctrineName: string | null;
   accountsTotal: number;
-  hullsChecked: number;
-  hulls: HullReadinessDto[];
+  fitsChecked: number;
+  fits: FitReadinessDto[];
 }
 
 export interface FitModuleDto {
@@ -97,7 +120,7 @@ export interface ParsedFitDto {
 
 export interface SandboxResultDto {
   fit: ParsedFitDto;
-  board: HullReadinessDto;
+  board: FitReadinessDto;
 }
 
 @Injectable({ providedIn: 'root' })

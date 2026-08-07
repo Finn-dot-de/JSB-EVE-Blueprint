@@ -2,8 +2,7 @@ package com.eve.own.auth.backend.domain.discord.controller;
 
 import com.eve.own.auth.backend.common.AccessRules;
 import com.eve.own.auth.backend.common.CurrentUser;
-import com.eve.own.auth.backend.domain.auth.repository.SystemRoleRepository;
-import com.eve.own.auth.backend.domain.auth.repository.TitleRoleMappingRepository;
+import com.eve.own.auth.backend.domain.auth.service.RoleCatalogService;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.discord.entity.DiscordConnection;
@@ -29,11 +28,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -48,8 +46,7 @@ public class DiscordAuthController {
     private final DiscordConnectionRepository connectionRepo;
     private final CharacterRepository characterRepo;
     private final DiscordRoleMappingRepository mappingRepo;
-    private final SystemRoleRepository systemRoleRepo;
-    private final TitleRoleMappingRepository titleRepo; // <-- NEU: Um Ingame-Titel-Rollen zu finden
+    private final RoleCatalogService roleCatalogService;
 
     public DiscordAuthController(@Value("${discord.client-id}") String clientId,
                                  @Value("${app.base.url}") String baseUrl,
@@ -58,8 +55,7 @@ public class DiscordAuthController {
                                  DiscordConnectionRepository connectionRepo,
                                  CharacterRepository characterRepo,
                                  DiscordRoleMappingRepository mappingRepo,
-                                 SystemRoleRepository systemRoleRepo,
-                                 TitleRoleMappingRepository titleRepo) { // <-- NEU
+                                 RoleCatalogService roleCatalogService) {
         this.clientId = clientId;
         this.redirectUri = baseUrl.endsWith("/") ? baseUrl + "api/discord/callback" : baseUrl + "/api/discord/callback";
         this.frontendUrl = frontendUrl;
@@ -68,8 +64,7 @@ public class DiscordAuthController {
         this.connectionRepo = connectionRepo;
         this.characterRepo = characterRepo;
         this.mappingRepo = mappingRepo;
-        this.systemRoleRepo = systemRoleRepo;
-        this.titleRepo = titleRepo; // <-- NEU
+        this.roleCatalogService = roleCatalogService;
     }
 
     @GetMapping("/login")
@@ -137,60 +132,34 @@ public class DiscordAuthController {
     }
 
     // ========================================================
-    // Admin Endpunkte für das Mapping (JETZT MIT ALLEN ROLLEN)
+    // Admin Endpunkte für das Mapping
     // ========================================================
+
+    /**
+     * Alle Auth-Rollen samt der bereits hinterlegten Discord-Rollen-ID.
+     *
+     * <p>Welche Rollen es gibt, beantwortet der {@link RoleCatalogService}. Diese
+     * Methode hat die Liste frueher selbst zusammengesucht - dieselbe Arbeit, die
+     * auch die Rollenverwaltung leistet, nur mit einem eigenen Satz Sonderfaelle.
+     * Beide Seiten zeigen jetzt zwangslaeufig dieselben Rollen.</p>
+     */
     @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
     @GetMapping("/mappings")
     public ResponseEntity<List<Map<String, String>>> getAllRolesWithMappings() {
-        List<DiscordRoleMapping> mappings = mappingRepo.findAll();
-        List<Map<String, String>> result = new ArrayList<>();
+        // Ein leerer Text statt null: Map.of vertraegt keine null-Werte.
+        Map<String, String> discordIdsByRole = mappingRepo.findAll().stream()
+                .collect(Collectors.toMap(
+                        DiscordRoleMapping::getAuthRole,
+                        mapping -> Optional.ofNullable(mapping.getDiscordRoleId()).orElse(""),
+                        (first, second) -> first));
 
-        Set<String> allAuthRoles = new HashSet<>();
-
-        allAuthRoles.add("ROLE_USER");
-        allAuthRoles.add("ROLE_MEMBER");
-
-        systemRoleRepo.findAll().forEach(role -> allAuthRoles.add(role.getRoleName()));
-
-        // Ingame-Titel-Rollen aus der Mapping-Tabelle hinzufügen
-        titleRepo.findAll().forEach(titleMapping -> {
-            if (titleMapping.getRoleName() != null && !titleMapping.getRoleName().isBlank()) {
-                allAuthRoles.add(titleMapping.getRoleName());
-            }
-        });
-
-        // 2. Mappings und Beschreibungen zuordnen
-        for (String role : allAuthRoles) {
-            String discordId = mappings.stream()
-                    .filter(m -> m.getAuthRole().equals(role))
-                    .map(DiscordRoleMapping::getDiscordRoleId)
-                    .findFirst()
-                    .orElse("");
-
-            // Passende Beschreibung generieren
-            String description;
-            if (role.equals("ROLE_USER")) {
-                description = "Basis-Recht für alle ESI-Logins";
-            } else if (role.equals("ROLE_MEMBER")) {
-                description = "Basis-Recht für Corp-Mitglieder";
-            } else {
-                var sysRole = systemRoleRepo.findById(role);
-                if (sysRole.isPresent() && sysRole.get().getDescription() != null) {
-                    description = sysRole.get().getDescription();
-                } else {
-                    description = "Automatisch generiert aus Ingame-Titel";
-                }
-            }
-
-            result.add(Map.of(
-                    "authRole", role,
-                    "discordRoleId", discordId,
-                    "description", description
-            ));
-        }
-
-        // 3. Alphabetisch sortieren, sieht im Frontend aufgeräumter aus
-        result.sort(Comparator.comparing(a -> a.get("authRole")));
+        List<Map<String, String>> result = roleCatalogService.catalog().stream()
+                .map(role -> Map.of(
+                        "authRole", role.name(),
+                        "discordRoleId", discordIdsByRole.getOrDefault(role.name(), ""),
+                        "description", role.description()))
+                .sorted(Comparator.comparing(entry -> entry.get("authRole")))
+                .toList();
 
         return ResponseEntity.ok(result);
     }

@@ -1,7 +1,6 @@
 package com.eve.own.auth.backend.domain.fleet.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
@@ -11,6 +10,9 @@ import com.eve.own.auth.backend.domain.fleet.entity.FleetDoctrine;
 import com.eve.own.auth.backend.domain.fleet.repository.FleetDoctrineRepository;
 import com.eve.own.auth.backend.domain.fleet.repository.ReadinessQueryRepository;
 import com.eve.own.auth.backend.testsupport.FakeTuple;
+import jakarta.persistence.Tuple;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +26,8 @@ import org.mockito.quality.Strictness;
 
 /**
  * Das Readiness-Board beantwortet: wer kann diese Doktrin heute wirklich
- * fliegen? Dafuer muessen Hangar <em>und</em> Skills stimmen.
+ * fliegen? Geprueft wird der ganze Fit - der Hangar auf die Huelle, die
+ * Skills auf Huelle, Module, Drohnen und Ladung.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -34,6 +37,8 @@ class FleetReadinessServiceTest {
     private static final Long MAIN_ID = 1000L;
     private static final Long ALT_ID = 1001L;
     private static final Long NESTOR = 33472L;
+    private static final Long LAUNCHER = 2404L;
+    private static final Long AMMO = 24492L;
 
     @Mock private FleetDoctrineRepository doctrineRepo;
     @Mock private ReadinessQueryRepository queryRepo;
@@ -41,18 +46,28 @@ class FleetReadinessServiceTest {
 
     private FleetReadinessService service;
 
+    /** Anforderungen und Luecken werden ueber mehrere Aufrufe hinweg gesammelt. */
+    private final List<Tuple> requirementRows = new ArrayList<>();
+    private final List<Tuple> gapRows = new ArrayList<>();
+
     @BeforeEach
     void setUp() {
         service = new FleetReadinessService(doctrineRepo, queryRepo, eftParser);
+        requirementRows.clear();
+        gapRows.clear();
 
         when(doctrineRepo.findAll()).thenReturn(List.of(doctrine("Armor", NESTOR, "Nestor")));
         when(queryRepo.resolveTypesByName(anyList())).thenReturn(List.of());
         when(queryRepo.accountRoster()).thenReturn(List.of());
         when(queryRepo.hullOwnership(anyList())).thenReturn(List.of());
-        when(queryRepo.skillRequirements(anyList())).thenReturn(List.of());
-        when(queryRepo.skillGaps(anyList())).thenReturn(List.of());
+        when(queryRepo.skillRequirements(anyList())).thenReturn(requirementRows);
+        when(queryRepo.skillGaps(anyList())).thenReturn(gapRows);
         when(queryRepo.charactersWithSkillData()).thenReturn(List.of());
     }
+
+    // ==================================================================
+    // Aufbau
+    // ==================================================================
 
     private static FleetDoctrine doctrine(String name, Long shipTypeId, String shipType) {
         FleetDoctrine fit = new FleetDoctrine();
@@ -63,9 +78,32 @@ class FleetReadinessServiceTest {
         return fit;
     }
 
-    /** Ein Account mit Main und optionalem Alt. */
+    /** Ein Doktrin-Eintrag mit hinterlegtem EFT-Text - er wird geparst. */
+    private static FleetDoctrine doctrineWithEft(String doctrineName, String fitName) {
+        FleetDoctrine fit = doctrine(doctrineName, NESTOR, "Nestor");
+        fit.setName(fitName);
+        fit.setEftString("[Nestor, " + fitName + "]");
+        return fit;
+    }
+
+    /** Ein geparstes Fitting mit den genannten Modulen in einer Slot-Gruppe. */
+    private static ReadinessDtos.ParsedFitDto parsedFit(String fitName, Long... moduleTypeIds) {
+        List<ReadinessDtos.FitModuleDto> modules = Arrays.stream(moduleTypeIds)
+                .map(typeId -> new ReadinessDtos.FitModuleDto(
+                        typeId, "Modul " + typeId, "icon", 1, null, null))
+                .toList();
+        return new ReadinessDtos.ParsedFitDto(
+                NESTOR, "Nestor", fitName, "icon", "render", modules.size(),
+                modules.isEmpty()
+                        ? List.of()
+                        : List.of(new ReadinessDtos.FitSlotGroupDto(
+                                "High Slots", "icon", modules.size(), modules)),
+                List.of());
+    }
+
+    /** Ein Account mit Main und optionalen Alts. */
     private void rosterOf(Long... characterIds) {
-        List<jakarta.persistence.Tuple> rows = new java.util.ArrayList<>();
+        List<Tuple> rows = new ArrayList<>();
         for (Long characterId : characterIds) {
             rows.add(FakeTuple.of(
                     "mainId", MAIN_ID, "mainName", "Der Main", "corporationName", "Corp",
@@ -80,12 +118,23 @@ class FleetReadinessServiceTest {
     }
 
     private void hullRequiresSkills(int count) {
-        List<jakarta.persistence.Tuple> rows = new java.util.ArrayList<>();
         for (int i = 1; i <= count; i++) {
-            rows.add(FakeTuple.of("typeId", NESTOR, "skillTypeId", (long) i,
-                    "skillName", "Skill " + i, "requiredLevel", 3L));
+            requires(NESTOR, i, 3);
         }
-        when(queryRepo.skillRequirements(anyList())).thenReturn(rows);
+    }
+
+    /** Ein Typ verlangt einen Skill auf einer Stufe. */
+    private void requires(Long typeId, long skillTypeId, int level) {
+        requirementRows.add(FakeTuple.of("typeId", typeId, "skillTypeId", skillTypeId,
+                "skillName", "Skill " + skillTypeId, "requiredLevel", (long) level));
+    }
+
+    /** Einem Charakter fehlt ein von diesem Typ verlangter Skill. */
+    private void misses(Long characterId, Long typeId, long skillTypeId, int required, int current) {
+        gapRows.add(FakeTuple.of(
+                "characterId", characterId, "typeId", typeId, "skillTypeId", skillTypeId,
+                "skillName", "Skill " + skillTypeId,
+                "requiredLevel", (long) required, "currentLevel", (long) current));
     }
 
     private void hasSkillData(Long... characterIds) {
@@ -93,14 +142,16 @@ class FleetReadinessServiceTest {
     }
 
     private void missesSkill(Long characterId, long skillTypeId) {
-        when(queryRepo.skillGaps(anyList())).thenReturn(List.of(FakeTuple.of(
-                "characterId", characterId, "typeId", NESTOR, "skillTypeId", skillTypeId,
-                "skillName", "Skill " + skillTypeId, "requiredLevel", 3L, "currentLevel", 1L)));
+        misses(characterId, NESTOR, skillTypeId, 3, 1);
     }
 
-    private ReadinessDtos.HullReadinessDto board() {
-        return service.checkReadiness("Armor").hulls().getFirst();
+    private ReadinessDtos.FitReadinessDto board() {
+        return service.checkReadiness("Armor").fits().getFirst();
     }
+
+    // ==================================================================
+    // Tests
+    // ==================================================================
 
     @Nested
     @DisplayName("Doktrin-Auswahl")
@@ -129,14 +180,14 @@ class FleetReadinessServiceTest {
         }
 
         @Test
-        @DisplayName("meldet ein leeres Board, wenn die Doktrin keine Huellen hat")
-        void emptyBoardWithoutHulls() {
+        @DisplayName("meldet ein leeres Board, wenn die Doktrin keine Fittings hat")
+        void emptyBoardWithoutFits() {
             when(doctrineRepo.findAll()).thenReturn(List.of());
 
             ReadinessDtos.DoctrineReadinessDto readiness = service.checkReadiness("Leer");
 
-            assertThat(readiness.hulls()).isEmpty();
-            assertThat(readiness.hullsChecked()).isZero();
+            assertThat(readiness.fits()).isEmpty();
+            assertThat(readiness.fitsChecked()).isZero();
         }
 
         @Test
@@ -146,8 +197,8 @@ class FleetReadinessServiceTest {
             when(queryRepo.resolveTypesByName(anyList())).thenReturn(List.of(
                     FakeTuple.of("lookup", "nestor", "typeId", NESTOR)));
 
-            assertThat(service.checkReadiness("Armor").hulls()).singleElement()
-                    .satisfies(hull -> assertThat(hull.typeId()).isEqualTo(NESTOR));
+            assertThat(service.checkReadiness("Armor").fits()).singleElement()
+                    .satisfies(fit -> assertThat(fit.typeId()).isEqualTo(NESTOR));
         }
 
         @Test
@@ -155,21 +206,178 @@ class FleetReadinessServiceTest {
         void skipsUnresolvableShip() {
             when(doctrineRepo.findAll()).thenReturn(List.of(doctrine("Armor", null, "Erfunden")));
 
-            assertThat(service.checkReadiness("Armor").hulls()).isEmpty();
+            assertThat(service.checkReadiness("Armor").fits()).isEmpty();
         }
 
         @Test
-        @DisplayName("sammelt mehrere Fittings derselben Huelle unter einem Eintrag")
-        void mergesFitsOfSameHull() {
-            FleetDoctrine erstes = doctrine("Armor", NESTOR, "Nestor");
-            erstes.setName("Logi A");
-            FleetDoctrine zweites = doctrine("Armor", NESTOR, "Nestor");
-            zweites.setName("Logi B");
+        @DisplayName("fuehrt zwei Fittings derselben Huelle getrennt auf")
+        void keepsFitsOfSameHullApart() {
+            // Frueher wurden sie zu einem Eintrag verschmolzen. Das geht nicht
+            // mehr: dieselbe Huelle mit anderen Modulen ist eine andere
+            // Anforderung - wer das eine Fitting stellen kann, kann das andere
+            // womoeglich nicht.
+            FleetDoctrine erstes = doctrineWithEft("Armor", "Logi A");
+            FleetDoctrine zweites = doctrineWithEft("Armor", "Logi B");
+            erstes.setId(1L);
+            zweites.setId(2L);
             when(doctrineRepo.findAll()).thenReturn(List.of(erstes, zweites));
+            when(eftParser.parseAndResolve("[Nestor, Logi A]")).thenReturn(parsedFit("Logi A", LAUNCHER));
+            when(eftParser.parseAndResolve("[Nestor, Logi B]")).thenReturn(parsedFit("Logi B", AMMO));
 
-            // Beide Fittings fliegen dieselbe Huelle - im Board steht sie einmal.
-            assertThat(service.checkReadiness("Armor").hulls()).singleElement()
-                    .satisfies(hull -> assertThat(hull.typeId()).isEqualTo(NESTOR));
+            assertThat(service.checkReadiness("Armor").fits())
+                    .hasSize(2)
+                    .extracting(ReadinessDtos.FitReadinessDto::fitName)
+                    .containsExactly("Logi A", "Logi B");
+        }
+    }
+
+    @Nested
+    @DisplayName("Der komplette Fit")
+    class CompleteFit {
+
+        @Test
+        @DisplayName("zaehlt die Skills der Module zu denen des Rumpfs")
+        void addsModuleSkillsToHullSkills() {
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Raketen", LAUNCHER));
+            requires(NESTOR, 1L, 3);
+            requires(LAUNCHER, 2L, 4);
+
+            ReadinessDtos.FitReadinessDto fit = board();
+
+            assertThat(fit.requiredSkills()).hasSize(2);
+            assertThat(fit.hullSkillsRequired()).isEqualTo(1);
+            assertThat(fit.moduleCount()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("nimmt bei doppeltem Skill die hoehere Anforderung")
+        void takesTheHigherRequirement() {
+            // Rumpf und Werfer verlangen denselben Skill auf verschiedenen Stufen.
+            // Die niedrigere zu nehmen waere ein zu mildes Urteil.
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Raketen", LAUNCHER));
+            requires(NESTOR, 7L, 2);
+            requires(LAUNCHER, 7L, 5);
+
+            assertThat(board().requiredSkills()).singleElement()
+                    .satisfies(skill -> assertThat(skill.level()).isEqualTo(5));
+        }
+
+        @Test
+        @DisplayName("zaehlt denselben Modultyp nur einmal")
+        void countsARepeatedModuleOnce() {
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString()))
+                    .thenReturn(parsedFit("Raketen", LAUNCHER, LAUNCHER, LAUNCHER));
+            requires(LAUNCHER, 2L, 4);
+
+            assertThat(board().requiredSkills()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("prueft auch die geladene Munition")
+        void checksLoadedCharges() {
+            ReadinessDtos.FitModuleDto werfer = new ReadinessDtos.FitModuleDto(
+                    LAUNCHER, "Werfer", "icon", 1, "Scourge Rage", AMMO);
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(new ReadinessDtos.ParsedFitDto(
+                    NESTOR, "Nestor", "Raketen", "icon", "render", 1,
+                    List.of(new ReadinessDtos.FitSlotGroupDto("High Slots", "icon", 1, List.of(werfer))),
+                    List.of()));
+            requires(AMMO, 9L, 3);
+
+            assertThat(board().requiredSkills())
+                    .extracting(ReadinessDtos.RequiredSkillDto::skillTypeId)
+                    .containsExactly(9L);
+        }
+
+        @Test
+        @DisplayName("laesst einen Piloten an einem fehlenden Modul-Skill scheitern")
+        void moduleSkillGapBlocksReadiness() {
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Raketen", LAUNCHER));
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+            requires(NESTOR, 1L, 3);
+            requires(LAUNCHER, 2L, 4);
+            misses(MAIN_ID, LAUNCHER, 2L, 4, 2);
+
+            ReadinessDtos.FitReadinessDto fit = board();
+
+            assertThat(fit.ready()).isEmpty();
+            assertThat(fit.notReady()).singleElement()
+                    .satisfies(account -> assertThat(account.isReady()).isFalse());
+        }
+
+        @Test
+        @DisplayName("trennt 'kann den Rumpf nicht fliegen' von 'nur Modul-Skills fehlen'")
+        void separatesHullFromModuleGaps() {
+            // Der Unterschied entscheidet, ob jemand in Tagen einsatzbereit ist
+            // oder von vorn anfangen muss.
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Raketen", LAUNCHER));
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+            requires(NESTOR, 1L, 3);
+            requires(LAUNCHER, 2L, 4);
+            misses(MAIN_ID, LAUNCHER, 2L, 4, 2);
+
+            ReadinessDtos.CharacterReadinessDto pilot =
+                    board().notReady().getFirst().characters().getFirst();
+
+            assertThat(pilot.canFly()).isFalse();
+            assertThat(pilot.canFlyHull()).isTrue();
+            assertThat(pilot.missingSkills()).singleElement()
+                    .satisfies(gap -> assertThat(gap.skillTypeId()).isEqualTo(2L));
+        }
+
+        @Test
+        @DisplayName("meldet auch den Rumpf als nicht fliegbar, wenn dessen Skill fehlt")
+        void reportsHullGapAsSuch() {
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Raketen", LAUNCHER));
+            rosterOf(MAIN_ID);
+            hasSkillData(MAIN_ID);
+            requires(NESTOR, 1L, 3);
+            misses(MAIN_ID, NESTOR, 1L, 3, 0);
+
+            ReadinessDtos.CharacterReadinessDto pilot =
+                    board().notReady().getFirst().characters().getFirst();
+
+            assertThat(pilot.canFlyHull()).isFalse();
+            assertThat(pilot.canFly()).isFalse();
+        }
+
+        @Test
+        @DisplayName("faellt bei unlesbarem Fitting auf die Huelle zurueck und sagt es")
+        void fallsBackToHullOnUnreadableFit() {
+            // Ein kaputter EFT-Text darf das Schiff nicht aus der Doktrin
+            // verschwinden lassen - aber der Nutzer muss erfahren, dass die
+            // Module ungeprueft blieben.
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Kaputt")));
+            when(eftParser.parseAndResolve(anyString()))
+                    .thenThrow(new IllegalArgumentException("Unbekannter Schiffstyp: \"Xyz\""));
+
+            ReadinessDtos.FitReadinessDto fit = board();
+
+            assertThat(fit.typeId()).isEqualTo(NESTOR);
+            assertThat(fit.moduleCount()).isZero();
+            assertThat(fit.unresolved()).singleElement()
+                    .satisfies(reason -> assertThat(reason).contains("Unbekannter Schiffstyp"));
+        }
+
+        @Test
+        @DisplayName("reicht nicht aufloesbare Module als ungeprueft durch")
+        void passesThroughUnresolvedModules() {
+            when(doctrineRepo.findAll()).thenReturn(List.of(doctrineWithEft("Armor", "Raketen")));
+            when(eftParser.parseAndResolve(anyString())).thenReturn(new ReadinessDtos.ParsedFitDto(
+                    NESTOR, "Nestor", "Raketen", "icon", "render", 0, List.of(),
+                    List.of("Erfundenes Modul")));
+
+            assertThat(board().unresolved()).containsExactly("Erfundenes Modul");
         }
     }
 
@@ -185,17 +393,17 @@ class FleetReadinessServiceTest {
             hullRequiresSkills(2);
             hasSkillData(MAIN_ID);
 
-            ReadinessDtos.HullReadinessDto hull = board();
+            ReadinessDtos.FitReadinessDto fit = board();
 
-            assertThat(hull.ready()).singleElement()
+            assertThat(fit.ready()).singleElement()
                     .satisfies(account -> {
                         assertThat(account.isReady()).isTrue();
                         assertThat(account.hasShip()).isTrue();
                         assertThat(account.hasSkills()).isTrue();
                         assertThat(account.pilotsCapable()).isEqualTo(1);
                     });
-            assertThat(hull.notReady()).isEmpty();
-            assertThat(hull.coverage()).isEqualTo(1.0);
+            assertThat(fit.notReady()).isEmpty();
+            assertThat(fit.coverage()).isEqualTo(1.0);
         }
 
         @Test
@@ -205,9 +413,7 @@ class FleetReadinessServiceTest {
             hullRequiresSkills(1);
             hasSkillData(MAIN_ID);
 
-            ReadinessDtos.HullReadinessDto hull = board();
-
-            assertThat(hull.notReady()).singleElement()
+            assertThat(board().notReady()).singleElement()
                     .satisfies(account -> {
                         assertThat(account.hasShip()).isFalse();
                         assertThat(account.hasSkills()).isTrue();
@@ -223,9 +429,7 @@ class FleetReadinessServiceTest {
             hasSkillData(MAIN_ID);
             missesSkill(MAIN_ID, 2L);
 
-            ReadinessDtos.HullReadinessDto hull = board();
-
-            assertThat(hull.notReady()).singleElement().satisfies(account -> {
+            assertThat(board().notReady()).singleElement().satisfies(account -> {
                 assertThat(account.hasShip()).isTrue();
                 assertThat(account.hasSkills()).isFalse();
                 assertThat(account.bestSkillsMet()).isEqualTo(1);
@@ -242,9 +446,7 @@ class FleetReadinessServiceTest {
             ownsHull(MAIN_ID, 1);
             hullRequiresSkills(1);
 
-            ReadinessDtos.HullReadinessDto hull = board();
-
-            assertThat(hull.notReady()).singleElement()
+            assertThat(board().notReady()).singleElement()
                     .satisfies(account -> assertThat(account.skillDataAvailable()).isFalse());
         }
 
@@ -256,10 +458,83 @@ class FleetReadinessServiceTest {
             hullRequiresSkills(1);
             hasSkillData(ALT_ID);
 
-            ReadinessDtos.HullReadinessDto hull = board();
+            ReadinessDtos.FitReadinessDto fit = board();
 
-            assertThat(hull.ready()).hasSize(1);
-            assertThat(hull.ready().getFirst().charactersOwning()).isEqualTo(1);
+            assertThat(fit.ready()).hasSize(1);
+            assertThat(fit.ready().getFirst().charactersOwning()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("gilt als nicht bereit, wenn Schiff und Skills auf verschiedenen Charakteren liegen")
+        void notReadyWhenShipAndSkillsAreOnDifferentCharacters() {
+            // Der Main hat das Schiff, kann es aber nicht fliegen; der Alt kann
+            // fliegen, hat aber keins. Zusammengezaehlt saehe das nach
+            // Einsatzbereitschaft aus - undocken kann trotzdem niemand.
+            rosterOf(MAIN_ID, ALT_ID);
+            when(queryRepo.hullOwnership(anyList())).thenReturn(List.of(
+                    FakeTuple.of("characterId", MAIN_ID, "typeId", NESTOR, "quantity", 1L)));
+            hasSkillData(MAIN_ID, ALT_ID);
+            hullRequiresSkills(1);
+            missesSkill(MAIN_ID, 1L);
+
+            ReadinessDtos.FitReadinessDto fit = board();
+
+            assertThat(fit.ready()).isEmpty();
+            assertThat(fit.accountsReady()).isZero();
+            assertThat(fit.notReady()).singleElement().satisfies(account -> {
+                // Beide Teilangaben bleiben wahr - nur zusammen ergeben sie nichts.
+                assertThat(account.hasShip()).isTrue();
+                assertThat(account.hasSkills()).isTrue();
+                assertThat(account.isReady()).isFalse();
+            });
+        }
+
+        @Test
+        @DisplayName("gilt als bereit, wenn ein Charakter Schiff und Skills zugleich hat")
+        void readyWhenOneCharacterHasBoth() {
+            rosterOf(MAIN_ID, ALT_ID);
+            ownsHull(ALT_ID, 1);
+            hasSkillData(ALT_ID);
+            hullRequiresSkills(1);
+
+            assertThat(board().ready()).singleElement()
+                    .satisfies(account -> assertThat(account.isReady()).isTrue());
+        }
+
+        @Test
+        @DisplayName("stellt bei gleichem Schiffsstand den mit den Skills nach oben")
+        void sortsNotReadyBySkillsWhenShipIsEqual() {
+            // Deckt das zweite Sortierkriterium ab. Eine Kette aus mehrfachem
+            // reversed() drehte hier zuvor die Reihenfolge um, weil jedes
+            // reversed() den gesamten bis dahin gebauten Vergleich negiert.
+            when(queryRepo.accountRoster()).thenReturn(List.of(
+                    FakeTuple.of("mainId", 1L, "mainName", "Ohne Skills", "corporationName", "C",
+                            "characterId", 1L, "characterName", "A"),
+                    FakeTuple.of("mainId", 2L, "mainName", "Mit Skills", "corporationName", "C",
+                            "characterId", 2L, "characterName", "B")));
+            hasSkillData(1L, 2L);
+            hullRequiresSkills(1);
+            misses(1L, NESTOR, 1L, 3, 0);
+
+            // Keiner hat ein Schiff, also entscheidet allein der Skill-Stand.
+            assertThat(board().notReady())
+                    .extracting(ReadinessDtos.AccountReadinessDto::mainName)
+                    .containsExactly("Mit Skills", "Ohne Skills");
+        }
+
+        @Test
+        @DisplayName("stellt je Account den einsatzfaehigen Charakter nach oben")
+        void sortsCapableCharacterFirst() {
+            rosterOf(MAIN_ID, ALT_ID);
+            when(queryRepo.hullOwnership(anyList())).thenReturn(List.of(
+                    FakeTuple.of("characterId", ALT_ID, "typeId", NESTOR, "quantity", 1L)));
+            hasSkillData(MAIN_ID, ALT_ID);
+            hullRequiresSkills(1);
+
+            // Der Alt hat Schiff und Skills, der Main nur die Skills.
+            assertThat(board().ready().getFirst().characters())
+                    .extracting(ReadinessDtos.CharacterReadinessDto::characterId)
+                    .containsExactly(ALT_ID, MAIN_ID);
         }
 
         @Test
@@ -329,10 +604,10 @@ class FleetReadinessServiceTest {
         void zeroCoverageWithoutAccounts() {
             hullRequiresSkills(1);
 
-            ReadinessDtos.HullReadinessDto hull = board();
+            ReadinessDtos.FitReadinessDto fit = board();
 
-            assertThat(hull.accountsTotal()).isZero();
-            assertThat(hull.coverage()).isZero();
+            assertThat(fit.accountsTotal()).isZero();
+            assertThat(fit.coverage()).isZero();
         }
     }
 
@@ -354,6 +629,25 @@ class FleetReadinessServiceTest {
             assertThat(result.fit().shipTypeName()).isEqualTo("Nestor");
             assertThat(result.board().typeName()).isEqualTo("Nestor");
             assertThat(result.board().ready()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("prueft in der Sandbox ebenfalls die Module")
+        void checksModulesInSandbox() {
+            when(eftParser.parseAndResolve(anyString())).thenReturn(parsedFit("Mein Fit", LAUNCHER));
+            rosterOf(MAIN_ID);
+            ownsHull(MAIN_ID, 1);
+            hasSkillData(MAIN_ID);
+            requires(NESTOR, 1L, 3);
+            requires(LAUNCHER, 2L, 4);
+            misses(MAIN_ID, LAUNCHER, 2L, 4, 1);
+
+            ReadinessDtos.SandboxResultDto result = service.sandbox("[Nestor, Mein Fit]");
+
+            assertThat(result.board().requiredSkills()).hasSize(2);
+            assertThat(result.board().ready()).isEmpty();
+            assertThat(result.board().notReady()).singleElement()
+                    .satisfies(account -> assertThat(account.canFly()).isFalse());
         }
 
         @Test

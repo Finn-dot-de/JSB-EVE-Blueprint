@@ -205,7 +205,7 @@
     } @else if (loadingBoard()) {
       <ng-container [ngTemplateOutlet]="spinner"></ng-container>
     } @else if (board(); as data) {
-      @if (data.hulls.length === 0) {
+      @if (data.fits.length === 0) {
         <ng-container [ngTemplateOutlet]="emptyDoctrine"></ng-container>
       } @else {
         <div class="kpi-grid" style="margin-bottom: 1.5rem;">
@@ -215,15 +215,15 @@
             <div class="kpi-sub">Mains inkl. ihrer Alts</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-label">Geprüfte Hüllen</div>
-            <div class="kpi-value">{{ data.hullsChecked }}</div>
+            <div class="kpi-label">Geprüfte Fittings</div>
+            <div class="kpi-value">{{ data.fitsChecked }}</div>
             <div class="kpi-sub">aus der Doktrin "{{ data.doctrineName }}"</div>
           </div>
         </div>
 
-        @for (hull of data.hulls; track hull.typeId) {
-          <ng-container [ngTemplateOutlet]="readinessHullPanel"
-                        [ngTemplateOutletContext]="{ $implicit: hull, forceOpen: false }"></ng-container>
+        @for (fit of data.fits; track fitKey(fit)) {
+          <ng-container [ngTemplateOutlet]="readinessFitPanel"
+                        [ngTemplateOutletContext]="{ $implicit: fit, forceOpen: false }"></ng-container>
         }
       }
     }
@@ -321,7 +321,7 @@
         </div>
       </div>
 
-      <!-- Sofort-Auswertung fuer genau diese Huelle -->
+      <!-- Sofort-Auswertung fuer genau dieses Fitting, Rumpf und Module -->
       <div class="sandbox-filter">
         <div class="search-box">
           <i class="fa-solid fa-magnifying-glass"></i>
@@ -330,7 +330,7 @@
         </div>
       </div>
 
-      <ng-container [ngTemplateOutlet]="readinessHullPanel"
+      <ng-container [ngTemplateOutlet]="readinessFitPanel"
                     [ngTemplateOutletContext]="{ $implicit: result.board, forceOpen: true }"></ng-container>
     }
   }
@@ -384,55 +384,72 @@
 </ng-template>
 
 
-<!-- ---------- DIE KOMBINIERTE MATRIX (Holy Grail) ---------- -->
-<ng-template #readinessHullPanel let-hull let-forceOpen="forceOpen">
+<!-- ---------- DIE KOMBINIERTE MATRIX (Hangar + Skills je Fit) ---------- -->
+<ng-template #readinessFitPanel let-fit let-forceOpen="forceOpen">
   <div class="surface-panel readiness-panel">
-    <button class="hull-header" (click)="toggleHull(hull.typeId)" [disabled]="forceOpen">
-      <img class="hull-icon" [src]="hull.iconUrl" (error)="onImgError($event)" [alt]="hull.typeName" loading="lazy">
+    <button class="hull-header" (click)="toggleFit(fitKey(fit))" [disabled]="forceOpen">
+      <img class="hull-icon" [src]="fit.iconUrl" (error)="onImgError($event)" [alt]="fit.typeName" loading="lazy">
       <div class="hull-title">
-        <div class="hull-name">{{ hull.typeName }}</div>
+        <div class="hull-name">
+          {{ fit.fitName || fit.typeName }}
+          @if (fit.fitName) { <span class="hull-tag">{{ fit.typeName }}</span> }
+        </div>
         <div class="hull-sub">
-          <i class="fa-solid fa-graduation-cap"></i> Benötigt {{ hull.requiredSkills.length }} Skills &middot;
-          <i class="fa-solid fa-warehouse" style="margin-left: 8px"></i> {{ hull.hullsTotal }} in der Corp
+          <i class="fa-solid fa-graduation-cap"></i>
+          Benötigt {{ fit.requiredSkills.length }} Skills
+          @if (fit.moduleCount > 0) {
+            <span class="sub-detail">({{ fit.hullSkillsRequired }} für den Rumpf, Rest für die Module)</span>
+          }
+          &middot;
+          <i class="fa-solid fa-microchip" style="margin-left: 8px"></i> {{ fit.moduleCount }} Module &middot;
+          <i class="fa-solid fa-warehouse" style="margin-left: 8px"></i> {{ fit.hullsTotal }} in der Corp
         </div>
       </div>
       <div class="hull-coverage">
         <div class="coverage-numbers">
-          <strong [class]="coverageClass(hull.coverage)">{{ hull.accountsReady }}</strong>
-          <span>/ {{ hull.accountsTotal }} Accounts Ready</span>
+          <strong [class]="coverageClass(fit.coverage)">{{ fit.accountsReady }}</strong>
+          <span>/ {{ fit.accountsTotal }} Accounts Ready</span>
         </div>
         <div class="bar-track">
-          <div class="bar-fill" [class]="coverageClass(hull.coverage)"
-               [style.width]="coverageWidth(hull.coverage)"></div>
+          <div class="bar-fill" [class]="coverageClass(fit.coverage)"
+               [style.width]="coverageWidth(fit.coverage)"></div>
         </div>
       </div>
-      <span class="coverage-pct" [class]="coverageClass(hull.coverage)">{{ percent(hull.coverage) }}</span>
+      <span class="coverage-pct" [class]="coverageClass(fit.coverage)">{{ percent(fit.coverage) }}</span>
       @if (!forceOpen) {
-        <i class="fa-solid fa-chevron-down chevron" [class.open]="isHullExpanded(hull.typeId)"></i>
+        <i class="fa-solid fa-chevron-down chevron" [class.open]="isFitExpanded(fitKey(fit))"></i>
       }
     </button>
 
-    @if (forceOpen || isHullExpanded(hull.typeId)) {
+    @if (forceOpen || isFitExpanded(fitKey(fit))) {
+      @if (fit.unresolved.length > 0) {
+        <div class="inline-warning">
+          <i class="fa-solid fa-circle-question"></i>
+          Ungeprüft geblieben:
+          <strong>{{ fit.unresolved.join(', ') }}</strong>
+        </div>
+      }
+
       <!-- Die benötigten Skills oben als Header anzeigen -->
       <div class="required-skills">
         <span class="required-label">Benötigt:</span>
-        @for (s of hull.requiredSkills; track s.skillTypeId) {
+        @for (s of fit.requiredSkills; track s.skillTypeId) {
           <span class="skill-pill">{{ s.skillName }} <b>{{ s.level }}</b></span>
         }
       </div>
 
       <div class="split-lists">
-        <!-- LINK SPALTE: BEREIT -->
+        <!-- LINKE SPALTE: BEREIT -->
         <div class="list-column ready">
           <div class="column-head">
             <i class="fa-solid fa-circle-check"></i> Einsatzbereit
-            <span class="count">{{ hull.ready.length }}</span>
+            <span class="count">{{ fit.ready.length }}</span>
           </div>
-          @for (acc of filterAccounts(hull.ready); track acc.mainId) {
+          @for (acc of filterAccounts(fit.ready); track acc.mainId) {
             <ng-container [ngTemplateOutlet]="accountRow"
-                          [ngTemplateOutletContext]="{ acc: acc, hullId: hull.typeId }"></ng-container>
+                          [ngTemplateOutletContext]="{ acc: acc, fitKey: fitKey(fit) }"></ng-container>
           }
-          @if (filterAccounts(hull.ready).length === 0) {
+          @if (filterAccounts(fit.ready).length === 0) {
             <div class="column-empty">Niemand gefunden.</div>
           }
         </div>
@@ -441,13 +458,13 @@
         <div class="list-column missing">
           <div class="column-head">
             <i class="fa-solid fa-circle-xmark"></i> Nicht bereit
-            <span class="count">{{ hull.notReady.length }}</span>
+            <span class="count">{{ fit.notReady.length }}</span>
           </div>
-          @for (acc of filterAccounts(hull.notReady); track acc.mainId) {
+          @for (acc of filterAccounts(fit.notReady); track acc.mainId) {
             <ng-container [ngTemplateOutlet]="accountRow"
-                          [ngTemplateOutletContext]="{ acc: acc, hullId: hull.typeId }"></ng-container>
+                          [ngTemplateOutletContext]="{ acc: acc, fitKey: fitKey(fit) }"></ng-container>
           }
-          @if (filterAccounts(hull.notReady).length === 0) {
+          @if (filterAccounts(fit.notReady).length === 0) {
             <div class="column-empty">Niemand gefunden.</div>
           }
         </div>
@@ -457,9 +474,9 @@
 </ng-template>
 
 <!-- Ein einzelner Account im Board (Kombiniert Hangar & Skills) -->
-<ng-template #accountRow let-acc="acc" let-hullId="hullId">
-  <div class="account-row" [class.open]="isAccountExpanded(hullId, acc.mainId)">
-    <button class="account-head" (click)="toggleAccount(hullId, acc.mainId)">
+<ng-template #accountRow let-acc="acc" let-fitKey="fitKey">
+  <div class="account-row" [class.open]="isAccountExpanded(fitKey, acc.mainId)">
+    <button class="account-head" (click)="toggleAccount(fitKey, acc.mainId)">
       <img class="portrait" [src]="acc.portraitUrl" (error)="onPortraitError($event)" [alt]="acc.mainName" loading="lazy">
       <div class="account-meta">
         <div class="account-name">{{ acc.mainName }}</div>
@@ -482,12 +499,21 @@
         } @else {
           <span class="qty-badge missing" title="Fehlende Skills"><i class="fa-solid fa-graduation-cap"></i> {{ acc.bestSkillsMet }}/{{ acc.skillsRequired }}</span>
         }
+
+        <!-- Ohne diesen Hinweis stünden hier zwei grüne Abzeichen an einem
+             Account, der trotzdem in der Spalte "Nicht bereit" steht. -->
+        @if (acc.hasShip && acc.hasSkills && !acc.isReady) {
+          <span class="qty-badge missing"
+                title="Das Schiff liegt bei einem Charakter, die Skills hat ein anderer">
+            <i class="fa-solid fa-user-slash"></i> Getrennt
+          </span>
+        }
       </div>
 
       <i class="fa-solid fa-chevron-down chevron"></i>
     </button>
 
-    @if (isAccountExpanded(hullId, acc.mainId)) {
+    @if (isAccountExpanded(fitKey, acc.mainId)) {
       <div class="char-list">
         @for (c of acc.characters; track c.characterId) {
           <div class="char-row skill" [class.has]="c.owned > 0 && c.canFly">
@@ -505,7 +531,12 @@
                 <span [class]="c.canFly ? 'text-ready' : (!c.skillDataAvailable ? 'text-unknown' : 'text-missing')">
                   <i class="fa-solid fa-graduation-cap"></i>
                   @if (!c.skillDataAvailable) { Keine Skilldaten }
-                  @else if (c.canFly) { Kann fliegen }
+                  @else if (c.canFly) { Fliegt das komplette Fit }
+                  @else if (c.canFlyHull) {
+                    <!-- Wichtiger Unterschied: das Schiff geht, nur Module fehlen -
+                         das ist eine Frage von Tagen, kein Neuanfang. -->
+                    Rumpf ok &ndash; {{ c.missingSkills.length }} Modul-Skills fehlen
+                  }
                   @else { {{ c.skillsMet }}/{{ c.skillsRequired }} Skills (Fehlt: {{ c.missingSkills.length }}) }
                 </span>
               </div>

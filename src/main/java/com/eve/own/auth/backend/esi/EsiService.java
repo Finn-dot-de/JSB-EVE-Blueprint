@@ -96,11 +96,12 @@ public class EsiService {
         return fetch("/characters/{id}/wallet/journal/", new Object[]{characterId}, token, etag, EsiJournalResponse[].class);
     }
 
+    public EsiResponse<EsiSearchResponse> searchStructureOrStation(Long characterId, String token, String searchString) {
+        return fetch("/characters/{id}/search/?categories=structure,station&search={search}&strict=false",
+                new Object[]{characterId, searchString}, token, null, EsiSearchResponse.class);
+    }
 
-
-    // Die Methode zum Abrufen
     public EsiCorporationResponse getCorporationInfo(Long corporationId) {
-        // Wir rufen deine generische fetch-Methode auf und ziehen uns direkt die .data() raus
         return fetch("/corporations/{id}/", new Object[]{corporationId}, null, null, EsiCorporationResponse.class).data();
     }
 
@@ -129,6 +130,7 @@ public class EsiService {
     }
 
     // --- Records anpassen/erweitern ---
+    public record EsiSearchResponse(List<Long> structure, List<Long> station) {}
     public record EsiOnlineResponse(Boolean online, String last_login, String last_logout, Integer logins) {}
     public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}
     public record EsiFleetMemberResponse(Long character_id, java.time.Instant join_time, String role, Long ship_type_id, Long solar_system_id) {}

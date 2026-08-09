@@ -1,0 +1,132 @@
+<div class="crt">
+  <div class="titlebar">
+    <div class="brand">BUYBOT 3000</div>
+    <div class="header-right">
+      <span class="injector-badge" title="Gesteuert durch Spring Boot">SECURE BACKEND <span class="num">ONLINE</span></span>
+      <div class="clock">{{ currentTime }}</div>
+    </div>
+  </div>
+
+  <div class="bot-row">
+    <div class="face">
+      <span class="bracket left">(</span>
+      <span class="eyes" [innerHTML]="botFace"></span>
+      <span class="bracket right">)</span>
+    </div>
+    <div class="bubble">
+      <span class="tag">BUYBOT &gt;</span>
+      <span>{{ botSpeech }}</span><span class="cursor"></span>
+    </div>
+  </div>
+
+  <fieldset>
+    <legend>ASSET-LISTE</legend>
+    <label for="itemsInput">Aus dem EVE-Inventar/Vertragsfenster kopierte Liste einfügen:</label>
+    <textarea id="itemsInput" [(ngModel)]="rawInput" placeholder="Tritanium 28000&#10;Pyerite  5400&#10;Veldspar  120000"></textarea>
+
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label for="stationSelect">Abgabeort</label>
+        <select id="stationSelect" [(ngModel)]="locationId">
+          @for (loc of locations; track loc.id) {
+            <option [value]="loc.id">{{ loc.name }}</option>
+          }
+        </select>
+      </div>
+      <div style="display:flex; align-items:flex-end; gap:10px;">
+        <button (click)="calculate()" [disabled]="isCalculating">BERECHNEN</button>
+        <button (click)="clear()" class="small" [disabled]="isCalculating">LEEREN</button>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>ERGEBNIS</legend>
+    <div class="output-wrap">
+      @if (items.length === 0) {
+        <div class="output-empty">Noch keine Berechnung durchgeführt.</div>
+      } @else {
+        <table class="output-table">
+          <colgroup>
+            <col class="col-qty"><col class="col-item"><col class="col-vol"><col class="col-status"><col class="col-price">
+          </colgroup>
+          <thead>
+          <tr><th>Anzahl</th><th>Item</th><th>Volumen m3</th><th>Bedarf</th><th>Preis ISK</th></tr>
+          </thead>
+          <tbody>
+            @for (item of items; track $index) {
+              <tr>
+                <td [title]="item.quantity">{{ item.quantity | number }}</td>
+                <td [title]="item.rawName">{{ item.rawName }}</td>
+                <td [title]="(item.volumeEach * item.quantity) + ' m3'">
+                  {{ (item.volumeEach * item.quantity) | number:'1.2-2' }}
+                </td>
+                <td [ngClass]="{
+                      'status-ok': item.status.includes('OK'),
+                      'status-err': item.status.includes('GEFUNDEN'),
+                      'status-warn': item.status.includes('GESPERRT') || item.status.includes('GELISTET')
+                    }"
+                    [title]="item.status">
+                  {{ item.status }}
+                </td>
+                <td class="price-cell" [title]="'Modifikator: ' + (item.appliedModifier || '0') + '%'">
+                  {{ item.totalPrice > 0 ? (item.totalPrice | number:'1.2-2') + ' ISK' : '-' }}
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
+
+    @if (items.length > 0) {
+      <div class="result-meta">
+        Gesamtvolumen: <span>{{ totalVolume | number:'1.2-2' }} m3</span>
+      </div>
+    }
+
+    <div class="summary-bar">
+      <span class="label">GESAMTPREIS</span>
+      <span class="total">{{ totalPrice !== null ? (totalPrice | number:'1.2-2') + ' ISK' : '-' }}</span>
+      <button class="small" (click)="copyToClipboard()" [disabled]="totalPrice === null">{{ copyButtonText }}</button>
+    </div>
+  </fieldset>
+
+  <div class="footer-links">
+    <span>Preisquelle: Jita Market &nbsp;|&nbsp; Status: <span class="status-ok">online</span></span>
+    <span>
+      <a (click)="openTutorial()">[ Tutorial ]</a>
+
+      @if (isLoggedIn) {
+        @if (isAdmin) {
+          &nbsp; <a (click)="openAdmin()">[ Admin-Panel ]</a>
+        }
+      } @else {
+        &nbsp; <a (click)="login()">[ EVE Login ]</a>
+      }
+    </span>
+  </div>
+</div>
+
+<!-- ======================= MODALS ======================= -->
+@if (showTutorial) {
+  <div class="modal-overlay open">
+    <div class="modal">
+      <span class="close-x" (click)="closeModals()">[x]</span>
+      <h3>TUTORIAL</h3>
+      <p class="hint">So funktioniert Buybot 3000 in 5 Schritten:</p>
+      <ol class="tutorial-steps">
+        <li><b>Asset-Liste kopieren.</b> Markiere im EVE-Inventar, Hangar oder Vertragsfenster deine Items (Strg+A, Strg+C) und füge sie in das Textfeld oben ein.</li>
+        <li><b>Abgabeort wählen.</b> Im Dropdown den Ort auswählen, an dem du die Items abgeben möchtest. Das beeinflusst den Preis (Transport- und Sicherheitsaufschlag).</li>
+        <li><b>Berechnen klicken.</b> Buybot fragt live die aktuellen Jita-Marktpreise ab und erstellt eine Tabelle.</li>
+        <li><b>Ergebnis prüfen.</b> Lange Namen oder Status-Texte per Maus-Hover vollständig anzeigen lassen. Ein Hover auf den Preis einer Zeile zeigt den angewendeten Preis-Modifikator.</li>
+        <li><b>Gesamtpreis kopieren.</b> Mit dem Knopf neben der Endsumme wird der Gesamtpreis direkt in die Zwischenablage kopiert.</li>
+      </ol>
+      <p class="hint">Status-Meldungen in der Ergebnistabelle: <b>OK</b> = wird angekauft, <b>NICHT GELISTET</b> = Kategorie/Item nicht freigegeben, <b>GESPERRT</b> = auf der Blacklist, <b>NICHT GEFUNDEN</b> = Item-Name konnte nicht erkannt werden.</p>
+    </div>
+  </div>
+}
+
+@if (showAdmin) {
+  <app-buybot-admin (closePanel)="closeModals()"></app-buybot-admin>
+}

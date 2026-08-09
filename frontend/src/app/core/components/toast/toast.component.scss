@@ -6,39 +6,40 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  pointer-events: none; /* Klicks gehen durch den Container hindurch... */
+  pointer-events: none;
 }
 
 .toast-box {
-  pointer-events: auto; /* ... aber die Box selbst ist klickbar */
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 300px;
   max-width: 450px;
   padding: 12px 16px;
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-  color: var(--text-primary);
 
-  /* Die Animation: Kommt von rechts oben rein */
+  /* Retro Terminal Look */
+  background-color: #020602;
+  border: 1px solid var(--green-dim);
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.8), 0 0 5px rgba(51, 255, 51, 0.2);
+  color: var(--green);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+
   animation: slideInRight 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
 
   &.success {
-    border-left: 4px solid #00dfa2;
-    .toast-icon { color: #00dfa2; }
+    border-left: 4px solid var(--green-bright);
+    .toast-icon { color: var(--green-bright); }
   }
 
   &.error {
-    border-left: 4px solid #ff3366;
-    .toast-icon { color: #ff3366; }
+    border-left: 4px solid var(--red);
+    .toast-icon { color: var(--red); }
   }
 
   &.info {
-    border-left: 4px solid var(--accent-color);
-    .toast-icon { color: var(--accent-color); }
+    border-left: 4px solid var(--amber);
+    .toast-icon { color: var(--amber); }
   }
 }
 
@@ -55,12 +56,15 @@
 .toast-close {
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--green-dim);
   cursor: pointer;
   padding: 4px;
   font-size: 1.1rem;
   transition: color 0.2s;
-  &:hover { color: var(--text-primary); }
+
+  &:hover {
+    color: var(--red);
+  }
 }
 
 @keyframes slideInRight {

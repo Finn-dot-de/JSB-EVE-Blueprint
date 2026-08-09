@@ -1,19 +1,22 @@
 import {Component, inject} from '@angular/core';
-import { RouterOutlet } from '@angular/router';
-import { NavbarComponent } from './core/components/navbar/navbar.component';
-import { SidebarComponent } from './core/components/sidebar/sidebar.component';
-import { ToastComponent } from './core/components/toast/toast.component';
+import {Router, RouterOutlet} from '@angular/router';
 import { AuthService } from './core/services/auth.service';
 import {ConfirmComponent} from './core/components/confirm/confirm.component';
+import {ToastComponent} from './core/components/toast/toast.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
 
-  imports: [RouterOutlet, NavbarComponent, SidebarComponent, ToastComponent, ConfirmComponent],
+  imports: [RouterOutlet, ConfirmComponent, ToastComponent],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent {
-  public authService = inject(AuthService);
+  authService = inject(AuthService);
+  router = inject(Router);
+
+  isRetroMode(): boolean {
+    return this.router.url.includes('/buybot');
+  }
 }

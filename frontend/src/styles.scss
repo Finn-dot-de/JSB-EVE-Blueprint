@@ -1,81 +1,54 @@
-/* ==========================================================================
-   1. Theme Variablen (Farbpalette)
-   ========================================================================== */
-
-/* LIGHT MODE (Standard) */
 :root {
-  --bg-color: #f8f9fa;           /* Heller Hintergrund */
-  --bg-surface: #ffffff;         /* Hintergrund für Karten/Panels */
-  --text-primary: #1e222b;       /* Haupttext (fast schwarz) */
-  --text-secondary: #64748b;     /* Nebentext (grau) */
-
-  --accent-color: #2563eb;       /* Ein klares, professionelles Blau */
-  --accent-hover: #1d4ed8;       /* Dunkleres Blau für Hover */
-
-  --error-color: #dc2626;        /* Angenehmes Rot für Fehler */
-  --border-color: #e2e8f0;       /* Helle Rahmenlinien */
+  --green: #33ff33;
+  --green-dim: #1f9d1f;
+  --green-bright: #7CFF7C;
+  --bg: #050805;
+  --panel: #0a120a;
+  --red: #ff4444;
+  --amber: #ffb000;
 }
 
-/* DARK MODE (Wird über ein Attribut am <html> Tag aktiviert) */
-[data-theme="dark"] {
-  --bg-color: #0d1117;           /* Tiefes, sattes Sci-Fi Dunkel */
-  --bg-surface: #161b22;         /* Leicht abgehoben für Karten */
-  --text-primary: #e6edf3;       /* Heller Text, aber kein reines Weiß (schont die Augen) */
-  --text-secondary: #8b949e;     /* Dunkleres Grau für Nebentext */
-
-  --accent-color: #3b82f6;       /* Leuchtenderes Blau für Kontrast im Dark Mode */
-  --accent-hover: #60a5fa;
-
-  --error-color: #f85149;
-  --border-color: #30363d;
+* {
+  box-sizing: border-box;
 }
 
-/* AUTOMATIK: Reagiert auf die Windows/Mac Dark Mode Einstellungen des Nutzers,
-   solange er nicht manuell auf "light" geschaltet hat */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg-color: #0d1117;
-    --bg-surface: #161b22;
-    --text-primary: #e6edf3;
-    --text-secondary: #8b949e;
-    --accent-color: #3b82f6;
-    --accent-hover: #60a5fa;
-    --error-color: #f85149;
-    --border-color: #30363d;
-  }
-}
-
-/* ==========================================================================
-   2. Globale Styles & Resets
-   ========================================================================== */
-
-body {
-  background-color: var(--bg-color);
-  color: var(--text-primary);
-  /* Eine saubere, moderne Schriftart statt Courier */
-  font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+html, body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
-  /* Sorgt für einen weichen Übergang, wenn man das Theme umschaltet */
-  transition: background-color 0.3s ease, color 0.3s ease;
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  /* Verhindert die äußerste Scrollbar, da die App.Component das Scrolling übernimmt */
+  height: 100vh;
+  overflow: hidden;
 }
 
-::selection {
-  background-color: var(--accent-color);
-  color: #ffffff;
+body {
+  background-image: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.15) 0px, rgba(0, 0, 0, 0.15) 1px, transparent 1px, transparent 3px);
 }
 
-/* ==========================================================================
-   3. Globale Helfer-Klassen (Utility Classes)
-   ========================================================================== */
+/* =========================================
+   RETRO SCROLLBAR STYLING
+   ========================================= */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
 
-/* Nutze diese Klasse für Boxen, Karten oder Login-Container */
-.surface-panel {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1.5rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+::-webkit-scrollbar-track {
+  background: var(--bg);
+  border-left: 1px solid var(--green-dim);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--green-dim);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--green);
+}
+
+/* Die Ecke unten rechts, wenn eine horizontale und vertikale Scrollbar aufeinander treffen */
+::-webkit-scrollbar-corner {
+  background: var(--bg);
 }

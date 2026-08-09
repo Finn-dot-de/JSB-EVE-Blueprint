@@ -1,0 +1,194 @@
+<div class="modal-overlay open">
+  <div class="modal">
+    <span class="close-x" (click)="close()">[x]</span>
+    <h3>ADMIN-PANEL</h3>
+
+    <!-- 1. PREISBASIS -->
+    <fieldset>
+      <legend>Preisbasis</legend>
+      <div style="display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;">
+        <div style="flex: 2; min-width: 200px;">
+          <label>Marktpreis-Basis (immer Jita)</label>
+          <select [(ngModel)]="config.priceBasis">
+            <option value="buy">Jita Buy (höchstes Kaufgebot)</option>
+            <option value="sell">Jita Sell (niedrigster Verkaufspreis)</option>
+          </select>
+        </div>
+        <div style="flex: 1; min-width: 150px;">
+          <label>Standard-Modifikator (%)</label>
+          <input type="number" min="0" max="200" step="1" [(ngModel)]="config.globalModifier">
+        </div>
+        <div>
+          <!-- Dummy-Label für saubere vertikale Ausrichtung -->
+          <label>&nbsp;</label>
+          <button class="small" (click)="saveConfig()" style="height: 33px;">SPEICHERN</button>
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- 2. ABGABEORTE -->
+    <!-- 2. ABGABEORTE -->
+    <fieldset>
+      <legend>Abgabeorte</legend>
+      <table class="admin-table">
+        <thead>
+        <tr>
+          <th>Name</th>
+          <th style="width: 140px;">Transport (ISK/m3)</th>
+          <th style="width: 110px;">Sicherheit (%)</th>
+          <th style="width: 120px;">Station ID</th>
+          <th style="width: 90px; text-align: center;">Aktion</th>
+        </tr>
+        </thead>
+        <tbody>
+          @for (loc of locations; track loc.id) {
+            <tr>
+              <td>{{ loc.name }}</td>
+              <td>{{ loc.transportFee }}</td>
+              <td>{{ loc.securityFee }}</td>
+              <td>{{ loc.stationId || '-' }}</td>
+              <td style="text-align: center;"><button class="danger small" (click)="deleteLocation(loc.id!)">LÖSCHEN</button></td>
+            </tr>
+          }
+        </tbody>
+        <!-- Eingabefelder direkt in die Tabelle integriert für perfekte Ausrichtung -->
+        <tfoot style="background: rgba(51, 255, 51, 0.05);">
+        <tr>
+          <td style="padding: 6px;"><input type="text" placeholder="Ort Name" [(ngModel)]="newLoc.name" style="padding: 4px; width: 100%;"></td>
+          <td style="padding: 6px;"><input type="number" placeholder="0" [(ngModel)]="newLoc.transportFee" style="padding: 4px; width: 100%;"></td>
+          <td style="padding: 6px;"><input type="number" placeholder="0" [(ngModel)]="newLoc.securityFee" style="padding: 4px; width: 100%;"></td>
+          <td style="padding: 6px;">
+            <div style="display: flex; gap: 6px;">
+              <input type="number" placeholder="ID (optional)" [(ngModel)]="newLoc.stationId" style="padding: 4px; width: 100%;">
+              <button class="small" (click)="searchStationId()" title="ID über ESI suchen" [disabled]="!newLoc.name || isSearching">
+                @if (isSearching) {
+                  <i class="fa-solid fa-spinner fa-spin"></i>
+                } @else {
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                }
+              </button>
+            </div>
+          </td>
+          <td style="padding: 6px; text-align: center;"><button class="small" (click)="addLocation()">HINZUFÜGEN</button></td>
+        </tr>
+        </tfoot>
+      </table>
+    </fieldset>
+
+    <!-- 3. KATEGORIEN-WHITELIST -->
+    <fieldset>
+      <legend>Kategorien-Whitelist</legend>
+      <div class="tag-list" style="margin-bottom: 10px;">
+        @for (cat of categories; track cat.categoryId) {
+          <div class="tag-chip">
+            {{ cat.categoryName }} ({{ cat.modifier }}%)
+            <span class="x" (click)="deleteCategory(cat.categoryId!)">[x]</span>
+          </div>
+        }
+      </div>
+      <div style="display: flex; gap: 10px; align-items: stretch;">
+        <input type="text" placeholder="Kategorie Name (z.B. Asteroid)" [(ngModel)]="newCat.name" style="flex: 1; padding: 6px;">
+        <input type="number" placeholder="Mod %" [(ngModel)]="newCat.modifier" style="width: 100px; padding: 6px;">
+        <button class="small" (click)="addCategory()">ERLAUBEN</button>
+      </div>
+    </fieldset>
+
+    <!-- 4. EINZELITEM-REGELN -->
+    <fieldset>
+      <legend>Einzelitem-Regeln</legend>
+      <table class="admin-table">
+        <thead>
+        <tr>
+          <th>Item Name</th>
+          <th style="width: 160px;">Modifikator / Status</th>
+          <th style="width: 90px; text-align: center;">Aktion</th>
+        </tr>
+        </thead>
+        <tbody>
+          @for (type of types; track type.typeId) {
+            <tr>
+              <td>{{ type.typeName }}</td>
+              <td [class.status-err]="type.isBlacklisted" [class.status-ok]="!type.isBlacklisted">
+                {{ type.isBlacklisted ? 'GESPERRT' : type.modifier + '%' }}
+              </td>
+              <td style="text-align: center;"><button class="danger small" (click)="deleteType(type.typeId!)">LÖSCHEN</button></td>
+            </tr>
+          }
+        </tbody>
+        <tfoot style="background: rgba(51, 255, 51, 0.05);">
+        <tr>
+          <td style="padding: 6px;"><input type="text" placeholder="Exakter Item Name" [(ngModel)]="newType.name" style="padding: 4px;"></td>
+          <td style="padding: 6px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="number" placeholder="90" [(ngModel)]="newType.modifier" [disabled]="newType.isBlacklisted" style="width: 60px; padding: 4px;">
+              <input type="checkbox" id="blacklistCheck" [(ngModel)]="newType.isBlacklisted" style="width: auto; margin: 0;">
+              <label for="blacklistCheck" style="margin: 0; color: var(--red); cursor: pointer;">Sperren</label>
+            </div>
+          </td>
+          <td style="padding: 6px; text-align: center;"><button class="small" (click)="addType()">SPEICHERN</button></td>
+        </tr>
+        </tfoot>
+      </table>
+    </fieldset>
+
+    <!-- 5. BOT-PERSÖNLICHKEIT -->
+    <fieldset>
+      <legend>Bot-Persönlichkeit (ein Spruch pro Zeile, wird zufällig ausgewählt)</legend>
+
+      <label>Idle-Sprüche</label>
+      <textarea class="phrases" [(ngModel)]="config.botTexts!.idle"></textarea>
+
+      <label>Während der Berechnung</label>
+      <textarea class="phrases" [(ngModel)]="config.botTexts!.thinking"></textarea>
+
+      <label>Erfolgreich abgeschlossen</label>
+      <textarea class="phrases" [(ngModel)]="config.botTexts!.success"></textarea>
+
+      <label>Items nicht gefunden</label>
+      <textarea class="phrases" [(ngModel)]="config.botTexts!.warnMissing"></textarea>
+
+      <label>Items gesperrt/abgelehnt</label>
+      <textarea class="phrases" [(ngModel)]="config.botTexts!.warnRejected"></textarea>
+
+      <label>Verbindungsfehler</label>
+      <textarea class="phrases" [(ngModel)]="config.botTexts!.error"></textarea>
+
+      <div style="display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 250px;">
+          <label>Hohes Gesamtvolumen (Sprüche)</label>
+          <textarea class="phrases" [(ngModel)]="config.botTexts!.highVolume"></textarea>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <label style="margin:0;">Schwelle (m3):</label>
+            <input type="number" [(ngModel)]="config.volumeThreshold" min="0" step="1000" style="flex: 1; padding: 4px;">
+          </div>
+        </div>
+
+        <div style="flex: 1; min-width: 250px;">
+          <label>Hoher Gesamtwert (Sprüche)</label>
+          <textarea class="phrases" [(ngModel)]="config.botTexts!.highValue"></textarea>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <label style="margin:0;">Schwelle (ISK):</label>
+            <input type="number" [(ngModel)]="config.valueThreshold" min="0" step="1000000" style="flex: 1; padding: 4px;">
+          </div>
+        </div>
+
+        <div style="flex: 1; min-width: 250px;">
+          <label>Teure Einzelposition (Sprüche)</label>
+          <textarea class="phrases" [(ngModel)]="config.botTexts!.expensiveItem"></textarea>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <label style="margin:0;">Schwelle (ISK):</label>
+            <input type="number" [(ngModel)]="config.itemValueThreshold" min="0" step="1000000" style="flex: 1; padding: 4px;">
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <button class="small" (click)="saveConfig(); close()">TEXTE & SCHWELLEN SPEICHERN</button>
+      </div>
+    </fieldset>
+
+    <div style="display: flex; justify-content: flex-end; margin-top: 15px;">
+      <button class="danger small" (click)="close()">SCHLIESSEN</button>
+    </div>
+  </div>
+</div>

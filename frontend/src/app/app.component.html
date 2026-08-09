@@ -1,25 +1,11 @@
-<div class="app-layout">
-  <app-navbar></app-navbar>
+<div class="app-layout" [class.retro-layout]="isRetroMode()">
+
 
   <div class="content-wrapper">
 
-    @if (authService.loading()) {
-      <div class="global-loading">
-        <i class="fa-solid fa-satellite-dish fa-spin fa-3x"></i>
-        <h2>Verbinde mit EVE Datenbank...</h2>
-        <p>Autorisierung wird geprüft</p>
-      </div>
-    } @else {
-
-      @if (authService.currentUser()) {
-        <app-sidebar></app-sidebar>
-      }
-
-      <main class="main-content">
+      <main class="main-content" [class.retro-main]="isRetroMode()">
         <router-outlet></router-outlet>
       </main>
-
-    }
 
   </div>
 </div>

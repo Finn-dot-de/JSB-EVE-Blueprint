@@ -1,18 +1,8 @@
-import {Component, OnInit, inject, signal} from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ToastService } from '../../services/toast.service';
-import { HttpClient } from '@angular/common/http';
-import {environment} from '../../../../environments/environment';
-
-export interface NavigationLinkDto {
-  id: number;
-  label: string;
-  url: string;
-  icon: string;
-  category: string | null;
-  requiredRole: string | null;
-}
+import { MenuEntryDto, NavigationService } from '../../services/navigation.service';
 
 export interface MenuItem {
   name: string;
@@ -31,109 +21,54 @@ export interface MenuItem {
   styleUrls: ['./sidebar.component.scss']
 })
 export class SidebarComponent implements OnInit {
-  private http = inject(HttpClient);
+  private navigationService = inject(NavigationService);
   private toastService = inject(ToastService);
 
   menuItems = signal<MenuItem[]>([]);
-
-  // Die exakte Blaupause für deine gewünschte Reihenfolge
-  private layoutOrder = [
-    'Dashboard',
-    'Services',
-    'CharLink',
-    'Gruppen Management',
-    'Admin',
-    'CorpTools',
-    'Fleet Management',
-    'SOV Monitor',
-    'Buyback Program',
-    'Intel Parser',
-    'Moon Mining Pay!',
-    'Patreon',
-    'Reverse Buyback',
-    'Ship Replacement',
-    'Sovereignty Timer',
-    'SYN Wiki',
-    'Wiki'
-  ];
 
   ngOnInit() {
     this.loadNavigation();
   }
 
   loadNavigation() {
-    this.http.get<NavigationLinkDto[]>(`${environment.apiUrl}/navigation`).subscribe({
-      next: (links) => this.buildMenu(links),
+    this.navigationService.menu().subscribe({
+      next: (entries) => this.buildMenu(entries),
       error: () => this.toastService.error('Die Navigation konnte nicht geladen werden.')
     });
   }
 
-  buildMenu(links: NavigationLinkDto[]) {
-    const categoryMap = new Map<string, MenuItem[]>();
-    const rootItemsMap = new Map<string, MenuItem>();
-
-    // 1. Links aus der DB sortieren
-    links.forEach(link => {
-
-      const isExt = link.url.startsWith('http');
-
-      const item: MenuItem = {
-        name: link.label,
-        icon: link.icon,
-        route: link.url,
-        isExternal: isExt
-      };
-
-      if (link.category) {
-        if (!categoryMap.has(link.category)) {
-          categoryMap.set(link.category, []);
-        }
-        categoryMap.get(link.category)!.push(item);
-      } else {
-        rootItemsMap.set(link.label, item);
-      }
-    });
-
-    const sortedMenu: MenuItem[] = [];
-    const processedKeys = new Set<string>();
-
-    this.layoutOrder.forEach(key => {
-      // Ist es eine Kategorie/Ein Ordner?
-      if (categoryMap.has(key)) {
-        let folderIcon = 'fa-solid fa-folder';
-        if (key === 'CorpTools') folderIcon = 'fa-solid fa-folder';
-
-
-        sortedMenu.push({
-          name: key,
-          icon: folderIcon,
-          expanded: false,
-          children: categoryMap.get(key)
-        });
-        processedKeys.add(key);
-      }
-
-      else if (rootItemsMap.has(key)) {
-        sortedMenu.push(rootItemsMap.get(key)!);
-        processedKeys.add(key);
-      }
-    });
-
-    // 3. Alles, was in der DB ist, aber NICHT in der Blaupause steht, unten dranhängen
-    categoryMap.forEach((children, categoryName) => {
-      if (!processedKeys.has(categoryName)) {
-        sortedMenu.push({ name: categoryName, icon: 'fa-solid fa-folder', expanded: false, children });
-      }
-    });
-
-    rootItemsMap.forEach((item, label) => {
-      if (!processedKeys.has(label)) {
-        sortedMenu.push(item);
-      }
-    });
-
-    // 4. Menü rendern
-    this.menuItems.set(sortedMenu);
+  /**
+   * Übernimmt das Menü, wie der Server es liefert.
+   *
+   * Hier stand früher eine Blaupause aus 17 fest verdrahteten Namen, die die
+   * Reihenfolge bestimmte. Damit landete jedes neu angelegte Register dauerhaft
+   * unten und ließ sich nicht verschieben, ohne den Code anzufassen. Reihenfolge
+   * und Zuordnung kommen jetzt aus der Datenbank und sind über die Verwaltung
+   * unter /admin/navigation pflegbar.
+   */
+  buildMenu(entries: MenuEntryDto[]) {
+    this.menuItems.set(
+      entries.map((entry) =>
+        entry.children.length > 0
+          ? {
+              name: entry.label,
+              icon: entry.icon,
+              expanded: false,
+              children: entry.children.map((child) => ({
+                name: child.label,
+                icon: child.icon,
+                route: child.url,
+                isExternal: child.external,
+              })),
+            }
+          : {
+              name: entry.label,
+              icon: entry.icon,
+              route: entry.url ?? undefined,
+              isExternal: entry.external,
+            },
+      ),
+    );
   }
 
   toggleMenu(item: MenuItem) {

@@ -50,6 +50,9 @@ public class AssetQueryRepository {
             (
                 SELECT ca.item_id, ca.type_id, ca.quantity, ca.location_flag,
                        ca.root_location_id, ca.is_singleton, ca.is_blueprint_copy, ca.custom_name,
+                       -- Der direkte Parent laut ESI. Zeigt er auf ein anderes
+                       -- Item, steckt der Bestand in einem Container oder Schiff.
+                       ca.location_id                                  AS location_id,
                        ca.character_id                                 AS character_id,
                        ch.corporation_id                               AS corporation_id,
                        COALESCE(ch.main_character_id, ch.character_id) AS owner_id,
@@ -64,6 +67,7 @@ public class AssetQueryRepository {
 
                 SELECT co.item_id, co.type_id, co.quantity, co.location_flag,
                        co.root_location_id, co.is_singleton, co.is_blueprint_copy, co.custom_name,
+                       co.location_id     AS location_id,
                        NULL::bigint       AS character_id,
                        co.corporation_id  AS corporation_id,
                        co.corporation_id  AS owner_id,
@@ -194,6 +198,55 @@ public class AssetQueryRepository {
 
         return new AssetDtos.PageDto<>(content, page, size, total,
                 (int) Math.ceil((double) total / size), pageValue, grandTotal);
+    }
+
+    /**
+     * Wo die gefundenen Bestaende konkret liegen.
+     *
+     * <p>Dieselben Filter wie die Suche, nur anders gruppiert: statt nach Typ
+     * nach Ort. Damit beantwortet die Abfrage die Frage, die die gruppierte
+     * Sicht offen laesst - dort steht nur die Zahl der Orte.</p>
+     *
+     * <p>Der Behaelter kommt aus einem einfachen Selbst-Join: {@code location_id}
+     * zeigt bei einem verstauten Item auf die {@code item_id} des Containers
+     * oder Schiffs. Bewusst nur eine Ebene - ein Container im Schiff im Hangar
+     * ist der Regelfall, tiefere Verschachtelungen sind selten und waeren nur
+     * ueber eine rekursive Abfrage ueber den gesamten Bestand zu bekommen.</p>
+     */
+    public List<Tuple> placements(AssetDtos.AssetSearchRequest req, int limit) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        String where = buildWhere(req, params);
+
+        String sql = """
+                SELECT a.character_id AS "characterId",
+                       a.holder_name AS "characterName",
+                       a.root_location_id AS "locationId",
+                       COALESCE(loc.name, 'Unbekannter Ort (' || a.root_location_id || ')')
+                           AS "locationName",
+                       loc.system_name AS "systemName",
+                       loc.region_name AS "regionName",
+                       a.location_flag AS "locationFlag",
+                       NULLIF(box.custom_name, '') AS "containerName",
+                       boxType."typeName" AS "containerTypeName",
+                       SUM(a.quantity) AS "quantity",
+                       SUM(""" + VALUE_EXPR + """
+                       ) AS "totalValue"
+                """ + BASE_FROM + """
+                LEFT JOIN character_assets box ON box.item_id = a.location_id
+                LEFT JOIN evesde."invTypes" boxType ON boxType."typeID" = box.type_id
+                """ + where + """
+                GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+                ORDER BY 11 DESC NULLS LAST, 4
+                LIMIT :limit
+                """;
+
+        Query q = em.createNativeQuery(sql, Tuple.class);
+        params.forEach(q::setParameter);
+        q.setParameter("limit", limit);
+
+        @SuppressWarnings("unchecked")
+        List<Tuple> rows = q.getResultList();
+        return rows;
     }
 
     // ==================================================================

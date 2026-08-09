@@ -1,7 +1,7 @@
 package com.eve.own.auth.backend.domain.navigation.controller;
 
-import com.eve.own.auth.backend.domain.navigation.entity.NavigationLink;
-import com.eve.own.auth.backend.domain.navigation.repository.NavigationLinkRepository;
+import com.eve.own.auth.backend.domain.navigation.dto.NavigationDtos;
+import com.eve.own.auth.backend.domain.navigation.service.NavigationService;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -14,29 +14,22 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Liefert die Menuepunkte, die der angemeldete Nutzer sehen darf. */
+/** Liefert das Menue, das der angemeldete Nutzer sehen darf - fertig sortiert. */
 @RestController
 @RequestMapping("/api/navigation")
 public class NavigationController {
 
-    private final NavigationLinkRepository navRepo;
+    private final NavigationService navigationService;
     private final RoleHierarchy roleHierarchy;
 
-    public NavigationController(NavigationLinkRepository navRepo, RoleHierarchy roleHierarchy) {
-        this.navRepo = navRepo;
+    public NavigationController(NavigationService navigationService, RoleHierarchy roleHierarchy) {
+        this.navigationService = navigationService;
         this.roleHierarchy = roleHierarchy;
     }
 
     @GetMapping
-    public ResponseEntity<List<NavigationLink>> getAllowedLinks() {
-        Set<String> roles = reachableRoles();
-
-        List<NavigationLink> allowedLinks = navRepo.findAll().stream()
-                .filter(link -> Boolean.TRUE.equals(link.getActive()))
-                .filter(link -> link.getRequiredRole() == null || roles.contains(link.getRequiredRole()))
-                .toList();
-
-        return ResponseEntity.ok(allowedLinks);
+    public ResponseEntity<List<NavigationDtos.MenuEntryDto>> menu() {
+        return ResponseEntity.ok(navigationService.menuFor(reachableRoles()));
     }
 
     /**

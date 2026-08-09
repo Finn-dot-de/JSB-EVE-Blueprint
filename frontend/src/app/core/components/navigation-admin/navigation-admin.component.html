@@ -1,0 +1,268 @@
+<div class="nav-admin">
+
+  <div class="section-divider">
+    <span>Navigation verwalten</span>
+  </div>
+
+  <p class="section-hint">
+    Reihenfolge und Zuordnung der Seitenleiste. Register und einzelne Menüpunkte teilen sich
+    die oberste Ebene - genau so, wie sie später erscheinen. Ein Punkt ist nur für Mitglieder
+    sichtbar, die die hinterlegte Rolle tragen.
+  </p>
+
+  <div class="toolbar">
+    <button class="btn-secondary" (click)="newCategory()">
+      <i class="fa-solid fa-folder-plus"></i> Neues Register
+    </button>
+    <button class="btn-primary" (click)="newLink(null)">
+      <i class="fa-solid fa-plus"></i> Neuer Menüpunkt
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-container"><div class="loading-spinner"></div></div>
+  } @else if (topLevel().length === 0) {
+    <div class="empty-hint">
+      <i class="fa-solid fa-circle-info"></i>
+      Noch nichts angelegt. Lege ein Register oder einen einzelnen Menüpunkt an.
+    </div>
+  } @else {
+
+    <div class="tree">
+      @for (row of topLevel(); track row.kind + '-' + row.id; let i = $index) {
+        <div class="tree-row" [class.is-category]="row.kind === 'CATEGORY'">
+
+          <div class="order-buttons">
+            <button class="btn-move" [disabled]="!canMove(topLevel(), i, 'UP')"
+                    (click)="move(row.kind, row.id, 'UP')" aria-label="Nach oben">
+              <i class="fa-solid fa-chevron-up"></i>
+            </button>
+            <button class="btn-move" [disabled]="!canMove(topLevel(), i, 'DOWN')"
+                    (click)="move(row.kind, row.id, 'DOWN')" aria-label="Nach unten">
+              <i class="fa-solid fa-chevron-down"></i>
+            </button>
+          </div>
+
+          <i class="row-icon" [class]="row.icon || 'fa-solid fa-link'"></i>
+
+          <div class="row-main">
+            <span class="row-label">{{ row.label }}</span>
+
+            @if (row.kind === 'CATEGORY') {
+              <span class="row-meta">Register &middot; {{ row.children.length }} Punkte</span>
+            } @else if (row.link; as link) {
+              <span class="row-meta">
+                {{ link.url }}
+                @if (isExternal(link.url)) {
+                  <i class="fa-solid fa-arrow-up-right-from-square" title="Externes Ziel"></i>
+                }
+              </span>
+            }
+          </div>
+
+          @if (row.link; as link) {
+            <span class="role-badge" [class.open]="!link.requiredRole">
+              {{ link.requiredRole || 'für alle' }}
+            </span>
+            <button class="btn-toggle" [class.on]="link.active" (click)="toggleActive(link)"
+                    [title]="link.active ? 'Sichtbar - zum Abschalten klicken' : 'Abgeschaltet'">
+              <i class="fa-solid" [class.fa-eye]="link.active" [class.fa-eye-slash]="!link.active"></i>
+            </button>
+          }
+
+          <div class="row-actions">
+            @if (row.kind === 'CATEGORY') {
+              <button class="btn-icon" (click)="newLink(row.id)" title="Menüpunkt hinzufügen">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+              <button class="btn-icon btn-edit" (click)="editCategory(row)" title="Register bearbeiten">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button class="btn-icon btn-danger" (click)="deleteCategory(row)" title="Register löschen">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+              @if (row.children.length > 0) {
+                <button class="btn-icon" (click)="toggleCategory(row.id)"
+                        [title]="isExpanded(row.id) ? 'Zuklappen' : 'Aufklappen'">
+                  <i class="fa-solid fa-chevron-down chevron" [class.open]="isExpanded(row.id)"></i>
+                </button>
+              }
+            } @else if (row.link; as link) {
+              <button class="btn-icon btn-edit" (click)="editLink(link)" title="Bearbeiten">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button class="btn-icon btn-danger" (click)="deleteLink(link)" title="Löschen">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- Die Punkte eines Registers, mit eigener Reihenfolge -->
+        @if (row.kind === 'CATEGORY' && isExpanded(row.id)) {
+          @for (child of row.children; track child.id; let j = $index) {
+            <div class="tree-row child">
+              <div class="order-buttons">
+                <button class="btn-move" [disabled]="!canMove(row.children, j, 'UP')"
+                        (click)="move('LINK', child.id, 'UP')" aria-label="Nach oben">
+                  <i class="fa-solid fa-chevron-up"></i>
+                </button>
+                <button class="btn-move" [disabled]="!canMove(row.children, j, 'DOWN')"
+                        (click)="move('LINK', child.id, 'DOWN')" aria-label="Nach unten">
+                  <i class="fa-solid fa-chevron-down"></i>
+                </button>
+              </div>
+
+              <i class="row-icon" [class]="child.icon || 'fa-solid fa-link'"></i>
+
+              <div class="row-main">
+                <span class="row-label">{{ child.label }}</span>
+                <span class="row-meta">
+                  {{ child.url }}
+                  @if (isExternal(child.url)) {
+                    <i class="fa-solid fa-arrow-up-right-from-square" title="Externes Ziel"></i>
+                  }
+                </span>
+              </div>
+
+              <span class="role-badge" [class.open]="!child.requiredRole">
+                {{ child.requiredRole || 'für alle' }}
+              </span>
+              <button class="btn-toggle" [class.on]="child.active" (click)="toggleActive(child)"
+                      [title]="child.active ? 'Sichtbar - zum Abschalten klicken' : 'Abgeschaltet'">
+                <i class="fa-solid" [class.fa-eye]="child.active"
+                   [class.fa-eye-slash]="!child.active"></i>
+              </button>
+
+              <div class="row-actions">
+                <button class="btn-icon btn-edit" (click)="editLink(child)" title="Bearbeiten">
+                  <i class="fa-solid fa-pen"></i>
+                </button>
+                <button class="btn-icon btn-danger" (click)="deleteLink(child)" title="Löschen">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
+            </div>
+          }
+        }
+      }
+    </div>
+  }
+</div>
+
+<!-- ========================================================
+     MODAL: Menüpunkt
+     ======================================================== -->
+@if (editingLink(); as link) {
+  <div class="modal-overlay" (click)="closeLink()">
+    <div class="surface-panel modal-content" (click)="$event.stopPropagation()">
+      <h3 class="modal-title">{{ link.id ? 'Menüpunkt bearbeiten' : 'Neuer Menüpunkt' }}</h3>
+
+      <div class="form-grid">
+        <label class="field">
+          <span>Beschriftung</span>
+          <input type="text" [ngModel]="link.label" (ngModelChange)="updateLink({ label: $event })"
+                 placeholder="z.B. Ore Calculator" autocomplete="off">
+        </label>
+
+        <label class="field field-wide">
+          <span>Ziel</span>
+          <input type="text" [ngModel]="link.url" (ngModelChange)="updateLink({ url: $event })"
+                 placeholder="/corp/mining oder https://..." autocomplete="off">
+        </label>
+
+        <label class="field">
+          <span>Symbol</span>
+          <div class="icon-field">
+            <i class="icon-preview" [class]="link.icon || 'fa-solid fa-link'"></i>
+            <input type="text" [ngModel]="link.icon" (ngModelChange)="updateLink({ icon: $event })"
+                   placeholder="fa-solid fa-gears" autocomplete="off">
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Register</span>
+          <select [ngModel]="link.categoryId ?? ''" (ngModelChange)="updateLinkCategory($event)">
+            <option value="">— Oberste Ebene —</option>
+            @for (category of categories(); track category.id) {
+              <option [value]="category.id">{{ category.name }}</option>
+            }
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Sichtbar für</span>
+          <select [ngModel]="link.requiredRole ?? ''"
+                  (ngModelChange)="updateLink({ requiredRole: $event || null })">
+            <option value="">— alle Angemeldeten —</option>
+            @for (role of roles(); track role.name) {
+              <option [value]="role.name">{{ role.name }}</option>
+            }
+          </select>
+        </label>
+
+        <label class="field-check">
+          <input type="checkbox" [ngModel]="link.active"
+                 (ngModelChange)="updateLink({ active: $event })">
+          <span>Sichtbar</span>
+        </label>
+      </div>
+
+      <p class="field-hint">
+        Ein Ziel mit <code>http</code> am Anfang wird als externer Link in einem neuen Tab geöffnet.
+        Die Rollen stammen aus dem Rollenkatalog - Tippfehler sind damit ausgeschlossen.
+      </p>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" (click)="closeLink()">Abbrechen</button>
+        <button class="btn-primary" (click)="saveLink()"
+                [disabled]="saving() || !link.label.trim() || !link.url.trim()">
+          <i class="fa-solid fa-floppy-disk"></i> Speichern
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ========================================================
+     MODAL: Register
+     ======================================================== -->
+@if (editingCategory(); as category) {
+  <div class="modal-overlay" (click)="closeCategory()">
+    <div class="surface-panel modal-content" (click)="$event.stopPropagation()">
+      <h3 class="modal-title">{{ category.id ? 'Register bearbeiten' : 'Neues Register' }}</h3>
+
+      <div class="form-grid">
+        <label class="field">
+          <span>Name</span>
+          <input type="text" [ngModel]="category.name"
+                 (ngModelChange)="updateCategory({ name: $event })"
+                 placeholder="z.B. Fleet Management" autocomplete="off">
+        </label>
+
+        <label class="field">
+          <span>Symbol</span>
+          <div class="icon-field">
+            <i class="icon-preview" [class]="category.icon || 'fa-solid fa-folder'"></i>
+            <input type="text" [ngModel]="category.icon"
+                   (ngModelChange)="updateCategory({ icon: $event })"
+                   placeholder="fa-solid fa-folder" autocomplete="off">
+          </div>
+        </label>
+      </div>
+
+      <p class="field-hint">
+        Ein Register erscheint erst in der Seitenleiste, wenn mindestens ein sichtbarer
+        Menüpunkt darin hängt - ein leerer Ordner wäre nur ein Klick ins Nichts.
+      </p>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" (click)="closeCategory()">Abbrechen</button>
+        <button class="btn-primary" (click)="saveCategory()"
+                [disabled]="saving() || !category.name.trim()">
+          <i class="fa-solid fa-floppy-disk"></i> Speichern
+        </button>
+      </div>
+    </div>
+  </div>
+}

@@ -35,8 +35,25 @@ describe('SidebarComponent', () => {
 
   const navUrl = `${environment.apiUrl}/navigation`;
 
-  function link(label: string, category: string | null, url = '/seite') {
-    return { id: 1, label, url, icon: 'fa-solid fa-x', category, requiredRole: null };
+  /** Ein einzelner Punkt der obersten Ebene, wie der Server ihn liefert. */
+  function entry(label: string, url = '/seite', external = false) {
+    return { label, icon: 'fa-solid fa-x', url, external, children: [] };
+  }
+
+  /** Ein Register mit seinen Punkten. */
+  function folder(label: string, childLabels: string[]) {
+    return {
+      label,
+      icon: 'fa-solid fa-folder',
+      url: null,
+      external: false,
+      children: childLabels.map((child) => ({
+        label: child,
+        url: '/seite',
+        icon: 'fa-solid fa-x',
+        external: false,
+      })),
+    };
   }
 
   beforeEach(() => {
@@ -57,17 +74,27 @@ describe('SidebarComponent', () => {
   it('lädt die Menüpunkte beim Start', () => {
     component.ngOnInit();
 
-    httpMock.expectOne(navUrl).flush([link('Dashboard', null)]);
+    httpMock.expectOne(navUrl).flush([entry('Dashboard')]);
 
     expect(component.menuItems()).toHaveLength(1);
     expect(component.menuItems()[0].name).toBe('Dashboard');
   });
 
-  it('bündelt Links einer Kategorie zu einem Ordner', () => {
-    component.buildMenu([
-      link('Mining', 'CorpTools'),
-      link('Assets', 'CorpTools'),
+  it('übernimmt die Reihenfolge des Servers unverändert', () => {
+    // Hier stand früher eine Blaupause aus fest verdrahteten Namen. Sortiert
+    // wird jetzt in der Datenbank, damit die Verwaltung überhaupt etwas
+    // bewirken kann - die Leiste darf sie also nicht mehr umsortieren.
+    component.buildMenu([entry('CharLink'), entry('Dashboard'), entry('Services')]);
+
+    expect(component.menuItems().map((item) => item.name)).toEqual([
+      'CharLink',
+      'Dashboard',
+      'Services',
     ]);
+  });
+
+  it('macht aus einem Register einen zugeklappten Ordner', () => {
+    component.buildMenu([folder('CorpTools', ['Mining', 'Assets'])]);
 
     expect(component.menuItems()).toHaveLength(1);
     expect(component.menuItems()[0].name).toBe('CorpTools');
@@ -75,52 +102,22 @@ describe('SidebarComponent', () => {
     expect(component.menuItems()[0].expanded).toBe(false);
   });
 
-  it('hält sich an die vorgegebene Reihenfolge', () => {
-    // Die Blaupause bestimmt die Reihenfolge, nicht die Antwort des Servers.
-    component.buildMenu([
-      link('CharLink', null),
-      link('Dashboard', null),
-      link('Services', null),
-    ]);
-
-    expect(component.menuItems().map((item) => item.name)).toEqual([
-      'Dashboard',
-      'Services',
-      'CharLink',
-    ]);
-  });
-
-  it('hängt unbekannte Einträge hinten an, statt sie zu verlieren', () => {
-    component.buildMenu([link('Dashboard', null), link('Neuer Punkt', null)]);
-
-    expect(component.menuItems().map((item) => item.name)).toEqual([
-      'Dashboard',
-      'Neuer Punkt',
-    ]);
-  });
-
-  it('hängt auch unbekannte Kategorien hinten an', () => {
-    component.buildMenu([link('Etwas', 'Neue Kategorie')]);
-
-    expect(component.menuItems()[0].name).toBe('Neue Kategorie');
-    expect(component.menuItems()[0].children).toHaveLength(1);
-  });
-
-  it('erkennt externe Links an ihrer Adresse', () => {
-    component.buildMenu([link('Wiki', null, 'https://wiki.example.org')]);
+  it('übernimmt die Kennzeichnung externer Ziele', () => {
+    component.buildMenu([entry('Wiki', 'https://wiki.example.org', true)]);
 
     expect(component.menuItems()[0].isExternal).toBe(true);
+    expect(component.menuItems()[0].route).toBe('https://wiki.example.org');
   });
 
   it('klappt einen Ordner auf und wieder zu', () => {
-    component.buildMenu([link('Mining', 'CorpTools')]);
-    const folder = component.menuItems()[0];
+    component.buildMenu([folder('CorpTools', ['Mining'])]);
+    const opened = component.menuItems()[0];
 
-    component.toggleMenu(folder);
-    expect(folder.expanded).toBe(true);
+    component.toggleMenu(opened);
+    expect(opened.expanded).toBe(true);
 
-    component.toggleMenu(folder);
-    expect(folder.expanded).toBe(false);
+    component.toggleMenu(opened);
+    expect(opened.expanded).toBe(false);
   });
 
   it('lässt einen einfachen Menüpunkt beim Klick unverändert', () => {

@@ -79,6 +79,35 @@ public class MyAssetController {
                 : myAssetService.search(me, req));
     }
 
+    /**
+     * Wo ein Bestand konkret liegt.
+     *
+     * <p>Nimmt dieselben Filter entgegen wie die Suche, damit die
+     * Aufschluesselung zu dem passt, was gerade auf dem Schirm steht. Der
+     * {@code typeId} kommt vom aufgeklappten Stapel dazu.</p>
+     */
+    @GetMapping("/placements")
+    public ResponseEntity<List<AssetDtos.AssetPlacementDto>> placements(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long typeId,
+            @RequestParam(required = false) Long groupId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long characterId,
+            @RequestParam(required = false) Long locationId,
+            @RequestParam(required = false) String regionName,
+            @RequestParam(required = false) String locationFlag,
+            @RequestParam(required = false) Long minQuantity,
+            @RequestParam(required = false) Double minValue,
+            @RequestParam(required = false) Boolean shipsOnly) {
+
+        AssetDtos.AssetSearchRequest req = new AssetDtos.AssetSearchRequest(
+                q, typeId, groupId, categoryId, characterId, null, null,
+                locationId, regionName, locationFlag, minQuantity, minValue, shipsOnly,
+                null, null, null, null, null, null);
+
+        return ResponseEntity.ok(myAssetService.placements(CurrentUser.characterId(), req));
+    }
+
     /** Typeahead ueber die Items, die im eigenen Bestand tatsaechlich liegen. */
     @GetMapping("/types/suggest")
     public ResponseEntity<List<AssetDtos.TypeSuggestionDto>> suggestTypes(

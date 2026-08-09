@@ -9,6 +9,7 @@ import { DoctrineService } from './doctrine.service';
 import { FleetService } from './fleet.service';
 import { GroupService } from './group.service';
 import { SkillPlanService } from './skill-plan.service';
+import { NavigationService } from './navigation.service';
 import { MyAssetService } from './my-asset.service';
 import { ReadinessService } from './readiness.service';
 
@@ -29,6 +30,7 @@ describe('HTTP-Dienste', () => {
         FleetService,
         GroupService,
         SkillPlanService,
+        NavigationService,
         MyAssetService,
         ReadinessService,
         provideHttpClient(),
@@ -89,6 +91,15 @@ describe('HTTP-Dienste', () => {
       const request = httpMock.expectOne((req) => req.url === `${apiUrl}/filters`);
       expect(request.request.params.has('categoryId')).toBe(false);
       request.flush({});
+    });
+
+    it('fragt die Standorte mit denselben Filtern ab', () => {
+      service.placements({ typeId: 587, regionName: 'The Forge' }).subscribe();
+
+      const request = httpMock.expectOne((req) => req.url === `${apiUrl}/placements`);
+      expect(request.request.params.get('typeId')).toBe('587');
+      expect(request.request.params.get('regionName')).toBe('The Forge');
+      request.flush([]);
     });
 
     it('lädt den Export als Blob', () => {
@@ -266,6 +277,69 @@ describe('HTTP-Dienste', () => {
       const remove = httpMock.expectOne(`${apiUrl}/disconnect`);
       expect(remove.request.method).toBe('DELETE');
       remove.flush(null);
+    });
+  });
+
+  describe('NavigationService', () => {
+    const base = `${environment.apiUrl}/admin/navigation`;
+
+    it('lädt das eigene Menü', () => {
+      TestBed.inject(NavigationService).menu().subscribe();
+
+      httpMock.expectOne(`${environment.apiUrl}/navigation`).flush([]);
+    });
+
+    it('lädt die Übersicht der Verwaltung', () => {
+      TestBed.inject(NavigationService).overview().subscribe();
+
+      httpMock.expectOne(base).flush({ categories: [], links: [] });
+    });
+
+    it('speichert ein Register', () => {
+      const category = { id: null, name: 'Tools', icon: 'fa-solid fa-wrench' };
+      TestBed.inject(NavigationService).saveCategory(category).subscribe();
+
+      const request = httpMock.expectOne(`${base}/categories`);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual(category);
+      request.flush(null);
+    });
+
+    it('löscht ein Register', () => {
+      TestBed.inject(NavigationService).deleteCategory(10).subscribe();
+
+      const request = httpMock.expectOne(`${base}/categories/10`);
+      expect(request.request.method).toBe('DELETE');
+      request.flush(null);
+    });
+
+    it('speichert einen Menüpunkt', () => {
+      const link = {
+        id: null, label: 'Neu', url: '/neu', icon: null,
+        categoryId: null, requiredRole: null, active: true,
+      };
+      TestBed.inject(NavigationService).saveLink(link).subscribe();
+
+      const request = httpMock.expectOne(`${base}/links`);
+      expect(request.request.body).toEqual(link);
+      request.flush(null);
+    });
+
+    it('löscht einen Menüpunkt', () => {
+      TestBed.inject(NavigationService).deleteLink(7).subscribe();
+
+      const request = httpMock.expectOne(`${base}/links/7`);
+      expect(request.request.method).toBe('DELETE');
+      request.flush(null);
+    });
+
+    it('schickt Art, ID und Richtung beim Verschieben', () => {
+      TestBed.inject(NavigationService).move('CATEGORY', 10, 'DOWN').subscribe();
+
+      const request = httpMock.expectOne(`${base}/move`);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual({ kind: 'CATEGORY', id: 10, direction: 'DOWN' });
+      request.flush(null);
     });
   });
 

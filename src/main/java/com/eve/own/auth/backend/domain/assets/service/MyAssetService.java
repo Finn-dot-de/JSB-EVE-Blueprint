@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.dbl;
 import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.lng;
 import static com.eve.own.auth.backend.domain.assets.repository.AssetQueryRepository.str;
 
@@ -120,6 +121,38 @@ public class MyAssetService {
     public AssetDtos.PageDto<AssetDtos.AssetStackDto> searchGrouped(Long characterId, AssetDtos.AssetSearchRequest req) {
         Long mainId = resolveMainId(characterId);
         return queryRepo.searchGrouped(scoped(req, mainId, ownCharacterIds(mainId)));
+    }
+
+    /** So viele Orte reichen fuer die Auskunft - darunter wird es unuebersichtlich. */
+    private static final int PLACEMENT_LIMIT = 200;
+
+    /**
+     * Wo ein Bestand konkret liegt.
+     *
+     * <p>Laeuft ueber dieselbe Absicherung wie die Suche: {@link #scoped} setzt
+     * den Account fest, bevor die Anfrage die Datenbank sieht. Ein Mitglied
+     * kann darueber also nicht in fremde Hangars schauen - auch nicht mit
+     * einer von Hand gebauten Anfrage.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<AssetDtos.AssetPlacementDto> placements(Long characterId,
+                                                        AssetDtos.AssetSearchRequest req) {
+        Long mainId = resolveMainId(characterId);
+        return queryRepo.placements(scoped(req, mainId, ownCharacterIds(mainId)), PLACEMENT_LIMIT)
+                .stream()
+                .map(row -> new AssetDtos.AssetPlacementDto(
+                        lng(row, "characterId"),
+                        str(row, "characterName"),
+                        lng(row, "locationId"),
+                        str(row, "locationName"),
+                        str(row, "systemName"),
+                        str(row, "regionName"),
+                        str(row, "locationFlag"),
+                        str(row, "containerName"),
+                        str(row, "containerTypeName"),
+                        lng(row, "quantity"),
+                        dbl(row, "totalValue")))
+                .toList();
     }
 
     @Transactional(readOnly = true)

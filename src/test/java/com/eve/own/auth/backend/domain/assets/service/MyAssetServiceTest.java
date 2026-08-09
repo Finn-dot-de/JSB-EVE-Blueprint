@@ -258,4 +258,95 @@ class MyAssetServiceTest {
             org.mockito.Mockito.verify(queryRepo).suggestTypesForMain(MAIN_ID, "nes", 10);
         }
     }
+
+    @Nested
+    @DisplayName("Wo der Bestand liegt")
+    class Placements {
+
+        private AssetDtos.AssetSearchRequest capturedPlacementRequest() {
+            ArgumentCaptor<AssetDtos.AssetSearchRequest> captor =
+                    ArgumentCaptor.forClass(AssetDtos.AssetSearchRequest.class);
+            org.mockito.Mockito.verify(queryRepo).placements(captor.capture(), anyInt());
+            return captor.getValue();
+        }
+
+        @Test
+        @DisplayName("gibt Ort, Fach und Behaelter zurueck")
+        void returnsLocationFlagAndContainer() {
+            when(queryRepo.placements(any(), anyInt())).thenReturn(List.of(FakeTuple.of(
+                    "characterId", MAIN_ID, "characterName", "Main",
+                    "locationId", 60003760L, "locationName", "Jita IV - Moon 4",
+                    "systemName", "Jita", "regionName", "The Forge",
+                    "locationFlag", "Hangar",
+                    "containerName", "Munikiste", "containerTypeName", "Giant Secure Container",
+                    "quantity", 42L, "totalValue", 1234.5)));
+
+            assertThat(service.placements(MAIN_ID, request(null, null, null, null)))
+                    .singleElement()
+                    .satisfies(place -> {
+                        assertThat(place.locationName()).isEqualTo("Jita IV - Moon 4");
+                        assertThat(place.systemName()).isEqualTo("Jita");
+                        assertThat(place.locationFlag()).isEqualTo("Hangar");
+                        assertThat(place.containerName()).isEqualTo("Munikiste");
+                        assertThat(place.containerTypeName()).isEqualTo("Giant Secure Container");
+                        assertThat(place.quantity()).isEqualTo(42L);
+                    });
+        }
+
+        @Test
+        @DisplayName("laesst den Behaelter leer, wenn der Bestand direkt im Hangar steht")
+        void leavesTheContainerEmpty() {
+            when(queryRepo.placements(any(), anyInt())).thenReturn(List.of(FakeTuple.of(
+                    "characterId", MAIN_ID, "characterName", "Main",
+                    "locationId", 60003760L, "locationName", "Jita IV - Moon 4",
+                    "systemName", "Jita", "regionName", "The Forge",
+                    "locationFlag", "Hangar",
+                    "quantity", 1L, "totalValue", 0d)));
+
+            assertThat(service.placements(MAIN_ID, request(null, null, null, null)))
+                    .singleElement()
+                    .satisfies(place -> {
+                        assertThat(place.containerName()).isNull();
+                        assertThat(place.containerTypeName()).isNull();
+                    });
+        }
+
+        @Test
+        @DisplayName("zwingt den eigenen Account auf, egal was ankommt")
+        void alwaysScopesToOwnAccount() {
+            // Derselbe Schutz wie bei der Suche - sonst waere das hier ein
+            // Fenster in fremde Hangars.
+            when(queryRepo.placements(any(), anyInt())).thenReturn(List.of());
+
+            service.placements(MAIN_ID, request(FOREIGN_ID, 4242L, 98000001L, "CORPORATION"));
+
+            AssetDtos.AssetSearchRequest sent = capturedPlacementRequest();
+            assertThat(sent.mainId()).isEqualTo(MAIN_ID);
+            assertThat(sent.characterId()).isNull();
+            assertThat(sent.corporationId()).isNull();
+            assertThat(sent.ownerType()).isEqualTo("CHARACTER");
+        }
+
+        @Test
+        @DisplayName("behaelt einen eigenen Charakter als Filter")
+        void keepsOwnCharacterFilter() {
+            when(queryRepo.placements(any(), anyInt())).thenReturn(List.of());
+
+            service.placements(MAIN_ID, request(ALT_ID, null, null, null));
+
+            assertThat(capturedPlacementRequest().characterId()).isEqualTo(ALT_ID);
+        }
+
+        @Test
+        @DisplayName("begrenzt die Zahl der Orte")
+        void limitsTheNumberOfPlaces() {
+            when(queryRepo.placements(any(), anyInt())).thenReturn(List.of());
+
+            service.placements(MAIN_ID, request(null, null, null, null));
+
+            ArgumentCaptor<Integer> limit = ArgumentCaptor.forClass(Integer.class);
+            org.mockito.Mockito.verify(queryRepo).placements(any(), limit.capture());
+            assertThat(limit.getValue()).isPositive();
+        }
+    }
 }

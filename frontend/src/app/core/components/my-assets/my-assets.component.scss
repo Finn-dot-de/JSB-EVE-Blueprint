@@ -615,3 +615,70 @@ $green: tokens.$success;
   &::before { margin-right: 1.5rem; }
   &::after { margin-left: 1.5rem; }
 }
+
+/* =========================================
+   WO GENAU LIEGT DER BESTAND
+   Die gruppierte Sicht nennt nur die Zahl der Orte - hier wird sie aufgelöst.
+   ========================================= */
+tr.expandable {
+  cursor: pointer;
+
+  &:hover { background-color: color-mix(in srgb, var(--accent-color) 8%, transparent); }
+  &.open { background-color: color-mix(in srgb, var(--accent-color) 12%, transparent); }
+}
+
+.loc-chevron {
+  margin-left: 6px;
+  font-size: 0.7rem;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+
+  &.open { transform: rotate(180deg); }
+}
+
+.placement-host > td {
+  padding: 0 !important;
+  background-color: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.placement-loading {
+  padding: 1rem 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.placement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+
+  th {
+    padding: 0.5rem 1.25rem;
+    text-align: left;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  td {
+    padding: 0.5rem 1.25rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
+    vertical-align: middle;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+}
+
+.place-name { color: var(--text-primary); }
+
+.place-meta {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.place-path {
+  color: color-mix(in srgb, var(--accent-color) 70%, var(--text-primary));
+}

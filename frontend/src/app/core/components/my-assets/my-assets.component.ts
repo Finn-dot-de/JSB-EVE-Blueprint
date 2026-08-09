@@ -6,7 +6,7 @@ import {
   AssetRowDto, AssetStackDto, PageDto,
   MemberAssetDetailDto, TypeSuggestionDto
 } from '../../services/asset.service';
-import { MyAssetService, MyFilterOptionsDto, MyAssetSearchParams } from '../../services/my-asset.service';
+import { AssetPlacementDto, MyAssetService, MyFilterOptionsDto, MyAssetSearchParams } from '../../services/my-asset.service';
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
 import { barWidth, formatIsk, formatIskFull, formatNumber, maxValue } from '../../shared/eve-format.util';
@@ -61,6 +61,17 @@ export class MyAssetsComponent implements OnInit {
   filters = signal<MyFilterOptionsDto | null>(null);
   flatResult = signal<PageDto<AssetRowDto> | null>(null);
   groupedResult = signal<PageDto<AssetStackDto> | null>(null);
+
+  /**
+   * Der aufgeklappte Bestand und seine Orte.
+   *
+   * Die gruppierte Sicht nennt nur die Zahl der Orte - erst hier steht, wo die
+   * Gegenstände tatsächlich liegen. Auf Abruf geladen, weil die Aufschlüsselung
+   * für jede Zeile der Seite den Aufwand nicht wert wäre.
+   */
+  expandedTypeId = signal<number | null>(null);
+  placements = signal<AssetPlacementDto[]>([]);
+  loadingPlacements = signal(false);
   loadingSearch = signal(false);
   grouped = signal(true);
 
@@ -166,6 +177,62 @@ export class MyAssetsComponent implements OnInit {
     this.f.typeId = s.typeId;
     this.showSuggestions.set(false);
     this.runSearch();
+  }
+
+  /** Klappt einen Bestand auf und holt seine Orte. */
+  togglePlacements(typeId: number) {
+    if (this.expandedTypeId() === typeId) {
+      this.expandedTypeId.set(null);
+      return;
+    }
+
+    this.expandedTypeId.set(typeId);
+    this.placements.set([]);
+    this.loadingPlacements.set(true);
+    // Dieselben Filter wie die Suche, damit die Aufschlüsselung zu dem passt,
+    // was gerade auf dem Schirm steht.
+    this.myAssetService.placements({ ...this.f, typeId }).subscribe({
+      next: (rows) => {
+        this.placements.set(rows);
+        this.loadingPlacements.set(false);
+      },
+      error: () => {
+        this.loadingPlacements.set(false);
+        this.toastService.error('Die Standorte konnten nicht geladen werden.');
+      },
+    });
+  }
+
+  /**
+   * Der Ort in einer Zeile: Station, davor das Fach, davor der Behälter.
+   *
+   * Von innen nach außen gelesen - so, wie man ingame danach sucht.
+   */
+  placementPath(row: AssetPlacementDto): string {
+    const parts: string[] = [];
+    if (row.containerName || row.containerTypeName) {
+      parts.push(row.containerName
+        ? `${row.containerName} (${row.containerTypeName ?? 'Behälter'})`
+        : row.containerTypeName!);
+    }
+    if (row.locationFlag) parts.push(this.flagLabel(row.locationFlag));
+    return parts.join(' in ');
+  }
+
+  /** Die ESI-Fachbezeichnungen sind englische Kürzel - die gängigen übersetzt. */
+  flagLabel(flag: string): string {
+    const labels: Record<string, string> = {
+      Hangar: 'Hangar',
+      ShipHangar: 'Schiffshangar',
+      Deliveries: 'Lieferungen',
+      AssetSafety: 'Asset Safety',
+      Cargo: 'Frachtraum',
+      DroneBay: 'Drohnenbucht',
+      FleetHangar: 'Flottenhangar',
+      Unlocked: 'Nicht verankert',
+      Locked: 'Verankert',
+    };
+    return labels[flag] ?? flag;
   }
 
   clearTypeFilter() {

@@ -25,8 +25,13 @@ describe('Routen', () => {
   /** Alle Routen mit Ziel - die Weiterleitung von '' hat keines. */
   const targets = routes.filter((route: Route) => !route.redirectTo);
 
-  /** Die einzige Seite hinter einem Rollen-Wächter statt nur der Anmeldung. */
-  const RIGHTS_PATH = 'groups/rights';
+  /**
+   * Die Seiten hinter einem Rollen-Wächter statt nur der Anmeldung.
+   *
+   * Beide bestimmen, was andere sehen und dürfen - die eine über die Rollen,
+   * die andere über das Menü.
+   */
+  const ROLE_GUARDED_PATHS = ['groups/rights', 'admin/navigation'];
 
   it('leitet die Wurzel auf die Startseite um', () => {
     const root = routes.find((route: Route) => route.path === '');
@@ -48,18 +53,20 @@ describe('Routen', () => {
     expect(guarded.length).toBeGreaterThan(5);
     expect(
       guarded
-        .filter((route: Route) => route.path !== RIGHTS_PATH)
+        .filter((route: Route) => !ROLE_GUARDED_PATHS.includes(route.path as string))
         .every((route: Route) => route.canActivate?.[0] === authGuard),
     ).toBe(true);
   });
 
-  it('verlangt für die Rechteverwaltung mehr als nur eine Anmeldung', () => {
+  it('verlangt für die Verwaltungsseiten mehr als nur eine Anmeldung', () => {
     // Der Server lässt dort ohnehin nur die Führung durch - ohne eigenen
     // Wächter fände sich jedes Mitglied auf einer Seite voller Fehler wieder.
-    const rights = targets.find((route: Route) => route.path === RIGHTS_PATH);
+    ROLE_GUARDED_PATHS.forEach((path) => {
+      const route = targets.find((candidate: Route) => candidate.path === path);
 
-    expect(rights?.canActivate).toHaveLength(1);
-    expect(rights?.canActivate?.[0]).not.toBe(authGuard);
+      expect(route?.canActivate).toHaveLength(1);
+      expect(route?.canActivate?.[0]).not.toBe(authGuard);
+    });
   });
 
   it('lädt jede Seite erst bei Bedarf nach', () => {

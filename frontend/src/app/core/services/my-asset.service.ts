@@ -45,6 +45,27 @@ export interface MyAssetSearchParams {
   grouped?: boolean;
 }
 
+/**
+ * Wo ein Bestand konkret liegt.
+ *
+ * Die gruppierte Suche nennt nur die Zahl der Orte - das hier löst sie auf.
+ */
+export interface AssetPlacementDto {
+  characterId: number;
+  characterName: string;
+  locationId: number;
+  locationName: string;
+  systemName: string | null;
+  regionName: string | null;
+  /** Das Fach am Ort, z.B. `Hangar` oder `Deliveries`. */
+  locationFlag: string | null;
+  /** Name des Containers oder Schiffs - null, wenn der Bestand direkt im Hangar steht. */
+  containerName: string | null;
+  containerTypeName: string | null;
+  quantity: number;
+  totalValue: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MyAssetService {
   private http = inject(HttpClient);
@@ -68,6 +89,17 @@ export class MyAssetService {
   searchGrouped(p: MyAssetSearchParams): Observable<PageDto<AssetStackDto>> {
     return this.http.get<PageDto<AssetStackDto>>(`${this.apiUrl}/search`,
       { params: this.toParams({ ...p, grouped: true }) });
+  }
+
+  /**
+   * Wo ein Bestand konkret liegt.
+   *
+   * Nimmt dieselben Filter wie die Suche, damit die Aufschlüsselung zu dem
+   * passt, was gerade auf dem Schirm steht - plus die typeId des Stapels.
+   */
+  placements(p: MyAssetSearchParams): Observable<AssetPlacementDto[]> {
+    return this.http.get<AssetPlacementDto[]>(`${this.apiUrl}/placements`,
+      { params: this.toParams(p) });
   }
 
   suggestTypes(q: string): Observable<TypeSuggestionDto[]> {

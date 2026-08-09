@@ -38,6 +38,7 @@ describe('MyAssetsComponent', () => {
     searchGrouped: ReturnType<typeof vi.fn>;
     suggestTypes: ReturnType<typeof vi.fn>;
     exportCsv: ReturnType<typeof vi.fn>;
+    placements: ReturnType<typeof vi.fn>;
   };
   let toastService: { error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> };
 
@@ -48,6 +49,7 @@ describe('MyAssetsComponent', () => {
       search: vi.fn().mockReturnValue(of(page())),
       searchGrouped: vi.fn().mockReturnValue(of(page())),
       suggestTypes: vi.fn().mockReturnValue(of([suggestion])),
+      placements: vi.fn().mockReturnValue(of([])),
       exportCsv: vi.fn().mockReturnValue(of(new Blob(['csv']))),
     };
     toastService = { error: vi.fn(), success: vi.fn() };
@@ -256,6 +258,93 @@ describe('MyAssetsComponent', () => {
       component.setTab('SEARCH');
 
       expect(myAssetService.searchGrouped).toHaveBeenCalled();
+    });
+  });
+
+  describe('Wo genau liegt der Bestand', () => {
+    /** Ein Standort, wie ihn der Server liefert. */
+    const place = {
+      characterId: 1000,
+      characterName: 'Pilot Eins',
+      locationId: 60003760,
+      locationName: 'Jita IV - Moon 4',
+      systemName: 'Jita',
+      regionName: 'The Forge',
+      locationFlag: 'Hangar',
+      containerName: 'Munikiste',
+      containerTypeName: 'Giant Secure Container',
+      quantity: 42,
+      totalValue: 1234.5,
+    };
+
+    it('holt die Standorte erst beim Aufklappen', () => {
+      // Fuer jede Zeile der Seite waere die Aufschluesselung den Aufwand nicht wert.
+      expect(myAssetService.placements).not.toHaveBeenCalled();
+
+      component.togglePlacements(587);
+
+      expect(component.expandedTypeId()).toBe(587);
+      expect(myAssetService.placements).toHaveBeenCalled();
+    });
+
+    it('schickt die aktiven Filter mit, damit die Aufschlüsselung dazu passt', () => {
+      component.f.regionName = 'The Forge';
+
+      component.togglePlacements(587);
+
+      expect(myAssetService.placements).toHaveBeenCalledWith(
+        expect.objectContaining({ typeId: 587, regionName: 'The Forge' }),
+      );
+    });
+
+    it('klappt beim zweiten Klick wieder zu, ohne erneut zu laden', () => {
+      component.togglePlacements(587);
+      myAssetService.placements.mockClear();
+
+      component.togglePlacements(587);
+
+      expect(component.expandedTypeId()).toBeNull();
+      expect(myAssetService.placements).not.toHaveBeenCalled();
+    });
+
+    it('übernimmt die geladenen Standorte', () => {
+      myAssetService.placements.mockReturnValue(of([place]));
+
+      component.togglePlacements(587);
+
+      expect(component.placements()).toHaveLength(1);
+      expect(component.loadingPlacements()).toBe(false);
+    });
+
+    it('meldet einen Fehlschlag', () => {
+      myAssetService.placements.mockReturnValue(throwError(() => new Error('kaputt')));
+
+      component.togglePlacements(587);
+
+      expect(toastService.error).toHaveBeenCalled();
+      expect(component.loadingPlacements()).toBe(false);
+    });
+
+    it('setzt Behälter und Fach zu einer lesbaren Angabe zusammen', () => {
+      expect(component.placementPath(place)).toBe('Munikiste (Giant Secure Container) in Hangar');
+    });
+
+    it('nennt nur das Fach, wenn kein Behälter im Spiel ist', () => {
+      expect(component.placementPath({ ...place, containerName: null, containerTypeName: null }))
+        .toBe('Hangar');
+    });
+
+    it('nennt den Behältertyp, wenn er keinen eigenen Namen trägt', () => {
+      expect(component.placementPath({ ...place, containerName: null }))
+        .toBe('Giant Secure Container in Hangar');
+    });
+
+    it('übersetzt die gängigen ESI-Fachbezeichnungen', () => {
+      // Die Kürzel aus der API sind englisch und für Mitglieder wenig hilfreich.
+      expect(component.flagLabel('ShipHangar')).toBe('Schiffshangar');
+      expect(component.flagLabel('Deliveries')).toBe('Lieferungen');
+      // Ein unbekanntes Kürzel bleibt stehen - besser als ein leeres Feld.
+      expect(component.flagLabel('CorpSAG3')).toBe('CorpSAG3');
     });
   });
 

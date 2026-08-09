@@ -270,4 +270,31 @@ public class AssetDtos {
 
     public record TypeSuggestionDto(Long typeId, String typeName, String groupName,
                                     String iconUrl, Long totalQuantity) {}
+
+    /**
+     * Wo ein Bestand konkret liegt.
+     *
+     * <p>Die gruppierte Suche fasst gleiche Typen zusammen und nennt nur noch
+     * die Zahl der Orte. Diese Zeile loest das auf: welcher Charakter, welche
+     * Station, welches Fach - und falls das Item in einem Container oder Schiff
+     * steckt, auch das.</p>
+     *
+     * @param locationFlag das Fach am Ort, z.B. {@code Hangar} oder {@code Deliveries}
+     * @param containerName Name des Containers oder Schiffs, in dem der Bestand
+     *     liegt - {@code null}, wenn er direkt im Hangar steht
+     * @param containerTypeName Typ dieses Behaelters, z.B. "Giant Secure Container"
+     */
+    public record AssetPlacementDto(
+            Long characterId,
+            String characterName,
+            Long locationId,
+            String locationName,
+            String systemName,
+            String regionName,
+            String locationFlag,
+            String containerName,
+            String containerTypeName,
+            Long quantity,
+            Double totalValue
+    ) {}
 }

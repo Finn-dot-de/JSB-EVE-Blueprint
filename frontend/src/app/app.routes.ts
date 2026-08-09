@@ -51,6 +51,13 @@ export const routes: Routes = [
     loadComponent: () => import('./core/components/discord-admin/discord-admin.component').then(m => m.DiscordAdminComponent)
   },
   {
+    // Bestimmt, was alle im Menü sehen - deshalb hinter demselben Wächter
+    // wie die Rechteverwaltung.
+    path: 'admin/navigation',
+    canActivate: [roleGuard(LEADERSHIP_OR_IT)],
+    loadComponent: () => import('./core/components/navigation-admin/navigation-admin.component').then(m => m.NavigationAdminComponent)
+  },
+  {
     path: 'fleet/doctrines',
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/doctrines/doctrines.component').then(m => m.DoctrinesComponent)

@@ -290,7 +290,9 @@
                 </thead>
                 <tbody>
                   @for (row of res.content; track $index) {
-                    <tr>
+                    <tr class="expandable" (click)="togglePlacements(row.typeId)"
+                        [class.open]="expandedTypeId() === row.typeId"
+                        title="Zeigt, wo diese Gegenstände liegen">
                       <td>
                         <div class="item-cell">
                           <img [src]="typeIcon(row.typeId)" (error)="onImgError($event)" [alt]="row.typeName" loading="lazy">
@@ -306,11 +308,63 @@
                         </div>
                       </td>
                       <td style="text-align: right; font-weight: 500;">{{ formatNumber(row.quantity) }}</td>
-                      <td style="text-align: right; color: var(--text-secondary);">{{ row.locationCount }}</td>
+                      <td style="text-align: right; color: var(--text-secondary);">
+                        {{ row.locationCount }}
+                        <i class="fa-solid fa-chevron-down loc-chevron"
+                           [class.open]="expandedTypeId() === row.typeId"></i>
+                      </td>
                       <td style="text-align: right; font-weight: 600; color: #00dfa2;" [title]="formatIskFull(row.totalValue)">
                         {{ formatIsk(row.totalValue) }}
                       </td>
                     </tr>
+
+                    <!-- Wo genau die Gegenstände liegen -->
+                    @if (expandedTypeId() === row.typeId) {
+                      <tr class="placement-host">
+                        <td colspan="4">
+                          @if (loadingPlacements()) {
+                            <div class="placement-loading">
+                              <i class="fa-solid fa-spinner fa-spin"></i> Standorte werden geladen...
+                            </div>
+                          } @else if (placements().length === 0) {
+                            <div class="placement-loading">Kein Standort gefunden.</div>
+                          } @else {
+                            <table class="placement-table">
+                              <thead>
+                                <tr>
+                                  <th>Ort</th>
+                                  <th>Wo genau</th>
+                                  <th>Charakter</th>
+                                  <th style="text-align: right;">Menge</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (place of placements(); track $index) {
+                                  <tr>
+                                    <td>
+                                      <div class="place-name">{{ place.locationName }}</div>
+                                      @if (place.systemName) {
+                                        <div class="place-meta">
+                                          {{ place.systemName }}
+                                          @if (place.regionName) { &middot; {{ place.regionName }} }
+                                        </div>
+                                      }
+                                    </td>
+                                    <td class="place-path">
+                                      {{ placementPath(place) || '—' }}
+                                    </td>
+                                    <td class="place-meta">{{ place.characterName }}</td>
+                                    <td style="text-align: right; font-weight: 500;">
+                                      {{ formatNumber(place.quantity) }}
+                                    </td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          }
+                        </td>
+                      </tr>
+                    }
                   }
                   @if (res.content.length === 0) {
                     <tr><td colspan="4" class="empty-cell">Keine Treffer für diese Filter.</td></tr>

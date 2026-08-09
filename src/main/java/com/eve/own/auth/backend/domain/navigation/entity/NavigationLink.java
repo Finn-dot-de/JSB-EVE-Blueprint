@@ -9,19 +9,45 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+/** Ein Menuepunkt der Seitenleiste. */
 @Entity
 @Table(name = "navigation_links")
-@Getter @Setter
+@Getter
+@Setter
 public class NavigationLink {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String label;      // z.B. "Ore Calculator"
-    private String url;        // Angular Route oder externer Link
-    private String icon;       // FontAwesome oder SVG Name
-    private String category;   // "INDUSTRY", "TOOLS", "LINKS"
-    private String requiredRole; // z.B. "ADMIN", "MEMBER" (Null für alle)
+    /** Beschriftung im Menue, z.B. "Ore Calculator". */
+    private String label;
+
+    /** Angular-Route oder vollstaendige Adresse eines externen Ziels. */
+    private String url;
+
+    /** Font-Awesome-Klasse, z.B. {@code fa-solid fa-gears}. */
+    private String icon;
+
+    /**
+     * Das Register, unter dem der Punkt haengt - {@code null} heisst: direkt in
+     * der obersten Ebene.
+     *
+     * <p>Bewusst die blanke ID statt einer JPA-Beziehung, wie es die uebrigen
+     * Zuordnungen dieser Anwendung auch halten.</p>
+     */
+    @Column(name = "category_id")
+    private Long categoryId;
+
+    /** Rolle, die den Punkt sichtbar macht - {@code null} heisst: fuer alle. */
+    private String requiredRole;
+
+    /**
+     * Position innerhalb des eigenen Registers, bei Punkten ohne Register
+     * innerhalb der obersten Ebene.
+     */
+    @Column(name = "sort_order")
+    private Integer sortOrder;
 
     @Column(columnDefinition = "boolean default true")
     private Boolean active = true;

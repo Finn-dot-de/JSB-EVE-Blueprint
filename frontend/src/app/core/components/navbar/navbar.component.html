@@ -5,6 +5,35 @@
   </div>
 
   <div class="navbar-actions">
+
+    <!-- Das Zahnrad steht ausserhalb der Anmelde-Pruefung: das Aussehen
+         umstellen darf auch, wer noch nicht angemeldet ist. -->
+    <div class="settings-container">
+      <button class="settings-btn" (click)="toggleSettings()"
+              [class.open]="isSettingsOpen()" title="Darstellung"
+              aria-label="Darstellung ändern">
+        <i class="fa-solid fa-gear"></i>
+      </button>
+
+      @if (isSettingsOpen()) {
+        <div class="dropdown-menu settings-menu">
+          <div class="dropdown-header">Darstellung</div>
+
+          @for (option of themeOptions; track option.choice) {
+            <button class="dropdown-item theme-item"
+                    [class.active]="themeService.choice() === option.choice"
+                    (click)="chooseTheme(option.choice)">
+              <i [class]="option.icon"></i>
+              <span>{{ option.label }}</span>
+              @if (themeService.choice() === option.choice) {
+                <i class="fa-solid fa-check theme-check"></i>
+              }
+            </button>
+          }
+        </div>
+      }
+    </div>
+
     @if (authService.loading()) {
       <div class="loading-spinner"></div>
     } @else {

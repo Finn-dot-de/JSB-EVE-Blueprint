@@ -108,7 +108,7 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
 
   // Dynamische Rollenfarben
   &.text-warning { color: var(--highlight-color); }
-  &.text-primary { color: var(--accent-color); }
+  &.text-primary { color: var(--accent-neutral); }
   &.text-success { color: var(--success-color); }
   &.text-secondary { color: var(--text-secondary); }
   &.text-danger { color: var(--danger-color); }
@@ -374,7 +374,7 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
 
   &:hover:not(:disabled) { background-color: var(--accent-hover); }
 }

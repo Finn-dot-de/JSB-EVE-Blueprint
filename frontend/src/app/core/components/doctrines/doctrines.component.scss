@@ -26,13 +26,13 @@
 
 .import-panel {
   border: 1px dashed var(--accent-color);
-  background-color: rgba(37, 99, 235, 0.05);
+  background-color: color-mix(in srgb, var(--accent-color) 5%, transparent);
 }
 
 .eft-textarea {
   width: 100%;
   box-sizing: border-box;
-  background-color: rgba(0,0,0,0.3);
+  background-color: var(--bg-color);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   padding: 1rem;
@@ -70,7 +70,7 @@
 .doc-image-box {
   width: 64px;
   height: 64px;
-  background-color: rgba(0,0,0,0.2);
+  background-color: var(--bg-color);
   border-radius: 8px;
   border: 1px solid var(--border-color);
   display: flex;
@@ -117,7 +117,7 @@
 /* --- Buttons --- */
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
@@ -145,7 +145,7 @@
   gap: 8px;
   transition: all 0.2s;
   &:hover {
-    background-color: rgba(37, 99, 235, 0.1);
+    background-color: color-mix(in srgb, var(--accent-color) 10%, transparent);
   }
 }
 
@@ -235,7 +235,7 @@
   }
 
   .modules-list {
-    background-color: rgba(0,0,0,0.2);
+    background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 1.25rem;
@@ -257,7 +257,7 @@
       text-transform: uppercase;
       letter-spacing: 1px;
       margin: 0 0 0.5rem 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
       padding-bottom: 4px;
     }
 
@@ -292,7 +292,7 @@
 .eft-textarea {
   width: 100%;
   box-sizing: border-box;
-  background-color: rgba(0,0,0,0.3);
+  background-color: var(--bg-color);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   padding: 1rem;
@@ -341,7 +341,7 @@
 .doc-image-box {
   width: 64px;
   height: 64px;
-  background-color: rgba(0,0,0,0.2);
+  background-color: var(--bg-color);
   border-radius: 8px;
   border: 1px solid var(--border-color);
   display: flex;
@@ -371,7 +371,7 @@
 /* --- Buttons --- */
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
@@ -398,7 +398,7 @@
   justify-content: center;
   gap: 8px;
   transition: all 0.2s;
-  &:hover { background-color: rgba(37, 99, 235, 0.1); }
+  &:hover { background-color: color-mix(in srgb, var(--accent-color) 10%, transparent); }
 }
 
 .btn-icon {
@@ -420,7 +420,7 @@
 .search-box {
   display: flex;
   align-items: center;
-  background-color: rgba(0,0,0,0.2);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.6rem 1rem;
@@ -457,7 +457,7 @@
 }
 
 .btn-icon {
-  background-color: rgba(255, 255, 255, 0.03); /* Sehr dezenter Hintergrund */
+  background-color: color-mix(in srgb, var(--text-primary) 4%, transparent); /* Sehr dezenter Hintergrund */
   border: 1px solid var(--border-color);       /* Der gewünschte Umriss */
   color: var(--text-secondary);                /* Helles Grau als Standardfarbe */
   cursor: pointer;
@@ -475,9 +475,9 @@
 
   &.btn-edit {
     &:hover {
-      color: var(--accent-color);
-      background-color: rgba(37, 99, 235, 0.1);
-      border-color: rgba(37, 99, 235, 0.3);    /* Blauer Umriss beim Hover */
+      color: var(--accent-neutral);
+      background-color: color-mix(in srgb, var(--accent-neutral) 10%, transparent);
+      border-color: color-mix(in srgb, var(--accent-neutral) 30%, transparent);
     }
   }
 }
@@ -743,7 +743,7 @@
   &.active {
     background-color: var(--accent-color);
     border-color: var(--accent-color);
-    color: #fff;
+    color: var(--accent-contrast);
   }
 }
 

@@ -173,15 +173,21 @@
         <div style="margin-bottom: 4rem;">
 
           <!-- Box: Gesamte Steuerschuld & Volumen -->
-          <div class="surface-panel text-center" style="margin-bottom: 1rem; position: relative;" [ngStyle]="{'background': monthLedger.isPaid ? 'linear-gradient(145deg, rgba(0,223,162,0.1) 0%, rgba(22,25,37,1) 100%)' : 'linear-gradient(145deg, rgba(255,51,102,0.1) 0%, rgba(22,25,37,1) 100%)'}">
+          <!-- Der Verlauf endete fest auf rgba(22,25,37,1), der dunklen
+               Kartenfarbe. Im hellen Thema lief er damit von Blassrosa nach
+               Fast-Schwarz, und der Text war in beiden Haelften unlesbar.
+               Jetzt endet er auf der Kartenfarbe des jeweiligen Themas. -->
+          <div class="surface-panel text-center invoice-hero"
+               [class.paid]="monthLedger.isPaid"
+               style="margin-bottom: 1rem; position: relative;">
 
             @if (monthLedger.isPaid) {
-              <div style="position: absolute; top: 1rem; right: 1.5rem; color: #00dfa2; font-weight: bold; border: 1px solid #00dfa2; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;"><i class="fa-solid fa-check"></i> BEZAHLT</div>
+              <div class="invoice-badge paid"><i class="fa-solid fa-check"></i> BEZAHLT</div>
             } @else {
-              <div style="position: absolute; top: 1rem; right: 1.5rem; color: #ff3366; font-weight: bold; border: 1px solid #ff3366; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;"><i class="fa-solid fa-triangle-exclamation"></i> OFFEN</div>
+              <div class="invoice-badge open"><i class="fa-solid fa-triangle-exclamation"></i> OFFEN</div>
             }
 
-            <div style="font-size: 3rem; font-weight: 700; margin: 0.5rem 0;" [style.color]="monthLedger.isPaid ? '#00dfa2' : '#ff3366'">
+            <div class="invoice-amount" [class.paid]="monthLedger.isPaid">
               {{ formatIskFull(monthLedger.totalTax) }}
             </div>
 

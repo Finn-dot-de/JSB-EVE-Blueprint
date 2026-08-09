@@ -34,7 +34,7 @@
    SWAP BUTTON (Main wechseln)
    ========================================= */
 .btn-swap {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: color-mix(in srgb, var(--text-primary) 4%, transparent);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   padding: 0.65rem 0.75rem;
@@ -58,7 +58,7 @@
    ========================================= */
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.85rem 1.5rem;
   border-radius: 6px;
@@ -89,7 +89,7 @@
   gap: 8px;
 
   &:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
     color: var(--text-primary);
   }
 }
@@ -122,7 +122,7 @@
 .loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.05);
+  border: 3px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
   border-top-color: var(--accent-color);
   border-radius: 50%;
   animation: spin 1s linear infinite;

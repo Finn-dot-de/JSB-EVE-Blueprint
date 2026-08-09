@@ -17,7 +17,7 @@
   label { font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;}
 
   input {
-    background-color: rgba(0,0,0,0.2);
+    background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     padding: 0.75rem;
@@ -32,7 +32,7 @@
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.85rem;
   border-radius: 6px;
@@ -86,7 +86,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: rgba(0,0,0,0.3);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   padding: 0.75rem 1rem;
   border-radius: 6px;
@@ -103,7 +103,7 @@
 .expiry-note { color: var(--danger-color); font-size: 0.8rem; }
 
 .btn-esi {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
   border: 1px solid var(--success-color);
   color: var(--success-color);
   padding: 0.75rem 1.5rem;
@@ -173,7 +173,7 @@
   cursor: pointer;
   transition: all 0.2s;
   &:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
     color: var(--text-primary);
   }
 }
@@ -250,8 +250,10 @@
   overflow: hidden;
 }
 .bar-fill {
+  /* Neutral, nicht Akzent: die Zustaende dieses Balkens sind gruen, orange und
+     rot. Ein roter Grundzustand hiesse "nicht bereit". */
   height: 100%;
-  background-color: var(--accent-color);
+  background-color: var(--accent-neutral);
   border-radius: 4px;
   transition: width 0.4s ease;
   &.green { background-color: var(--success-color); }
@@ -339,7 +341,7 @@ $warn: tokens.$highlight;
     min-width: 260px;
 
     select {
-      background-color: rgba(0, 0, 0, 0.2);
+      background-color: var(--bg-color);
       border: 1px solid var(--border-color);
       color: var(--text-primary);
       padding: 0.7rem;
@@ -365,7 +367,7 @@ $warn: tokens.$highlight;
 .search-box {
   display: flex;
   align-items: center;
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.6rem 1rem;
@@ -434,7 +436,7 @@ $warn: tokens.$highlight;
   height: 48px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: var(--bg-color);
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -709,8 +711,8 @@ $warn: tokens.$highlight;
 
   &.tag-main {
     color: var(--accent-color);
-    background-color: rgba(59, 130, 246, 0.14);
-    border: 1px solid rgba(59, 130, 246, 0.32);
+    background-color: color-mix(in srgb, var(--accent-color) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent-color) 32%, transparent);
   }
 }
 
@@ -801,7 +803,7 @@ $warn: tokens.$highlight;
 .eft-textarea {
   width: 100%;
   box-sizing: border-box;
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: var(--bg-color);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   padding: 1rem;
@@ -880,7 +882,7 @@ $warn: tokens.$highlight;
     height: 88px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    background-color: rgba(0, 0, 0, 0.25);
+    background-color: var(--bg-color);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -967,7 +969,7 @@ $warn: tokens.$highlight;
         width: 26px;
         height: 26px;
         border-radius: 4px;
-        background-color: rgba(0, 0, 0, 0.2);
+        background-color: var(--bg-color);
         flex-shrink: 0;
       }
 

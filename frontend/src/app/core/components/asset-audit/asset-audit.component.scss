@@ -217,7 +217,7 @@
   }
 
   input, select {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     padding: 0.65rem 0.75rem;
@@ -254,7 +254,7 @@
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.65rem 1.25rem;
   border-radius: 6px;
@@ -295,7 +295,10 @@
   border-radius: 4px;
   transition: all 0.2s;
 
-  &:hover { color: var(--accent-color); background-color: rgba(59, 130, 246, 0.1); }
+  &:hover {
+    color: var(--accent-color);
+    background-color: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  }
 }
 
 /* ================= Typeahead ================= */
@@ -307,7 +310,7 @@
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(59, 130, 246, 0.15);
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
   border: 1px solid var(--accent-color);
   color: var(--accent-color);
   font-size: 0.7rem;
@@ -499,9 +502,9 @@
   border: 1px solid transparent;
 
   &.flag {
-    background: rgba(169, 177, 214, 0.12);
-    color: #a9b1d6;
-    border-color: rgba(169, 177, 214, 0.3);
+    background: color-mix(in srgb, var(--accent-neutral) 12%, transparent);
+    color: var(--accent-neutral);
+    border-color: color-mix(in srgb, var(--accent-neutral) 30%, transparent);
   }
 
   &.copy {
@@ -513,9 +516,9 @@
 
   /* Corp-Bestaende heben sich vom persoenlichen Besitz ab, ohne zu schreien. */
   &.corp {
-    background: rgba(59, 130, 246, 0.14);
-    color: var(--accent-color);
-    border-color: rgba(59, 130, 246, 0.35);
+    background: color-mix(in srgb, var(--accent-neutral) 14%, transparent);
+    color: var(--accent-neutral);
+    border-color: color-mix(in srgb, var(--accent-neutral) 35%, transparent);
     margin-right: 4px;
   }
 }
@@ -563,7 +566,7 @@
   &:hover:not(:disabled) {
     background-color: var(--accent-color);
     border-color: var(--accent-color);
-    color: #fff;
+    color: var(--accent-contrast);
   }
 }
 

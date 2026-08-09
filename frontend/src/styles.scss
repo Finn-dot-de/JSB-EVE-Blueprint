@@ -7,17 +7,110 @@
 /* Das dunkle Thema stand zuvor zweimal ausgeschrieben - einmal für die manuelle
    Umschaltung, einmal für die Systemeinstellung. Als Mixin steht es nur noch
    einmal da und kann nicht mehr auseinanderlaufen. */
-@mixin light-theme {
-  --bg-color: #f8f9fa;           /* Heller Hintergrund */
-  --bg-surface: #ffffff;         /* Hintergrund für Karten/Panels */
-  --text-primary: #1e222b;       /* Haupttext (fast schwarz) */
-  --text-secondary: #64748b;     /* Nebentext (grau) */
 
-  --accent-color: #2563eb;       /* Ein klares, professionelles Blau */
-  --accent-hover: #1d4ed8;       /* Dunkleres Blau für Hover */
+/**
+ * Zu --accent-neutral: die Akzentfarbe trug bisher zwei Bedeutungen, die erst
+ * auseinanderfallen, wenn sie rot wird. Sie hieß einerseits "hier kann man
+ * etwas anklicken", andererseits "das ist die sachliche, neutrale Kategorie" -
+ * der Info-Hinweis gegenüber der Fehlermeldung, der Bearbeiten-Knopf neben dem
+ * Löschen-Knopf, der Grundbalken einer Anzeige, deren Farben sonst Zustände
+ * bedeuten. Als Blau ging das durch, weil Blau von sich aus neutral wirkt.
+ * Als Rot nicht: ein roter Info-Hinweis ist eine Fehlermeldung.
+ *
+ * --accent-neutral trägt jetzt diese zweite Bedeutung. In Dunkel und Gedämpft
+ * hat sie denselben Wert wie --accent-color, dort ändert sich also nichts.
+ *
+ * Zu --accent-contrast: die Akzentfarbe hat zwei Rollen. Sie ist an 42 Stellen
+ * Textfarbe auf dunklem Grund und an 29 Stellen die Fläche eines Knopfes, auf
+ * der wiederum Text steht. Beide Rollen ziehen die Helligkeit gegeneinander.
+ *
+ * Die Beschriftung stand bisher als hartes `#fff` in den Komponenten - im
+ * gedämpften Thema ergab das 2,8:1 und war damit selbst für große Schrift zu
+ * wenig. Jetzt sagt jedes Thema selbst, welche Schrift auf seine Akzentfläche
+ * gehört. --error-color ist im Zuge dessen entfallen: die Variable war in
+ * beiden Themen definiert und im ganzen Projekt kein einziges Mal benutzt.
+ */
 
-  --error-color: #dc2626;        /* Angenehmes Rot für Fehler */
-  --border-color: #e2e8f0;       /* Helle Rahmenlinien */
+/**
+ * Das Thema der Korporation, nach dem Logo: schwarzer Grund, silbergrauer
+ * Totenkopf, ein blutrotes Band quer darüber.
+ *
+ * Der Akzent ist ein warmes Scharlach statt eines tiefen Blutrots, und das ist
+ * keine Geschmacksfrage. Die Akzentfarbe trägt an 42 Stellen Text, teils in
+ * 0,6rem. Ein tiefes Blutrot wie #c1121f kommt auf der Kartenfläche nur auf
+ * 2,9:1 - unlesbar, und daran ändert kein dunklerer Grund etwas: für 4,5:1 auf
+ * reinem Schwarz bräuchte es eine Leuchtdichte von 0,175, die ein dunkles Rot
+ * per Definition nicht hat. Die Tiefe kommt deshalb aus den Flächen, nicht aus
+ * dem Akzent.
+ *
+ * Das zweite Problem war --danger-color (#ff3366, "nicht einsatzbereit"). In
+ * einem Flottenwerkzeug darf ein Knopf nicht aussehen wie eine Fehlmeldung.
+ * Scharlach und dieses Pink-Rot trennt ein CIEDE2000-Abstand von 17,8 - klar
+ * verschieden. Das Helligkeitsverhältnis taugt hier als Maß nicht, beide sind
+ * fast gleich hell; sie unterscheiden sich im Farbton. Wo die Unterscheidung
+ * tatsächlich etwas bedeutet, trägt sie ohnehin --accent-neutral und nicht der
+ * Akzent - siehe oben. Bleibt eine Einschränkung: bei Rotsehschwäche fällt
+ * genau der Farbton-Kanal aus, über den Akzent und Gefahr sich trennen. Das
+ * gilt nur für dieses Thema; "Dunkel" und "Gedämpft" trennen über Blau.
+ *
+ * Die Flächen sind neutral, und zwar nach einer Korrektur: sie waren zuerst
+ * blutgetönt (Farbton 12 Grad, Sättigung 0,33). Das war zu viel. Ein warmer
+ * Farbton mit dieser Sättigung und so wenig Helligkeit ist schlicht Braun -
+ * und daneben standen kühlgraue Ränder und Nebentexte, also zwei
+ * Farbtemperaturen, die gegeneinander liefen. Jetzt trägt der Grund gar keine
+ * Farbe mehr (Sättigung 0,08 bei Farbton 0), und das Rot kommt allein aus dem
+ * Akzent. Schwarz, Rot, Grau - ohne Braun dazwischen.
+ *
+ * Rot gehört auch deshalb nicht in die Kante, weil diese Anwendung Zustände in
+ * Kanten codiert: der Toast setzt links 4px in --success-color oder
+ * --danger-color, navigation-admin färbt Ränder aus einer color-mix-Mischung
+ * mit Danger und Success. Wäre jede Kante rot, hieße eine rote Kante nichts
+ * mehr - ein Rand aus getrocknetem Blut lag dem roten Zustandsrand mit einem
+ * CIEDE2000-Abstand von 15,3 zu nahe, ein neutraler liegt weit darüber.
+ *
+ * --accent-neutral ist als einziger Ton bewusst kühl: gegen die neutralen
+ * Grautöne der Basis liest es sich dadurch als Metall und nicht als
+ * Fließtext-Grau, von dem es sonst nur ein CIEDE2000-Abstand von 7,3 trennte.
+ */
+@mixin ma-theme {
+  --bg-color: #090808;           /* fast schwarz wie der Logogrund */
+  --bg-surface: #1a1818;         /* neutrales Kohlegrau, siehe unten */
+  --text-primary: #e8e6e6;       /* 14,22:1 */
+  --text-secondary: #9d9a9a;     /* 6,33:1 */
+
+  --accent-color: #ff2d14;       /* Scharlach - 4,75:1 als Text auf Karten */
+  --accent-hover: #ff5a3c;
+  --accent-contrast: #12080a;    /* Beschriftung auf roter Fläche - 5,29:1 */
+  --accent-neutral: #889bb2;     /* das Metall des Totenkopfs - 6,21:1 */
+
+  --border-color: #4a4746;       /* neutral, siehe unten */
+}
+
+/**
+ * Die gedämpfte Variante: aufgehelltes Schiefergrau statt Weiß.
+ *
+ * Hier stand einmal ein echtes helles Thema. Es hat nicht funktioniert, und
+ * zwar nicht wegen der Farbwerte: die Anwendung ist dunkel-zuerst gestaltet.
+ * Die EVE-Item-Renders sind transparente PNGs für dunkle Flächen, die Akzente
+ * sind als Leuchten gedacht, und Seiten wie das Dashboard haben überhaupt
+ * keine Kartenflächen - nur Symbole auf freiem Grund. Auf Weiß fiel all das
+ * auseinander.
+ *
+ * Diese Variante nimmt dem Dunkel die Härte, statt es umzudrehen: hellere
+ * Flächen, derselbe helle Text, dieselbe Bildsprache.
+ */
+@mixin dim-theme {
+  --bg-color: #232833;           /* Seitenfläche */
+  --bg-surface: #2c323f;         /* Karten und Panels */
+  --text-primary: #e8ecf3;       /* Haupttext - 10,8:1 auf Karten */
+  --text-secondary: #a4adbf;     /* Nebentext - 5,7:1 auf Karten */
+
+  --accent-color: #5b9bf8;       /* Etwas heller als im Dunklen, damit es trägt */
+  --accent-hover: #7db1fa;
+  --accent-contrast: #10151f;    /* dunkel: Weiß erreichte auf diesem Blau nur 2,8:1 */
+  --accent-neutral: #5b9bf8;     /* hier dasselbe Blau - siehe oben */
+
+  --border-color: #3f4757;
 }
 
 @mixin dark-theme {
@@ -28,8 +121,9 @@
 
   --accent-color: #3b82f6;       /* Leuchtenderes Blau für Kontrast im Dark Mode */
   --accent-hover: #60a5fa;
+  --accent-contrast: #ffffff;    /* Weiß auf diesem Blau: 3,7:1 - so war es immer */
+  --accent-neutral: #3b82f6;     /* hier dasselbe Blau - siehe unten */
 
-  --error-color: #f85149;
   --border-color: #30363d;
 }
 
@@ -47,22 +141,29 @@
   --highlight-color: #{tokens.$highlight};
 }
 
-/* LIGHT MODE (Standard) */
+/* Dunkel ist der Standard - die Anwendung ist dafür gestaltet. */
 :root {
-  @include light-theme;
+  @include dark-theme;
   @include semantic-colors;
 }
 
-/* DARK MODE (Wird über ein Attribut am <html> Tag aktiviert) */
-[data-theme="dark"] {
-  @include dark-theme;
-}
+/* Die Themen, wenn der Nutzer sich ausdrücklich entschieden hat. */
+[data-theme="dim"] { @include dim-theme; }
+[data-theme="dark"] { @include dark-theme; }
+[data-theme="ma"] { @include ma-theme; }
 
-/* AUTOMATIK: Reagiert auf die Windows/Mac Dark Mode Einstellungen des Nutzers,
-   solange er nicht manuell auf "light" geschaltet hat */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    @include dark-theme;
+/* AUTOMATIK: Wer sein System hell gestellt hat und selbst nichts gewählt hat,
+   bekommt die gedämpfte Variante.
+
+   Die Bedingung lautet bewusst `:not([data-theme])` und nicht
+   `:not([data-theme="dark"])`. Letzteres hätte auf jede ausdrückliche Wahl
+   außer "dunkel" zugetroffen und sie wegen der höheren Spezifität überstimmt -
+   bei hell gestelltem System wäre das MA-Thema so wieder grau geworden.
+   Solange es nur "dunkel" und "gedämpft" gab, fiel das nicht auf, weil dabei
+   zufällig dasselbe herauskam. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    @include dim-theme;
   }
 }
 
@@ -84,7 +185,7 @@ body {
 
 ::selection {
   background-color: var(--accent-color);
-  color: #ffffff;
+  color: var(--accent-contrast);
 }
 
 /* ==========================================================================

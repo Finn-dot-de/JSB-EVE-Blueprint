@@ -238,7 +238,7 @@ $green: tokens.$success;
 .search-box {
   display: flex;
   align-items: center;
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.6rem 1rem;
@@ -262,8 +262,8 @@ $green: tokens.$success;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(59, 130, 246, 0.14);
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
   color: var(--accent-color);
   border-radius: 12px;
   padding: 2px 9px;
@@ -301,7 +301,7 @@ $green: tokens.$success;
     width: 28px;
     height: 28px;
     border-radius: 4px;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--bg-color);
     flex-shrink: 0;
   }
 
@@ -348,7 +348,7 @@ $green: tokens.$success;
   }
 
   select, input {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     padding: 0.6rem;
@@ -378,7 +378,7 @@ $green: tokens.$success;
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.65rem 1.4rem;
   border-radius: 6px;
@@ -391,7 +391,7 @@ $green: tokens.$success;
 }
 
 .btn-ghost {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: color-mix(in srgb, var(--text-primary) 4%, transparent);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   padding: 0.6rem 1rem;
@@ -484,7 +484,7 @@ $green: tokens.$success;
     width: 34px;
     height: 34px;
     border-radius: 4px;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--bg-color);
     flex-shrink: 0;
   }
 }
@@ -529,9 +529,9 @@ $green: tokens.$success;
   border: 1px solid transparent;
 
   &.flag {
-    background: rgba(169, 177, 214, 0.12);
-    color: #a9b1d6;
-    border-color: rgba(169, 177, 214, 0.3);
+    background: color-mix(in srgb, var(--accent-neutral) 12%, transparent);
+    color: var(--accent-neutral);
+    border-color: color-mix(in srgb, var(--accent-neutral) 30%, transparent);
   }
 
   &.copy {
@@ -554,7 +554,7 @@ $green: tokens.$success;
 }
 
 .nav-arrow {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: color-mix(in srgb, var(--text-primary) 4%, transparent);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   width: 34px;

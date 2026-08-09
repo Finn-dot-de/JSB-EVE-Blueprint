@@ -13,7 +13,7 @@
 
           <!-- Dynamischer Status -->
           @if (isLoading()) {
-            <span class="status-badge" style="background-color: rgba(255,255,255,0.05); color: var(--text-secondary); border-color: transparent;">Lade Status...</span>
+            <span class="status-badge" style="background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); color: var(--text-secondary); border-color: transparent;">Lade Status...</span>
           } @else if (isDiscordConnected()) {
             <span class="status-badge connected">Verbunden</span>
           } @else {

@@ -1,11 +1,14 @@
 @use '../../shared/tokens' as tokens;
-$eve-bg-dark: #0f111a;
-$eve-card-bg: #161925;
-$eve-border: #242b3d;
+// Auch hier stand eine eigene Dunkel-Palette, die dem Umschalter im Zahnrad
+// nicht gefolgt wäre - auf der Seite, die man als erstes sieht. Die Werte
+// kommen jetzt aus den CSS-Variablen und wechseln mit dem Thema.
+$eve-bg-dark: var(--bg-color);
+$eve-card-bg: var(--bg-surface);
+$eve-border: var(--border-color);
 $eve-green: tokens.$success;
-$eve-blue: #3b82f6;
-$text-primary: #e2e8f0;
-$text-secondary: #7f8c9d;
+$eve-blue: var(--accent-color);
+$text-primary: var(--text-primary);
+$text-secondary: var(--text-secondary);
 
 .dashboard-container {
   display: flex;
@@ -62,7 +65,7 @@ $text-secondary: #7f8c9d;
   display: flex;
   align-items: center;
   gap: 6px;
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: var(--bg-color);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.85rem;
@@ -148,7 +151,7 @@ $text-secondary: #7f8c9d;
   .icon-box {
     width: 48px;
     height: 48px;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--bg-color);
     border-radius: 6px;
     display: flex;
     justify-content: center;
@@ -199,7 +202,7 @@ $text-secondary: #7f8c9d;
   overflow: hidden;
 
   .card-header {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--bg-color);
     padding: 0.75rem 1rem;
     font-size: 0.95rem;
     font-weight: 600;
@@ -228,7 +231,7 @@ $text-secondary: #7f8c9d;
   position: relative;
   width: 48px;
   height: 48px;
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: var(--bg-color);
   border: 2px solid $eve-green; // Der helle, aktive Rahmen (Erfolg)
   border-radius: 8px;
   display: flex;
@@ -315,7 +318,7 @@ $text-secondary: #7f8c9d;
   .lp-logo-wrapper {
     width: 44px;
     height: 44px;
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--bg-color);
     border: 2px solid $eve-blue;
     border-radius: 8px;
     display: flex;
@@ -364,7 +367,7 @@ $text-secondary: #7f8c9d;
 .loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.05);
+  border: 3px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
   border-top-color: $eve-blue;
   border-radius: 50%;
   animation: spin 1s linear infinite;

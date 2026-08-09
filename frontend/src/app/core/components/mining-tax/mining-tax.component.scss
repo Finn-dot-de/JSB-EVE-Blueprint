@@ -65,7 +65,7 @@
 
   label { font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; }
   input, select {
-    background-color: rgba(0,0,0,0.2);
+    background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     padding: 0.75rem;
@@ -86,7 +86,7 @@
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
@@ -114,9 +114,9 @@
   }
   td {
     padding: 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
   }
-  tr:hover td { background-color: rgba(255,255,255,0.02); }
+  tr:hover td { background-color: color-mix(in srgb, var(--text-primary) 4%, transparent); }
 }
 
 /* Badges für die Erz-Kategorien */
@@ -137,7 +137,7 @@
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
@@ -157,7 +157,7 @@
 }
 
 .loading-container { display: flex; justify-content: center; padding: 4rem; }
-.loading-spinner { width: 32px; height: 32px; border: 3px solid rgba(255, 255, 255, 0.05); border-top-color: var(--accent-color); border-radius: 50%; animation: spin 1s linear infinite; }
+.loading-spinner { width: 32px; height: 32px; border: 3px solid color-mix(in srgb, var(--text-primary) 5%, transparent); border-top-color: var(--accent-color); border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* =========================================
@@ -181,7 +181,7 @@
   }
 
   .nav-arrow {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     width: 48px;
@@ -203,9 +203,9 @@
     &:hover:not(:disabled) {
       background-color: var(--accent-color);
       border-color: var(--accent-color);
-      color: #fff;
+      color: var(--accent-contrast);
       transform: scale(1.05);
-      box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
+      box-shadow: 0 0 15px color-mix(in srgb, var(--accent-color) 40%, transparent);
     }
   }
 }
@@ -338,7 +338,7 @@
 
     &.active {
       background-color: var(--accent-color);
-      color: #fff;
+      color: var(--accent-contrast);
     }
   }
 }
@@ -363,7 +363,7 @@
 
   /* Der eigene Account wird hervorgehoben, damit man sich sofort findet. */
   &.me {
-    background-color: rgba(59, 130, 246, 0.09);
+    background-color: color-mix(in srgb, var(--accent-color) 9%, transparent);
     box-shadow: inset 3px 0 0 var(--accent-color);
   }
 }
@@ -426,8 +426,8 @@
   padding: 1px 5px;
   border-radius: 3px;
   color: var(--accent-color);
-  background-color: rgba(59, 130, 246, 0.16);
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  background-color: color-mix(in srgb, var(--accent-color) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
 }
 
 .leader-bar-track {
@@ -440,7 +440,12 @@
 .leader-bar-fill {
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--accent-color), var(--success-color));
+  /* Zuvor Akzent nach Gruen. Mit rotem Akzent wurde daraus ein Ampelverlauf,
+     der eine Wertung suggeriert, wo nur eine Menge steht. Jetzt zwei
+     Abstufungen derselben Farbe. */
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--accent-color) 55%, transparent),
+    var(--accent-color));
   transition: width 0.45s ease;
 }
 
@@ -488,4 +493,51 @@
   }
 
   .leader-meta { flex-direction: column; gap: 2px; }
+}
+
+/* =========================================
+   RECHNUNGS-BANNER
+   Der Verlauf endete fest auf der dunklen Kartenfarbe und lief im hellen
+   Thema nach Fast-Schwarz. Er endet jetzt auf der Kartenfarbe des jeweiligen
+   Themas - eine getönte Andeutung des Zustands statt eines Farbsprungs.
+   ========================================= */
+.invoice-hero {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--danger-color) 14%, var(--bg-surface)) 0%,
+    var(--bg-surface) 70%
+  );
+
+  &.paid {
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--success-color) 14%, var(--bg-surface)) 0%,
+      var(--bg-surface) 70%
+    );
+  }
+}
+
+.invoice-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  font-size: 0.8rem;
+  font-weight: bold;
+
+  // Zur Textfarbe hin gemischt: die Bedeutungsfarben sind in beiden Themen
+  // dieselben Neontöne und wären auf Weiß sonst nicht zu lesen.
+  &.paid { color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary)); }
+  &.open { color: color-mix(in srgb, var(--danger-color) 55%, var(--text-primary)); }
+}
+
+.invoice-amount {
+  font-size: 3rem;
+  font-weight: 700;
+  margin: 0.5rem 0;
+  color: color-mix(in srgb, var(--danger-color) 55%, var(--text-primary));
+
+  &.paid { color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary)); }
 }

@@ -49,7 +49,7 @@
   align-items: center;
   gap: 15px;
   padding: 10px 15px;
-  background-color: rgba(0,0,0,0.1);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 8px;
 }
@@ -90,7 +90,7 @@
 .search-box {
   display: flex;
   align-items: center;
-  background-color: rgba(0,0,0,0.3);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.75rem 1rem;
@@ -113,7 +113,7 @@
 }
 
 .list-column {
-  background-color: rgba(0,0,0,0.15);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 1rem;
@@ -126,14 +126,14 @@
   margin: 0 0 1rem 0;
   font-size: 1.1rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
 
   &.success { color: var(--success-color); }
   &.danger { color: var(--danger-color); }
 
   .count-badge {
     margin-left: auto;
-    background-color: rgba(255,255,255,0.1);
+    background-color: color-mix(in srgb, var(--text-primary) 10%, transparent);
     color: var(--text-primary);
     font-size: 0.75rem;
     padding: 2px 8px;
@@ -179,7 +179,7 @@
   .alts-list {
     margin-top: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px solid rgba(255,255,255,0.05);
+    border-top: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
     display: flex;
     flex-direction: column;
     gap: 8px;

@@ -27,11 +27,11 @@
         </thead>
         <tbody>
           @for (mapping of mappings(); track mapping.authRole) {
-            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <tr style="border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);">
               <td style="padding: 10px; font-weight: 500; color: var(--accent-color);">{{ mapping.authRole }}</td>
               <td style="padding: 10px; color: var(--text-secondary); font-size: 0.85rem;">{{ mapping.description }}</td>
               <td style="padding: 10px;">
-                <input type="text" [(ngModel)]="mapping.discordRoleId" placeholder="Bsp: 123456789012345678" style="background-color: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.5rem; border-radius: 4px; width: 100%; outline: none;">
+                <input type="text" [(ngModel)]="mapping.discordRoleId" placeholder="Bsp: 123456789012345678" style="background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.5rem; border-radius: 4px; width: 100%; outline: none;">
               </td>
               <td style="padding: 10px;">
                 <button (click)="saveMapping(mapping)" style="background-color: var(--accent-color); color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;">

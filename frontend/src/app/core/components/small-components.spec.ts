@@ -21,6 +21,7 @@ import { CharacterService } from '../services/character.service';
 import { ConfirmService } from '../services/confirm.service';
 import { DiscordService } from '../services/discord.service';
 import { FleetService } from '../services/fleet.service';
+import { ThemeService } from '../services/theme.service';
 import { ToastService } from '../services/toast.service';
 
 /** Baut eine Komponente ohne Template-Rendering - geprüft wird ihre Logik. */
@@ -447,11 +448,16 @@ describe('FleetJoinComponent', () => {
 describe('NavbarComponent', () => {
   let component: NavbarComponent;
   let authService: { login: ReturnType<typeof vi.fn> };
+  let themeService: { choice: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     authService = { login: vi.fn() };
+    themeService = { choice: vi.fn().mockReturnValue('system'), set: vi.fn() };
     TestBed.configureTestingModule({
-      providers: [{ provide: AuthService, useValue: authService }],
+      providers: [
+        { provide: AuthService, useValue: authService },
+        { provide: ThemeService, useValue: themeService },
+      ],
     });
     component = build(() => new NavbarComponent());
   });
@@ -464,6 +470,45 @@ describe('NavbarComponent', () => {
 
     component.toggleMenu();
     expect(component.isMenuOpen()).toBe(false);
+  });
+
+  describe('Darstellung', () => {
+    it('bietet System, Gedämpft, Dunkel und MA an', () => {
+      expect(component.themeOptions.map((option) => option.choice)).toEqual([
+        'system',
+        'dim',
+        'dark',
+        'ma',
+      ]);
+    });
+
+    it('übergibt die Wahl an den Dienst und schließt das Menü', () => {
+      component.toggleSettings();
+
+      component.chooseTheme('dark');
+
+      expect(themeService.set).toHaveBeenCalledWith('dark');
+      expect(component.isSettingsOpen()).toBe(false);
+    });
+
+    it('schließt das Benutzermenü, wenn das Zahnrad aufgeht', () => {
+      // Zwei offene Menüs nebeneinander überlagern sich.
+      component.toggleMenu();
+
+      component.toggleSettings();
+
+      expect(component.isMenuOpen()).toBe(false);
+      expect(component.isSettingsOpen()).toBe(true);
+    });
+
+    it('schließt das Zahnrad, wenn das Benutzermenü aufgeht', () => {
+      component.toggleSettings();
+
+      component.toggleMenu();
+
+      expect(component.isSettingsOpen()).toBe(false);
+      expect(component.isMenuOpen()).toBe(true);
+    });
   });
 
   it('startet für einen weiteren Charakter die Anmeldung', () => {

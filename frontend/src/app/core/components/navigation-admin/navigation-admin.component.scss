@@ -179,7 +179,10 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
   cursor: pointer;
 
   &:hover { color: var(--text-primary); }
-  &.btn-edit:hover { color: var(--accent-color); border-color: $accent-soft; }
+  &.btn-edit:hover {
+    color: var(--accent-neutral);
+    border-color: color-mix(in srgb, var(--accent-neutral) 40%, transparent);
+  }
   &.btn-danger:hover {
     color: var(--danger-color);
     border-color: color-mix(in srgb, var(--danger-color) 45%, transparent);
@@ -334,7 +337,7 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
 
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   &:hover:not(:disabled) { background-color: var(--accent-hover); }
 }
 

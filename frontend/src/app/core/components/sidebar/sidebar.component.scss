@@ -62,7 +62,7 @@
 
   &.active {
     color: var(--accent-color);
-    background-color: rgba(37, 99, 235, 0.08); // Sanfter blauer Hintergrund
+    background-color: color-mix(in srgb, var(--accent-color) 8%, transparent);
     border-left-color: var(--accent-color);
     font-weight: 500;
   }
@@ -118,7 +118,7 @@
    Untermenüs (Sub-items)
    ================== */
 .sub-menu {
-  background-color: rgba(0, 0, 0, 0.1); // Macht den Ordner-Hintergrund minimal dunkler
+  background-color: var(--bg-color); // Macht den Ordner-Hintergrund minimal dunkler
   padding: 0.25rem 0;
 
   .sub-item {
@@ -186,7 +186,7 @@
   color: var(--text-primary, #e2e8f0);
 
   &:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
   }
 
   .nav-portrait {
@@ -235,7 +235,7 @@
   color: var(--text-secondary, #94a3b8);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: var(--bg-color);
 }
 
 .dropdown-item {
@@ -259,7 +259,7 @@
   }
 
   &:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
 
     i { color: var(--text-primary, #e2e8f0); }
   }

@@ -183,6 +183,76 @@ class BuildVsBuyServiceTest {
     }
 
     @Test
+    @DisplayName("sieht zwei Ebenen tief: baut, wenn erst die Zutat der Zutat es lohnt")
+    void rekursiveRechnungSchlaegtDieEinstufige() {
+        // Der gemeldete Widerspruch: "alles selbst bauen" kam günstiger heraus
+        // als "möglichst günstig". Ursache war eine einstufige Rechnung - die
+        // Zutaten gingen mit ihrem KAUFPREIS ein, die Frage "was, wenn ich die
+        // Zutat auch baue" wurde nie gestellt.
+        //
+        // Aufbau: eine Baugruppe kostet fertig 1000. Ihre einzige Zutat kostet
+        // fertig 1200 - einstufig gerechnet lohnt Bauen also nicht. Diese Zutat
+        // lässt sich aber aus Material für 300 herstellen.
+        long baugruppe = 500L;
+        long zutat = 501L;
+        long rohstoff = 502L;
+        mitMaterialeffizienz(0);
+
+        when(queryRepo.jitaSell(baugruppe)).thenReturn(1_000.0);
+        when(queryRepo.jitaSell(zutat)).thenReturn(1_200.0);
+        when(queryRepo.jitaSell(rohstoff)).thenReturn(300.0);
+        when(queryRepo.packagedVolumes(any())).thenReturn(java.util.Map.of());
+
+        when(queryRepo.blueprintFor(baugruppe)).thenReturn(new BlueprintInfo(
+                600L, "Baugruppe Blueprint", baugruppe, "Baugruppe", 1, 1, 10, 600));
+        when(queryRepo.blueprintFor(zutat)).thenReturn(new BlueprintInfo(
+                601L, "Zutat Blueprint", zutat, "Zutat", 1, 1, 10, 600));
+        when(queryRepo.blueprintFor(rohstoff)).thenReturn(null);
+
+        when(queryRepo.billOfMaterials(baugruppe, 1)).thenReturn(List.of(
+                new BomNode(1, zutat, "Zutat", null, 1, "BUILDABLE", 1, 1)));
+        when(queryRepo.billOfMaterials(zutat, 1)).thenReturn(List.of(
+                new BomNode(1, rohstoff, "Rohstoff", null, 1, "MINERAL", 1, 1)));
+
+        // Einstufig gerechnet: 1200 Material gegen 1000 Kaufpreis - Kaufen.
+        // Rekursiv: die Zutat kostet selbst gebaut 300, also Bauen.
+        assertThat(service.buildIsCheaper(1L, baugruppe, 0)).isTrue();
+    }
+
+    @Test
+    @DisplayName("rechnet die Fracht mit - sperrige Fertigteile sind nicht billig")
+    void frachtGehtInDieEntscheidungEin() {
+        // Der zweite Teil des gemeldeten Falls: fertig gekaufte Capital-Bauteile
+        // füllten fünf Sprungfrachterladungen, ihre Zutaten eine. 672 Millionen
+        // gegen 41 - eine Entscheidung, die nur die Ware ansieht, übersieht mehr
+        // als sie entscheidet.
+        long bauteil = 700L;
+        long zutat = 701L;
+        mitMaterialeffizienz(0);
+
+        when(queryRepo.jitaSell(bauteil)).thenReturn(1_000.0);
+        when(queryRepo.jitaSell(zutat)).thenReturn(1_100.0);
+        when(queryRepo.blueprintFor(bauteil)).thenReturn(new BlueprintInfo(
+                800L, "Bauteil Blueprint", bauteil, "Bauteil", 1, 1, 10, 600));
+        when(queryRepo.blueprintFor(zutat)).thenReturn(null);
+        when(queryRepo.billOfMaterials(bauteil, 1)).thenReturn(List.of(
+                new BomNode(1, zutat, "Zutat", null, 1, "MINERAL", 1, 1)));
+
+        // Ohne Fracht ist Kaufen günstiger: 1000 gegen 1100.
+        when(queryRepo.packagedVolumes(any())).thenReturn(java.util.Map.of());
+        assertThat(service.buildIsCheaper(1L, bauteil, 0)).isFalse();
+
+        // Das fertige Teil ist sperrig (500 m³), die Zutat winzig (0,01 m³).
+        // Bei 460 ISK je Kubikmeter kostet der Kauf 1000 + 230.000, das
+        // Selbstbauen 1100 + 4,60. Jetzt kippt die Antwort.
+        when(queryRepo.packagedVolumes(java.util.Set.of(bauteil)))
+                .thenReturn(java.util.Map.of(bauteil, 500.0));
+        when(queryRepo.packagedVolumes(java.util.Set.of(zutat)))
+                .thenReturn(java.util.Map.of(zutat, 0.01));
+        assertThat(service.buildIsCheaper(1L, bauteil, 460)).isTrue();
+    }
+
+    @Test
     @DisplayName("fällt bei unbekannter Voreinstellung auf Kaufen zurück")
     void unbekannteVoreinstellung() {
         // Eine veraltete Oberfläche soll den Auftrag nicht unbrauchbar machen.

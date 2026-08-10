@@ -430,6 +430,25 @@ public class IndustryOrderService {
     }
 
     /**
+     * Was der Transport zum Bauort je Kubikmeter kostet.
+     *
+     * <p>Ohne gewaehlten Bauort der Sprungfrachter - derselbe pessimistische
+     * Ansatz wie in der Einkaufsliste. Eine zu niedrig angesetzte Fracht liesse
+     * sperrige Fertigteile guenstig aussehen, und das ist die Richtung, in der
+     * ein Fehler teuer wird.</p>
+     */
+    private double frachtsatzFuer(IndustryOrder order) {
+        Double security = null;
+        if (order.getBuildSystemId() != null) {
+            security = queryRepo.systemInfo(order.getBuildSystemId())
+                    .map(IndustryQueryRepository.SystemInfo::security).orElse(null);
+        }
+        Integer spruenge = procurement.jumpsFromJita(order.getBuildSystemId());
+        return LogisticsMath.transportFor(security, spruenge)
+                .perCubicMeter().doubleValue();
+    }
+
+    /**
      * Ob die vorhandenen Blaupausen fuer den Auftrag reichen.
      *
      * <p>Geprueft wird das Endprodukt und alles, was auf "Bauen" steht - fuer
@@ -460,6 +479,12 @@ public class IndustryOrderService {
         BuildStrategy strategie = BuildStrategy.fromName(strategyName);
         order.setStrategy(strategie.name());
 
+        // Der Frachtsatz zum Bauort gehoert in die Entscheidung. Ein fertiges
+        // Capital-Bauteil fuellt fuenf Sprungfrachterladungen, seine Zutaten
+        // eine - wer nur die Ware vergleicht, uebersieht dabei Hunderte
+        // Millionen und stellt auf "Kaufen", was in Wahrheit teurer kommt.
+        double frachtsatz = frachtsatzFuer(order);
+
         for (int runde = 0; runde < MAX_EXPANSION_DEPTH; runde++) {
             List<IndustryOrderRequirement> zeilen =
                     requirementRepo.findByOrderIdOrderByDepthAscQuantityNeededDesc(orderId);
@@ -467,7 +492,7 @@ public class IndustryOrderService {
             boolean geaendert = false;
             for (IndustryOrderRequirement zeile : zeilen) {
                 String neu = buildVsBuy.shouldBuild(characterId, zeile.getTypeId(),
-                        zeile.getQuantityNeeded(), zeile.getSourceKind(), strategie)
+                        zeile.getQuantityNeeded(), zeile.getSourceKind(), strategie, frachtsatz)
                         ? "BUILD" : "BUY";
                 if (!neu.equals(zeile.getDecision())) {
                     zeile.setDecision(neu);

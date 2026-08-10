@@ -1,0 +1,498 @@
+<div class="industry">
+
+  <header class="page-head">
+    <h2><i class="fa-solid fa-industry"></i> Industrie</h2>
+    <p class="lead">
+      Sag, was du bauen willst. Der Assistent rechnet aus, wie viele Jobs das sind,
+      was an Material fehlt und wie weit du bist.
+    </p>
+  </header>
+
+  @if (error()) {
+    <div class="hinweis fehler">
+      <i class="fa-solid fa-triangle-exclamation"></i> {{ error() }}
+      <button type="button" class="link" (click)="error.set(null)">schließen</button>
+    </div>
+  }
+
+  <!-- ============================================================
+       Der Auftrag ist ein Einzeiler: was, wie viele.
+       ============================================================ -->
+  @if (!openOrder()) {
+    <section class="surface-panel neuer-auftrag">
+      <div class="felder">
+        <label class="feld was">
+          <span>Was willst du bauen?</span>
+          <input type="text" [value]="query()" (input)="onQuery($any($event.target).value)"
+                 placeholder="z. B. Raven" autocomplete="off" />
+          @if (hits().length) {
+            <ul class="vorschlaege">
+              @for (hit of hits(); track trackByHit($index, hit)) {
+                <li>
+                  <button type="button" (click)="choose(hit)">
+                    <img [src]="'https://images.evetech.net/types/' + hit.typeId + '/icon?size=32'"
+                         alt="" width="24" height="24" loading="lazy" />
+                    <span class="name">{{ hit.typeName }}</span>
+                    <span class="gruppe">{{ hit.groupName }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        </label>
+
+        <label class="feld menge">
+          <span>Wie viele?</span>
+          <input type="number" min="1" [value]="quantity()"
+                 (change)="onQuantity($any($event.target).value)" />
+        </label>
+
+        <button type="button" class="btn-primary anlegen"
+                [disabled]="!chosen() || loading()" (click)="createOrder()">
+          <i class="fa-solid fa-plus"></i> Auftrag anlegen
+        </button>
+      </div>
+    </section>
+  }
+
+  <!-- ============================================================
+       Vier Tatsachen, sofort - vor jeder tiefen Rechnung.
+       ============================================================ -->
+  @if (summary(); as s) {
+    @if (s.blueprintFound) {
+      <section class="kennzahlen">
+        <article class="kennzahl">
+          <strong>{{ amount(s.jobCount) }} {{ s.jobCount === 1 ? 'Job' : 'Jobs' }}</strong>
+          <span>zu je {{ amount(s.runsPerJob) }} Läufen</span>
+        </article>
+        <article class="kennzahl">
+          <strong>{{ hours(s.jobSeconds) }}</strong>
+          <!-- Ofenzeit, nicht Wandzeit: die Jobs laufen parallel, wenn Slots frei sind. -->
+          <span>Job-Zeit gesamt</span>
+        </article>
+        <article class="kennzahl">
+          <strong>{{ s.materialCount }}</strong>
+          <span>{{ s.materialCount === 1 ? 'Material' : 'Materialien' }}</span>
+        </article>
+        <article class="kennzahl">
+          <strong>{{ volume(s.packagedVolume) }}</strong>
+          <span>verpackt, fertige Ware</span>
+        </article>
+      </section>
+
+      <!-- Zwei verschiedene Lagen, die man nicht verwechseln darf: ohne Blaupause
+           lässt sich der Job gar nicht starten, mit unerforschter nur teurer. -->
+      @if (!s.blueprintOwned) {
+        <p class="hinweis warnung">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          Du besitzt keine passende Blaupause. Ohne sie lässt sich der Job nicht
+          starten – erst kaufen oder erfinden. Gerechnet wird solange ohne
+          Forschungsboni, der Bedarf fällt also eher zu hoch aus.
+        </p>
+      } @else if (s.materialEfficiency === 0 && s.timeEfficiency === 0) {
+        <p class="hinweis leise">
+          <i class="fa-solid fa-circle-info"></i>
+          Deine Blaupause ist unerforscht (ME 0, TE 0). Bauen geht, kostet aber
+          mehr Material und Zeit als nötig.
+        </p>
+      } @else {
+        <p class="hinweis leise">
+          <i class="fa-solid fa-circle-check"></i>
+          Gerechnet mit deiner besten Blaupause: ME {{ s.materialEfficiency }},
+          TE {{ s.timeEfficiency }}.
+        </p>
+      }
+    } @else {
+      <p class="hinweis leise">Für dieses Produkt gibt es keine Blaupause.</p>
+    }
+  }
+
+  <!-- ============================================================
+       Der Arbeitsbildschirm eines angelegten Auftrags.
+       ============================================================ -->
+  @if (openOrder(); as detail) {
+    <section class="surface-panel arbeit">
+      <div class="arbeit-kopf">
+        <div>
+          <h3>
+            {{ amount(detail.order.progress.delivered) }} / {{ amount(detail.order.targetQuantity) }}
+            {{ detail.order.productName }} fertig
+            <span class="prozent">({{ detail.order.progress.percent }} %)</span>
+          </h3>
+          <!-- Bewusst getrennt vom Fortschritt: eine Bestandsaussage, die sinken darf. -->
+          <p class="deckung">
+            Material reicht für {{ amount(detail.order.progress.coveredUnits) }} von
+            {{ amount(detail.order.targetQuantity) }} Stück
+          </p>
+        </div>
+        <button type="button" class="btn-secondary" (click)="closeOrder()">
+          <i class="fa-solid fa-arrow-left"></i> Zurück
+        </button>
+      </div>
+
+      <div class="fortschritt">
+        <div class="fortschritt-fuellung" [style.width.%]="detail.order.progress.percent"></div>
+      </div>
+    </section>
+  }
+
+  <!-- ============================================================
+       Die Fertigungsstraße. Unten wird gekauft, oben entsteht das Schiff -
+       Material fließt auf dem Bildschirm nach oben, so wie es gebaut wird.
+
+       Bewusst nach RANG gruppiert und nicht nach Tiefe: die Tiefe ist der
+       kürzeste Weg zur Wurzel, nicht die Fertigungsebene. Tritanium, das ein
+       Schiff unmittelbar braucht, steht auf Tiefe 1 und säße sonst ganz oben
+       neben dem Schiff, obwohl es das Erste ist, was man einkauft.
+       ============================================================ -->
+  @if (stufen().length) {
+    <section class="surface-panel strasse">
+      <div class="strasse-kopf">
+        <h3>Fertigung</h3>
+        @if (openOrder()) {
+          <div class="voreinstellung">
+            @for (s of strategies; track s.key) {
+              <button type="button" class="ve-knopf" [title]="s.hint"
+                      [disabled]="strategyRunning()" (click)="applyStrategy(s.key)">
+                {{ s.label }}
+              </button>
+            }
+            <button type="button" class="ve-knopf ve-neu"
+                    title="Mengen, Preise und Blaupausendaten neu holen. Die eigenen Kaufen/Bauen-Entscheidungen bleiben erhalten."
+                    [disabled]="recalcRunning() || strategyRunning()" (click)="recalculate()">
+              {{ recalcRunning() ? 'rechnet …' : 'Neu berechnen' }}
+            </button>
+          </div>
+        }
+      </div>
+
+      <ol class="stufen">
+        @for (stufe of stufen(); track stufe.rang) {
+          <li class="stufe" [class.stufe-offen]="istOffen(stufe.rang)"
+              [class.stufe-fertig]="stufe.offen === 0 && stufe.laeuft === 0">
+            <button type="button" class="stufe-kopf"
+                    [attr.aria-expanded]="istOffen(stufe.rang)"
+                    (click)="stufeUmschalten(stufe.rang)">
+              <span class="schiene" aria-hidden="true">
+                <span class="punkt"
+                      [class.p-laeuft]="stufe.laeuft > 0"
+                      [class.p-fertig]="stufe.offen === 0"></span>
+              </span>
+              <span class="stufe-titel">
+                <strong>{{ stufe.label }}</strong>
+                <small>
+                  {{ stufe.knoten.length }}
+                  {{ stufe.knoten.length === 1 ? 'Position' : 'Positionen' }}
+                  @if (stufe.laeuft > 0) { · {{ stufe.laeuft }} im Ofen }
+                  @if (stufe.offen > 0) { · {{ stufe.offen }} offen }
+                </small>
+              </span>
+              <span class="stufe-balken" aria-hidden="true">
+                <span class="stufe-fuellung"
+                      [style.width.%]="stufe.knoten.length ? (stufe.gedeckt / stufe.knoten.length) * 100 : 0"></span>
+              </span>
+              <span class="stufe-zahl">{{ stufe.gedeckt }} / {{ stufe.knoten.length }}</span>
+              <i class="fa-solid" aria-hidden="true"
+                 [class.fa-chevron-down]="istOffen(stufe.rang)"
+                 [class.fa-chevron-right]="!istOffen(stufe.rang)"></i>
+            </button>
+
+            @if (istOffen(stufe.rang)) {
+              <div class="stufe-inhalt">
+                <div class="stufe-filter">
+                  <button type="button" class="ve-knopf" [class.aktiv]="stufenFilter() === 'OFFEN'"
+                          (click)="stufenFilter.set('OFFEN')">Nur offene</button>
+                  <button type="button" class="ve-knopf" [class.aktiv]="stufenFilter() === 'ALLE'"
+                          (click)="stufenFilter.set('ALLE')">Alle</button>
+                </div>
+                <ul class="knoten-liste">
+                  @for (k of zeilenDerStufe(stufe); track k.zeile.typeId) {
+                    <li class="knoten" [class]="'z-' + k.zustand">
+                      <img [src]="'https://images.evetech.net/types/' + k.zeile.typeId + '/icon?size=32'"
+                           alt="" width="24" height="24" loading="lazy" />
+                      <span class="knoten-name">
+                        {{ k.zeile.typeName }}
+                        <!-- Die kleine Zeit darunter: nur wenn wirklich etwas läuft.
+                             Eine leere Zeitzeile ist schlimmer als keine. -->
+                        @if (k.job && zeitText(k.job, now()); as zeit) {
+                          <small class="knoten-zeit">
+                            {{ k.job!.activityLabel }} · {{ k.job!.runs }}
+                            {{ k.job!.runs === 1 ? 'Lauf' : 'Läufe' }} ·
+                            <time [attr.datetime]="k.job!.endDate" aria-live="off">{{ zeit }}</time>
+                            @if (!k.job!.assignedToOrder) {
+                              <span class="lose" title="Läuft auf diesen Typ, ist diesem Auftrag aber nicht zugebucht">
+                                (evtl. für einen anderen Auftrag)
+                              </span>
+                            }
+                          </small>
+                        }
+                      </span>
+                      <span class="etikett" [class]="'k-' + k.zeile.sourceKind">
+                        {{ kindLabel(k.zeile.sourceKind) }}
+                      </span>
+                      <span class="knoten-mengen">
+                        <span class="zahl">{{ amount(k.zeile.needed) }}</span>
+                        <small>
+                          {{ amount(k.zeile.have) }} da
+                          @if (k.zeile.haveElsewhere > 0) {
+                            · +{{ amount(k.zeile.haveElsewhere) }} anderswo
+                          }
+                        </small>
+                      </span>
+                      <span class="knoten-fehlt" [class.fehlt]="k.zeile.missing > 0">
+                        {{ k.zeile.missing > 0 ? amount(k.zeile.missing) : zustandLabel(k.zustand) }}
+                      </span>
+                      <span class="entscheidung">
+                        @if (openOrder() && k.zeile.buildable) {
+                          <button type="button" class="wahl" [class.aktiv]="k.zeile.decision === 'BUY'"
+                                  (click)="decide(k.zeile, 'BUY')">Kaufen</button>
+                          <button type="button" class="wahl" [class.aktiv]="k.zeile.decision === 'BUILD'"
+                                  (click)="decide(k.zeile, 'BUILD')">Bauen</button>
+                        }
+                      </span>
+                    </li>
+                  } @empty {
+                    <li class="knoten-leer">
+                      Auf dieser Stufe ist nichts mehr offen.
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+          </li>
+        }
+      </ol>
+    </section>
+  }
+
+  <!-- ============================================================
+       Bauort suchen. Sagt ehrlich, wo die Auskunft aufhört.
+       ============================================================ -->
+  @if (summary() || openOrder()) {
+    <section class="surface-panel bauort">
+      <h3>Bauort</h3>
+      @if (openOrder()) {
+        <p class="bauort-stand">
+          @if (openOrder()!.order.buildLocationName) {
+            Dieser Auftrag baut in <strong>{{ openOrder()!.order.buildLocationName }}</strong>.
+            Als vorhanden zählt nur, was dort liegt.
+          } @else {
+            Für diesen Auftrag steht kein Bauort fest. Solange das so ist, zählt der
+            Bestand aus <strong>ganz EVE</strong> als vorhanden, und der Transport
+            muss mit dem teuersten Fall rechnen.
+          }
+        </p>
+      }
+      <label class="feld">
+        <span>Name, Strukturtyp oder System</span>
+        <input type="text" [value]="locationQuery()"
+               (input)="onLocationQuery($any($event.target).value)"
+               placeholder="z. B. Jita, Tatara, MA Werft" autocomplete="off" />
+      </label>
+
+      @if (locations().length) {
+        <ul class="orte">
+          @for (loc of locations(); track trackByLocation($index, loc)) {
+            <li [class.unbekannt]="!loc.servicesKnown"
+                [class.gewaehlt]="chosenLocation()?.structureId === loc.structureId">
+              <button type="button" class="ort-waehlen" (click)="chooseLocation(loc)">
+              <div class="ort-kopf">
+                <strong>{{ loc.name || loc.typeName || 'Unbenannt' }}</strong>
+                @if (loc.systemName && loc.systemName !== loc.name) {
+                  <span class="ort-system">{{ loc.systemName }}</span>
+                }
+                <span class="ort-quelle">{{ sourceLabel(loc.source) }}</span>
+              </div>
+              <div class="ort-dienste">{{ locationServices(loc) }}</div>
+              @if (loc.hints.length) {
+                <ul class="ort-hinweise">
+                  @for (hint of loc.hints; track hint) {
+                    <li>{{ hint }}</li>
+                  }
+                </ul>
+              }
+              </button>
+            </li>
+          }
+        </ul>
+      } @else if (locationQuery().length > 1) {
+        <p class="leer">
+          Kein Bauort gefunden. Sonnensysteme finden sich über ihren Namensanfang;
+          eigene Corp&#8209;Strukturen erscheinen zusätzlich, sobald ein Charakter mit
+          der Rolle Station&#8209;Manager angemeldet war.
+        </p>
+      }
+    </section>
+  }
+
+  <!-- ============================================================
+       Blaupausen: vorhanden, und reichen die Läufe?
+       ============================================================ -->
+  @if (blueprints().length) {
+    <section class="surface-panel blaupausen">
+      <h3>Blaupausen und Formeln</h3>
+      <p class="bp-lead">
+        Alles, wofür es eine Vorlage gibt – auch für Teile, die du kaufst. So siehst
+        du, was du bräuchtest, wenn du doch alles selbst herstellen willst.
+      </p>
+      <ul>
+        @for (bp of blueprints(); track trackByCheck($index, bp)) {
+          <li [class.fehlt]="bp.required && !bp.owned"
+              [class.knapp]="bp.required && bp.owned && !bp.sufficient"
+              [class.nurInfo]="!bp.required">
+            <i class="fa-solid"
+               [class.fa-circle-check]="bp.owned && bp.sufficient"
+               [class.fa-circle-xmark]="!bp.owned"
+               [class.fa-triangle-exclamation]="bp.owned && !bp.sufficient"></i>
+            <span class="bp-name">
+              {{ bp.productName }}
+              @if (bp.kind === 'Reaktionsformel') {
+                <span class="bp-art">Formel</span>
+              }
+              <!-- Der Grund fürs Ausgrauen gehört an die Zeile. Steht er nur in
+                   einem Satz darüber, ist er beim Scrollen längst außer Sicht. -->
+              @if (!bp.required) {
+                <span class="bp-gekauft">wird gekauft</span>
+              }
+            </span>
+            <span class="bp-laeufe">{{ runsLabel(bp) }}</span>
+            @if (bp.owned) {
+              <span class="bp-forschung">ME {{ bp.materialEfficiency }} · TE {{ bp.timeEfficiency }}</span>
+            }
+            @if (bp.note) {
+              <span class="bp-notiz">{{ bp.note }}</span>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  <!-- ============================================================
+       Einkaufsliste: was kaufen, wo, und was kostet der Weg.
+       ============================================================ -->
+  @if (procurement(); as p) {
+    <section class="surface-panel einkauf">
+      <h3>Einkauf in Jita</h3>
+
+      <div class="einkauf-kopf">
+        <div class="einkauf-zahl">
+          <strong>{{ isk(p.goodsCost) }}</strong><span>Ware</span>
+        </div>
+        <div class="einkauf-zahl">
+          <strong>{{ isk(p.freightCost) }}</strong>
+          <span>{{ p.transportLabel }} · {{ p.freightPerCubicMeter }} ISK/m³</span>
+        </div>
+        <div class="einkauf-zahl gesamt">
+          <strong>{{ isk(p.totalCost) }}</strong><span>zusammen</span>
+        </div>
+        <div class="einkauf-zahl">
+          <strong>{{ p.loads }} {{ p.loads === 1 ? 'Ladung' : 'Ladungen' }}</strong>
+          <span>{{ amount(p.volume) }} m³ bei {{ amount(p.loadCapacity) }} m³ je Fahrt</span>
+        </div>
+      </div>
+
+      <p class="einkauf-weg">
+        @if (!p.locationChosen) {
+          Noch kein Bauort gewählt – gerechnet wird mit dem teureren Sprungfrachter,
+          damit die Summe nicht schmeichelt.
+        } @else if (p.jumpsFromJita === null) {
+          Bauort über Tore nicht von Jita erreichbar – der Weg ist hier nicht berechenbar.
+        } @else if (p.jumpsFromJita === 0) {
+          Gebaut wird in Jita – kein Transport nötig.
+        } @else {
+          {{ p.jumpsFromJita }} Sprünge von Jita.
+        }
+      </p>
+
+      @if (p.withoutPrice > 0) {
+        <p class="hinweis warnung">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          Für {{ p.withoutPrice }}
+          {{ p.withoutPrice === 1 ? 'Position liegt' : 'Positionen liegen' }} kein Marktpreis vor.
+          Die Summe ist also unvollständig.
+        </p>
+      }
+
+      <!-- Warum kein Erz auf der Liste steht. Ohne diesen Satz trifft der
+           Assistent die Entscheidung unsichtbar, und wer Erz erwartet, hält das
+           Fehlen für einen Fehler statt für ein Ergebnis. -->
+      @if (p.oreVerdict) {
+        <p class="hinweis leise">
+          <i class="fa-solid fa-cubes"></i>
+          {{ p.oreVerdict }}
+        </p>
+      }
+
+      @if (p.lines.length) {
+        <table>
+          <thead>
+            <tr>
+              <th>Gebraucht</th>
+              <th>Kaufen</th>
+              <th class="zahl">Menge</th>
+              <th class="zahl">Volumen</th>
+              <th class="zahl">Kosten</th>
+              <th class="zahl">Ersparnis</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (line of p.lines; track trackByLine($index, line)) {
+              <tr>
+                <td>{{ line.typeName }} <small>{{ amount(line.neededQuantity) }}</small></td>
+                <td [class.erz]="line.source === 'ORE'">{{ sourceLabelFor(line) }}</td>
+                <td class="zahl">{{ amount(line.buyQuantity) }}</td>
+                <td class="zahl">{{ amount(line.volume) }} m³</td>
+                <td class="zahl">{{ isk(line.totalCost) }}</td>
+                <td class="zahl">
+                  @if (line.saving > 0) {
+                    <span class="spart">−{{ isk(line.saving) }}</span>
+                  } @else { — }
+                </td>
+              </tr>
+              @if (line.note) {
+                <tr class="notiz"><td colspan="6">{{ line.note }}</td></tr>
+              }
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  }
+
+  <!-- ============================================================
+       Die laufenden Aufträge.
+       ============================================================ -->
+  @if (!openOrder()) {
+    <section class="surface-panel auftraege">
+      <h3>Deine Aufträge</h3>
+      @if (!orders().length) {
+        <p class="leer">Noch kein Auftrag angelegt.</p>
+      } @else {
+        <ul>
+          @for (order of orders(); track trackByOrder($index, order)) {
+            <li class="auftrag-zeile">
+              <button type="button" class="auftrag" (click)="open(order)">
+                <img [src]="'https://images.evetech.net/types/' + order.productTypeId + '/icon?size=32'"
+                     alt="" width="32" height="32" loading="lazy" />
+                <span class="titel">
+                  {{ amount(order.targetQuantity) }} × {{ order.productName }}
+                </span>
+                <span class="fortschritt-klein">
+                  <span class="fortschritt-fuellung" [style.width.%]="order.progress.percent"></span>
+                </span>
+                <span class="prozent">{{ order.progress.percent }} %</span>
+                <span class="status" [class]="'s-' + order.status">{{ order.status }}</span>
+              </button>
+              <button type="button" class="loeschen" (click)="deleteOrder(order)"
+                      [title]="order.productName + '-Auftrag löschen'"
+                      aria-label="Auftrag löschen">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  }
+</div>

@@ -24,4 +24,27 @@ public interface AssetLocationRepository extends JpaRepository<AssetLocation, Lo
               )
             """, nativeQuery = true)
     List<Long> findUnresolvedLocationIds();
+
+    /**
+     * Standorte, die zwar einen Namen haben, aber kein Sonnensystem.
+     *
+     * <p>Sie fallen durch {@link #findUnresolvedLocationIds()}, denn sie gelten
+     * als aufgeloest - ein Name ist ja da. Ohne Sonnensystem laesst sich aber
+     * nicht sagen, ob das Material dort am Bauort liegt, und das ist genau die
+     * Frage, die der Industrie-Assistent beantworten soll.</p>
+     *
+     * <p>Betroffen sind Stationen, deren System nie geholt wurde, und
+     * Standorte der Art {@code SOLAR_SYSTEM}, bei denen die Kennung frueher nicht
+     * zurueckgeschrieben wurde. Strukturen ohne Docking-Access bleiben aussen
+     * vor: dort scheitert die Abfrage an fehlenden Rechten, ein erneuter Versuch
+     * kostet nur einen 403.</p>
+     */
+    @Query(value = """
+            SELECT l.location_id
+            FROM asset_locations l
+            WHERE l.system_id IS NULL
+              AND COALESCE(l.resolve_failed, false) = false
+              AND l.location_kind IN ('STATION', 'SOLAR_SYSTEM')
+            """, nativeQuery = true)
+    List<Long> findLocationIdsWithoutSystem();
 }

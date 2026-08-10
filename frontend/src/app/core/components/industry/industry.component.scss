@@ -1,0 +1,977 @@
+/* Der Industrie-Assistent.
+   Durchgehend über die CSS-Variablen aus styles.scss - damit folgt die Seite
+   dem Umschalter im Zahnrad, auch dem MA-Thema. Kein fest verdrahteter Farbwert. */
+
+.industry {
+  padding: 1.5rem 2rem 3rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-head {
+  margin-bottom: 1.5rem;
+
+  h2 {
+    margin: 0 0 0.35rem;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+
+    i { color: var(--accent-color); margin-right: 0.5rem; }
+  }
+
+  .lead {
+    margin: 0;
+    color: var(--text-secondary);
+    max-width: 60ch;
+  }
+}
+
+.hinweis {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+
+  &.fehler {
+    color: var(--danger-color);
+    background-color: color-mix(in srgb, var(--danger-color) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger-color) 35%, transparent);
+  }
+
+  &.warnung {
+    color: var(--warning-color);
+    background-color: color-mix(in srgb, var(--warning-color) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning-color) 35%, transparent);
+  }
+
+  &.leise {
+    color: var(--text-secondary);
+    background-color: color-mix(in srgb, var(--text-secondary) 8%, transparent);
+  }
+
+  .link {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+}
+
+/* ============================================================
+   Der Auftrag als Einzeiler
+   ============================================================ */
+.neuer-auftrag {
+  margin-bottom: 1.25rem;
+}
+
+.felder {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.feld {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  position: relative;
+
+  span {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+
+  input {
+    box-sizing: border-box;
+    padding: 0.6rem 0.75rem;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+
+    &:focus {
+      outline: none;
+      border-color: var(--accent-color);
+    }
+  }
+
+  &.was { flex: 1 1 320px; }
+  &.menge { flex: 0 0 140px; }
+}
+
+/* Die Vorschlagsliste schwebt über dem Rest, sonst schiebt sie das Formular auf. */
+.vorschlaege {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+
+    &:hover { background-color: color-mix(in srgb, var(--accent-color) 12%, transparent); }
+  }
+
+  .name { flex: 1; }
+
+  .gruppe {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: var(--accent-contrast);
+  border: none;
+  padding: 0.65rem 1.25rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background-color: var(--accent-hover); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover { border-color: var(--accent-color); }
+}
+
+/* ============================================================
+   Die vier Kennzahlen
+   ============================================================ */
+.kennzahlen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.kennzahl {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+
+  strong {
+    display: block;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+
+  span {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+}
+
+/* ============================================================
+   Arbeitsbildschirm
+   ============================================================ */
+.arbeit { margin-bottom: 1.25rem; }
+
+.arbeit-kopf {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+
+  h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--text-primary);
+  }
+
+  .prozent { color: var(--text-secondary); font-weight: 400; }
+
+  .deckung {
+    margin: 0.35rem 0 0;
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+  }
+}
+
+.fortschritt {
+  margin-top: 1rem;
+  height: 10px;
+  border-radius: 5px;
+  background-color: var(--bg-color);
+  overflow: hidden;
+}
+
+.fortschritt-fuellung {
+  display: block;
+  height: 100%;
+  background-color: var(--success-color);
+  border-radius: 5px;
+  transition: width 0.4s ease;
+}
+
+/* ============================================================
+   Bedarfstabelle
+   ============================================================ */
+.bedarf {
+  margin-bottom: 1.25rem;
+
+  h3, h4 {
+    margin: 0 0 0.75rem;
+    color: var(--text-primary);
+    font-size: 1.05rem;
+  }
+
+  h4 {
+    margin-top: 1.5rem;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  td {
+    padding: 0.55rem 0.6rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+    color: var(--text-primary);
+  }
+
+  .zahl { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .zahl small {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+  }
+
+  .fehlt { color: var(--danger-color); font-weight: 600; }
+
+  tr.gedeckt .material { color: var(--success-color); }
+
+  .material {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+}
+
+/* Die Voreinstellungen. */
+.voreinstellung {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+
+  .ve-label { font-size: 0.82rem; color: var(--text-secondary); }
+
+  .ve-laeuft { font-size: 0.82rem; color: var(--accent-color); }
+}
+
+.ve-knopf {
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--accent-color);
+  }
+
+  &:disabled { opacity: 0.5; cursor: wait; }
+}
+
+/* Neu berechnen steht abgesetzt von den drei Voreinstellungen: es waehlt nichts
+   aus, es holt die Zahlen. Das gehoert nicht in dieselbe Reihe wie eine Wahl. */
+.ve-neu {
+  margin-left: auto;
+}
+
+/* Herkunfts-Etikett. PI faellt bewusst auf, weil sich das per Industriejob
+   ueberhaupt nicht herstellen laesst - dort gibt es keinen Bauen-Knopf. */
+.etikett {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+
+  &.k-MINERAL {
+    color: var(--text-secondary);
+    background-color: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  }
+
+  &.k-BUILDABLE, &.k-REACTION {
+    color: var(--accent-neutral);
+    background-color: color-mix(in srgb, var(--accent-neutral) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent-neutral) 35%, transparent);
+  }
+
+  &.k-PI {
+    color: var(--warning-color);
+    background-color: color-mix(in srgb, var(--warning-color) 12%, transparent);
+    border-color: color-mix(in srgb, var(--warning-color) 35%, transparent);
+  }
+
+  &.k-GAS, &.k-RAW {
+    color: var(--text-secondary);
+    background-color: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  }
+}
+
+.entscheidung {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.wahl {
+  padding: 0.3rem 0.7rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+
+  &:hover { color: var(--text-primary); }
+
+  &.aktiv {
+    color: var(--accent-contrast);
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+  }
+}
+
+/* ============================================================
+   Bauort
+   ============================================================ */
+.bauort {
+  margin-bottom: 1.25rem;
+
+  h3 { margin: 0 0 0.75rem; color: var(--text-primary); font-size: 1.05rem; }
+
+  .feld { max-width: 420px; }
+
+  .leer { margin: 0.75rem 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+}
+
+.orte {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+
+  li {
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--bg-color);
+  }
+
+  li + li { margin-top: 0.5rem; }
+
+  /* Ein Ort, über den wir nichts wissen, sieht auch so aus - nicht wie eine Zusage. */
+  li.unbekannt {
+    border-style: dashed;
+    opacity: 0.85;
+  }
+}
+
+.ort-kopf {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+
+  strong { color: var(--text-primary); }
+
+  .ort-system { color: var(--text-secondary); font-size: 0.88rem; }
+
+  .ort-quelle {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--accent-neutral);
+    background-color: color-mix(in srgb, var(--accent-neutral) 14%, transparent);
+  }
+}
+
+.ort-dienste {
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.ort-hinweise {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+
+  li { border: none; padding: 0; background: none; }
+  li + li { margin-top: 0.2rem; }
+}
+
+/* ============================================================
+   Blaupausen
+   ============================================================ */
+.blaupausen {
+  margin-bottom: 1.25rem;
+
+  h3 { margin: 0 0 0.75rem; color: var(--text-primary); font-size: 1.05rem; }
+
+  ul { list-style: none; margin: 0; padding: 0; }
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+    font-size: 0.9rem;
+    flex-wrap: wrap;
+
+    i { color: var(--success-color); }
+
+    /* Ohne Blaupause startet der Job gar nicht - das wiegt schwerer als
+       zu wenige Läufe und sieht deshalb anders aus. */
+    &.fehlt i { color: var(--danger-color); }
+    &.knapp i { color: var(--warning-color); }
+
+    /* Was gekauft werden soll, ist keine Lücke - nur eine Auskunft für den
+       Fall, dass man es doch selbst herstellen will. */
+    &.nurInfo {
+      opacity: 0.7;
+      i { color: var(--text-secondary); }
+    }
+  }
+
+  .bp-lead {
+    margin: -0.35rem 0 0.75rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    max-width: 70ch;
+  }
+
+  .bp-name { flex: 1; color: var(--text-primary); }
+
+  /* Sagt an der Zeile, warum sie blass ist - "wird gekauft" ist kein Mangel. */
+  .bp-gekauft {
+    margin-left: 0.4rem;
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 9px;
+    color: var(--text-secondary);
+    background-color: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+  }
+
+  .bp-art {
+    margin-left: 0.4rem;
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 9px;
+    color: var(--accent-neutral);
+    background-color: color-mix(in srgb, var(--accent-neutral) 16%, transparent);
+  }
+
+  .bp-laeufe { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+
+  .bp-forschung {
+    font-size: 0.78rem;
+    color: var(--accent-neutral);
+    padding: 1px 7px;
+    border-radius: 9px;
+    background-color: color-mix(in srgb, var(--accent-neutral) 14%, transparent);
+  }
+
+  .bp-notiz {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding-left: 1.6rem;
+  }
+}
+
+/* ============================================================
+   Einkaufsliste
+   ============================================================ */
+.einkauf {
+  margin-bottom: 1.25rem;
+
+  h3 { margin: 0 0 1rem; color: var(--text-primary); font-size: 1.05rem; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+
+  th {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  td {
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+    color: var(--text-primary);
+  }
+
+  td small { color: var(--text-secondary); margin-left: 0.4rem; }
+
+  .zahl { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Erz statt Mineral ist die interessante Empfehlung - die darf auffallen. */
+  .erz { color: var(--accent-neutral); font-weight: 600; }
+
+  .spart { color: var(--success-color); font-weight: 600; }
+
+  tr.notiz td {
+    border-bottom: none;
+    padding-top: 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+}
+
+.einkauf-kopf {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.einkauf-zahl {
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+
+  strong { display: block; font-size: 1.15rem; color: var(--text-primary); }
+
+  span { display: block; margin-top: 0.15rem; font-size: 0.75rem; color: var(--text-secondary); }
+
+  &.gesamt {
+    border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
+    strong { color: var(--accent-color); }
+  }
+}
+
+.einkauf-weg {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Der Bauort lässt sich anklicken - der ganze Eintrag ist die Schaltfläche. */
+.ort-waehlen {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orte li.gewaehlt {
+  border-color: var(--accent-color);
+  background-color: color-mix(in srgb, var(--accent-color) 8%, transparent);
+}
+
+/* ============================================================
+   Auftragsliste
+   ============================================================ */
+.auftraege {
+  h3 { margin: 0 0 0.75rem; color: var(--text-primary); font-size: 1.05rem; }
+
+  .leer { color: var(--text-secondary); margin: 0; }
+
+  ul { list-style: none; margin: 0; padding: 0; }
+
+  .auftrag { flex: 1; }
+
+  li + li { margin-top: 0.5rem; }
+}
+
+/* Der Löschknopf sitzt außerhalb des großen Knopfes - ein Knopf im Knopf
+   wäre weder anklickbar noch für Vorlesewerkzeuge sinnvoll. */
+.auftrag-zeile {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.loeschen {
+  flex: 0 0 auto;
+  padding: 0 0.85rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--danger-color);
+    border-color: color-mix(in srgb, var(--danger-color) 45%, transparent);
+  }
+}
+
+.auftrag {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover { border-color: var(--accent-color); }
+
+  .titel { flex: 1; font-weight: 500; }
+
+  .fortschritt-klein {
+    flex: 0 0 140px;
+    height: 6px;
+    border-radius: 3px;
+    background-color: var(--bg-surface);
+    overflow: hidden;
+  }
+
+  .prozent {
+    flex: 0 0 48px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .status {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+
+    &.s-ACTIVE {
+      color: var(--success-color);
+      background-color: color-mix(in srgb, var(--success-color) 12%, transparent);
+    }
+
+    &.s-CANCELLED, &.s-DONE {
+      color: var(--text-secondary);
+      background-color: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+    }
+  }
+}
+
+@media (max-width: 720px) {
+  .industry { padding: 1rem; }
+
+  .felder { flex-direction: column; align-items: stretch; }
+
+  .bedarf table { display: block; overflow-x: auto; }
+}
+
+/* Der Zusatz im Spaltenkopf: worauf sich "Vorhanden" bezieht. Leiser als die
+   Überschrift, aber lesbar - eine Zahl ohne Bezug ist keine Auskunft. */
+.th-zusatz {
+  display: block;
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+/* Was im Kontoverbund liegt, aber nicht am Bauort. Bewusst unaufdringlich:
+   es ist eine Nebenauskunft, kein Bestand, mit dem sich gleich bauen ließe. */
+.anderswo {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Der Bauort-Stand eines offenen Auftrags. */
+.bauort-stand {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+
+  strong { color: var(--text-primary); }
+}
+
+/* ============================================================
+   Die Fertigungsstraße
+
+   Unten wird gekauft, oben entsteht das Schiff. Die Reihenfolge auf dem
+   Bildschirm ist die Reihenfolge der Arbeit - deshalb steht die höchste Stufe
+   oben und die Beschaffung unten, und deshalb hat jede Stufe eine Schiene, an
+   der man den Fluss sieht.
+   ============================================================ */
+.strasse { margin-bottom: 1.25rem; }
+
+.strasse-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+
+  h3 { margin: 0; font-size: 1.05rem; color: var(--text-primary); }
+  .voreinstellung { margin-bottom: 0; }
+}
+
+.stufen {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stufe + .stufe { margin-top: 6px; }
+
+/* Eine fertige Stufe schrumpft. Sie ist erledigt und soll keinen Platz mehr
+   beanspruchen - genau das beendet das Scrollen bei 128 Positionen. */
+.stufe-fertig:not(.stufe-offen) .stufe-kopf {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+  opacity: 0.72;
+}
+
+.stufe-kopf {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover { border-color: var(--accent-color); }
+  &:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+}
+
+.stufe-offen > .stufe-kopf {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-color: var(--accent-color);
+}
+
+/* Die Schiene: der senkrechte Faden, der die Stufen verbindet. */
+.schiene {
+  position: relative;
+  flex: 0 0 18px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -0.6rem auto -0.6rem 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background-color: var(--border-color);
+  }
+}
+
+.stufe:first-child .schiene::before { top: 50%; }
+.stufe:last-child .schiene::before { bottom: 50%; }
+
+.punkt {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--bg-surface);
+  border: 2px solid var(--border-color);
+
+  &.p-fertig { background-color: var(--success-color); border-color: var(--success-color); }
+  &.p-laeuft { background-color: var(--accent-color); border-color: var(--accent-color); }
+}
+
+.stufe-titel {
+  flex: 1;
+  min-width: 0;
+
+  strong { display: block; font-size: 0.95rem; }
+  small { display: block; font-size: 0.76rem; color: var(--text-secondary); }
+}
+
+.stufe-balken {
+  flex: 0 0 110px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: color-mix(in srgb, var(--text-secondary) 20%, transparent);
+  overflow: hidden;
+}
+
+.stufe-fuellung {
+  display: block;
+  height: 100%;
+  background-color: var(--success-color);
+  transition: width 0.3s ease;
+}
+
+.stufe-zahl {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stufe-inhalt {
+  border: 1px solid var(--accent-color);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 0.6rem 0.75rem 0.75rem;
+  background-color: var(--bg-color);
+}
+
+.stufe-filter {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+
+  .ve-knopf.aktiv {
+    color: var(--accent-contrast);
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+  }
+}
+
+/* Die Liste bekommt eine Höhengrenze statt die Seite zu verlängern. Bei 45
+   Positionen auf einer Stufe wäre alles andere wieder ein Scrollmarathon. */
+.knoten-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: clamp(180px, calc(100dvh - 520px), 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.knoten {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.3rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent);
+
+  &:last-child { border-bottom: none; }
+  &.z-LAEUFT { background-color: color-mix(in srgb, var(--accent-color) 8%, transparent); }
+}
+
+.knoten-name {
+  flex: 1;
+  min-width: 140px;
+  font-size: 0.9rem;
+}
+
+/* Die kleine Zeit unter dem Namen. Bewusst leise: sie ist eine Randnotiz zum
+   Namen, keine zweite Überschrift. */
+.knoten-zeit {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--accent-color);
+
+  .lose { color: var(--text-secondary); font-style: italic; }
+}
+
+.knoten-mengen {
+  flex: 0 0 auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+
+  .zahl { font-size: 0.9rem; }
+  small { display: block; font-size: 0.7rem; color: var(--text-secondary); }
+}
+
+.knoten-fehlt {
+  flex: 0 0 92px;
+  text-align: right;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+
+  &.fehlt { color: var(--danger-color); font-weight: 600; }
+}
+
+.knoten-leer {
+  padding: 0.75rem 0.3rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 720px) {
+  .knoten { flex-wrap: wrap; }
+  .stufe-balken { display: none; }
+}

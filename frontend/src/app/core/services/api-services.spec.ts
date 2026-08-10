@@ -12,6 +12,7 @@ import { SkillPlanService } from './skill-plan.service';
 import { NavigationService } from './navigation.service';
 import { MyAssetService } from './my-asset.service';
 import { ReadinessService } from './readiness.service';
+import { IndustryService } from './industry.service';
 
 /**
  * Die übrigen HTTP-Dienste sind dünne Hüllen um je eine Adresse. Geprüft wird,
@@ -33,6 +34,7 @@ describe('HTTP-Dienste', () => {
         NavigationService,
         MyAssetService,
         ReadinessService,
+        IndustryService,
         provideHttpClient(),
         provideHttpClientTesting(),
       ],
@@ -448,6 +450,156 @@ describe('HTTP-Dienste', () => {
       const request = httpMock.expectOne(`${environment.apiUrl}/groups/roles/ROLE_RECRUITER`);
       expect(request.request.method).toBe('DELETE');
       request.flush(null);
+    });
+  });
+
+  describe('IndustryService', () => {
+    const apiUrl = `${environment.apiUrl}/industry`;
+
+    it('sucht baubare Dinge unter der richtigen Adresse', () => {
+      // Genau dieser Test hätte den doppelten Pfad /api/api/industry gefunden.
+      // Der Komponententest konnte es nicht: er mockt den Dienst und sieht keine
+      // einzige Adresse.
+      TestBed.inject(IndustryService).search('raven').subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === `${apiUrl}/search`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.get('q')).toBe('raven');
+      req.flush([]);
+    });
+
+    it('rechnet einen Bauwunsch mit Menge und Tiefe durch', () => {
+      TestBed.inject(IndustryService).preview(638, 50).subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === `${apiUrl}/preview`);
+      expect(req.request.params.get('productTypeId')).toBe('638');
+      expect(req.request.params.get('quantity')).toBe('50');
+      expect(req.request.params.get('depth')).toBe('1');
+      req.flush({});
+    });
+
+    it('legt einen Auftrag per POST an', () => {
+      TestBed.inject(IndustryService).create(638, 50).subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/orders`);
+      expect(req.request.method).toBe('POST');
+      // Der Bauort geht mit - ohne ihn kann der Server Transport und Fracht
+      // nicht rechnen und müsste den teuersten Fall annehmen.
+      expect(req.request.body).toEqual({
+        productTypeId: 638,
+        quantity: 50,
+        buildSystemId: null,
+        buildLocationName: null,
+      });
+      req.flush({});
+    });
+
+    it('stellt eine Kaufen/Bauen-Entscheidung per PUT um', () => {
+      TestBed.inject(IndustryService).decide(7, 34, 'BUILD').subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/orders/7/decision`);
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual({ typeId: 34, decision: 'BUILD' });
+      req.flush({});
+    });
+
+    it('setzt den Bauort eines bestehenden Auftrags per PUT', () => {
+      TestBed.inject(IndustryService).setBuildLocation(7, 30000142, null, 'Jita').subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/orders/7/location`);
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual({
+        buildSystemId: 30000142,
+        buildLocationId: null,
+        buildLocationName: 'Jita',
+      });
+      req.flush({});
+    });
+
+    it('gibt das Bausystem an die Vorschau weiter', () => {
+      // Ohne das rechnet ausgerechnet die Vorschau noch EVE-weit und widerspricht
+      // dem angelegten Auftrag in der Sekunde danach.
+      TestBed.inject(IndustryService).preview(638, 1, 1, 30000142).subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === `${apiUrl}/preview`);
+      expect(req.request.params.get('buildSystemId')).toBe('30000142');
+      req.flush({});
+    });
+
+    it('rechnet einen bestehenden Auftrag per PUT neu', () => {
+      TestBed.inject(IndustryService).recalculate(7).subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/orders/7/recalculate`);
+      expect(req.request.method).toBe('PUT');
+      req.flush({});
+    });
+
+    it('holt die Auftragsliste und einen einzelnen Auftrag', () => {
+      const service = TestBed.inject(IndustryService);
+
+      service.orders().subscribe();
+      httpMock.expectOne(`${apiUrl}/orders`).flush([]);
+
+      service.order(7).subscribe();
+      httpMock.expectOne(`${apiUrl}/orders/7`).flush({});
+    });
+
+    it('reicht den gewählten Bauort beim Anlegen durch', () => {
+      TestBed.inject(IndustryService).create(638, 50, 30000142, 'Jita IV-4').subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/orders`);
+      expect(req.request.body).toEqual({
+        productTypeId: 638,
+        quantity: 50,
+        buildSystemId: 30000142,
+        buildLocationName: 'Jita IV-4',
+      });
+      req.flush({});
+    });
+
+    it('wendet eine Voreinstellung per PUT an', () => {
+      TestBed.inject(IndustryService).applyStrategy(7, 'COST_EFFICIENT').subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === `${apiUrl}/orders/7/strategy`);
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.params.get('strategy')).toBe('COST_EFFICIENT');
+      req.flush({});
+    });
+
+    it('holt die Blaupausen-Prüfung', () => {
+      TestBed.inject(IndustryService).blueprints(7).subscribe();
+
+      httpMock.expectOne(`${apiUrl}/orders/7/blueprints`).flush([]);
+    });
+
+    it('holt die Einkaufsliste zu einem Auftrag', () => {
+      TestBed.inject(IndustryService).procurement(7).subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/orders/7/procurement`);
+      expect(req.request.method).toBe('GET');
+      req.flush({});
+    });
+
+    it('sucht Bauorte', () => {
+      TestBed.inject(IndustryService).locations('jita').subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === `${apiUrl}/locations`);
+      expect(req.request.params.get('q')).toBe('jita');
+      req.flush([]);
+    });
+
+    it('bricht einen Auftrag ab und löscht ihn', () => {
+      const service = TestBed.inject(IndustryService);
+
+      service.cancel(7).subscribe();
+      const abbruch = httpMock.expectOne(`${apiUrl}/orders/7/cancel`);
+      expect(abbruch.request.method).toBe('PUT');
+      abbruch.flush(null);
+
+      service.remove(7).subscribe();
+      const loeschen = httpMock.expectOne(`${apiUrl}/orders/7`);
+      expect(loeschen.request.method).toBe('DELETE');
+      loeschen.flush(null);
     });
   });
 });

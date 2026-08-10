@@ -59,6 +59,8 @@ public class AssetLocationService {
     // ACHTUNG: Kein @Transactional!
     // Dadurch rollt nicht der gesamte Batch zurück, falls ein einzelner Lookup platzt.
     public void resolvePendingLocations() {
+        nachtragenOhneSystem();
+
         List<Long> pending = locationRepo.findUnresolvedLocationIds();
         if (pending.isEmpty()) {
             log.debug("Keine offenen Asset-Standorte zum Auflösen.");
@@ -87,6 +89,36 @@ public class AssetLocationService {
         log.info("Asset-Standorte aufgelöst: {} von {}.", resolved, pending.size());
     }
 
+    /**
+     * Traegt das Sonnensystem bei Standorten nach, die schon einen Namen haben.
+     *
+     * <p>Diese Standorte gelten als aufgeloest und tauchen in
+     * {@link AssetLocationRepository#findUnresolvedLocationIds()} nie wieder auf -
+     * ein Name ist ja da. Ohne Sonnensystem laesst sich aber nicht sagen, ob das
+     * Material dort am Bauort liegt. Sie blieben also fuer immer blind, ohne dass
+     * es jemandem auffiele.</p>
+     */
+    private void nachtragenOhneSystem() {
+        List<Long> ids = locationRepo.findLocationIdsWithoutSystem();
+        if (ids.isEmpty()) {
+            return;
+        }
+        int nachgetragen = 0;
+        for (Long id : ids) {
+            AssetLocation loc = locationRepo.findById(id).orElse(null);
+            if (loc == null) {
+                continue;
+            }
+            enrichStation(loc);
+            enrichSystem(loc);
+            if (loc.getSystemId() != null) {
+                locationRepo.save(loc);
+                nachgetragen++;
+            }
+        }
+        log.info("Sonnensystem nachgetragen bei {} von {} Standorten.", nachgetragen, ids.size());
+    }
+
     // ==================================================================
     // NEU: Bulk API /universe/names/ für alles unter 1 Trillion
     // ==================================================================
@@ -108,6 +140,9 @@ public class AssetLocationService {
                         loc.setResolveFailed(false);
                         loc.setResolvedAt(Instant.now());
 
+                        // Das Sonnensystem fehlt hier noch: /universe/names/ gibt
+                        // nur Kennung, Name und Kategorie zurueck.
+                        enrichStation(loc);
                         // Optional: System/Region per SDE anreichern, falls ESI nur die Stations-ID liefert
                         enrichSystem(loc);
 
@@ -189,12 +224,47 @@ public class AssetLocationService {
         return count;
     }
 
+    /**
+     * Holt das Sonnensystem einer NPC-Station.
+     *
+     * <p>Der Umweg ueber einen zweiten ESI-Aufruf ist noetig, weil
+     * {@code /universe/names/} zu einer Station nur Kennung, Name und Kategorie
+     * kennt - und dieser SDE-Abzug die Stationen ueberhaupt nicht enthaelt:
+     * {@code mapDenormalize} fuehrt keine Stations-Kennungen, eine Tabelle
+     * {@code staStations} gibt es nicht. Ohne den Aufruf bliebe jede Station
+     * ohne System, und zwar dauerhaft: sie gilt als aufgeloest und wird nie
+     * wieder nachgeschlagen.</p>
+     *
+     * <p>Ein Fehlschlag ist kein Grund abzubrechen - der Name ist schon da, und
+     * ein Standort ohne System ist besser als gar keiner.</p>
+     */
+    private void enrichStation(AssetLocation loc) {
+        if (loc.getSystemId() != null || !"STATION".equals(loc.getLocationKind())) {
+            return;
+        }
+        try {
+            var info = esiService.getStationInfo(loc.getLocationId());
+            if (info != null && info.system_id() != null) {
+                loc.setSystemId(info.system_id());
+            }
+        } catch (Exception e) {
+            log.debug("Station {} ohne System: {}", loc.getLocationId(), e.getMessage());
+        }
+    }
+
     private void enrichSystem(AssetLocation loc) {
         // Falls wir eine Station sind, haben wir evt. systemId von ESI.
         // Falls wir ein Solar System sind, ist die locationId selbst die System-ID.
         if (loc.getSystemId() == null && !loc.getLocationKind().equals("SOLAR_SYSTEM")) return;
 
         Long searchId = loc.getSystemId() != null ? loc.getSystemId() : loc.getLocationId();
+
+        // Und diese Erkenntnis auch festhalten. Sie wurde hier lange nur fuer die
+        // Namensabfrage benutzt und danach weggeworfen: alle Standorte der Art
+        // SOLAR_SYSTEM trugen einen Systemnamen, aber keine system_id. Wer danach
+        // filtert - etwa nach dem Bausystem eines Industrieauftrags - findet dort
+        // nichts, obwohl das System bekannt ist.
+        loc.setSystemId(searchId);
 
         try {
             Query q = em.createNativeQuery("""

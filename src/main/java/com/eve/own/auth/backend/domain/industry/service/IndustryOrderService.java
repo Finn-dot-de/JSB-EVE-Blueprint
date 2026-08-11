@@ -489,10 +489,16 @@ public class IndustryOrderService {
             List<IndustryOrderRequirement> zeilen =
                     requirementRepo.findByOrderIdOrderByDepthAscQuantityNeededDesc(orderId);
 
+            // Ein Zwischenspeicher fuer die ganze Runde. Die Stuecklisten
+            // ueberlappen sich stark; ohne ihn wird derselbe Teilbaum unter
+            // jedem Bauteil erneut durchgerechnet.
+            Map<Long, Double> kostenSpeicher = new HashMap<>();
+
             boolean geaendert = false;
             for (IndustryOrderRequirement zeile : zeilen) {
                 String neu = buildVsBuy.shouldBuild(characterId, zeile.getTypeId(),
-                        zeile.getQuantityNeeded(), zeile.getSourceKind(), strategie, frachtsatz)
+                        zeile.getQuantityNeeded(), zeile.getSourceKind(), strategie,
+                        frachtsatz, kostenSpeicher)
                         ? "BUILD" : "BUY";
                 if (!neu.equals(zeile.getDecision())) {
                     zeile.setDecision(neu);

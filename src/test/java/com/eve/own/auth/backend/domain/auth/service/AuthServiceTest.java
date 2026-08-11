@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,12 +52,14 @@ class AuthServiceTest {
     @Mock private AesEncryptionService encryptionService;
     @Mock private CharacterRoleService roleService;
 
+    private TokenHealthService tokenHealth;
     private AuthService service;
 
     @BeforeEach
     void setUp() {
+        tokenHealth = mock(TokenHealthService.class);
         service = new AuthService(ssoClient, esiService, characterRepo, corpRepo, allianceRepo,
-                encryptionService, roleService);
+                encryptionService, roleService, tokenHealth);
 
         when(ssoClient.exchangeCode(anyString())).thenReturn(tokens());
         when(ssoClient.readIdentity(anyString()))

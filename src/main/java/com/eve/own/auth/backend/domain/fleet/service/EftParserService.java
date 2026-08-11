@@ -6,6 +6,7 @@ import com.eve.own.auth.backend.domain.fleet.repository.ReadinessQueryRepository
 import jakarta.persistence.Tuple;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -72,7 +73,19 @@ public class EftParserService {
      *
      * @throws IllegalArgumentException wenn Kopfzeile oder Schiffstyp unbrauchbar sind
      */
-    @Transactional(readOnly = true)
+    /**
+     * Eigene Transaktion, weil der Aufrufer die Ausnahme absichtlich faengt.
+     *
+     * <p>Der Vorsatz lautet: ein unlesbares Fitting darf ein Schiff nicht aus
+     * der Doktrin verschwinden lassen. Ohne {@code REQUIRES_NEW} kehrte er sich
+     * ins Gegenteil - die geworfene {@code IllegalArgumentException} markierte
+     * die Transaktion des Readiness-Boards als rollback-only, das Board wurde
+     * vollstaendig aufgebaut, und erst der Commit scheiterte. <b>Ein einziger</b>
+     * Doktrin-Eintrag mit unbrauchbarem Text liess damit das gesamte Board und
+     * jede Selbstauskunft mit 500 antworten, waehrend die Warnung im Log so
+     * aussah, als betreffe sie nur dieses eine Fitting.</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public ReadinessDtos.ParsedFitDto parseAndResolve(String eftString) {
         RawFit raw = parseText(eftString);
 

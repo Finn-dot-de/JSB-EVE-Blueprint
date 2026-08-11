@@ -248,16 +248,24 @@ public class BuildVsBuyService {
     public boolean shouldBuild(Long characterId, long typeId, long quantity,
                                String sourceKind, BuildStrategy strategy,
                                double freightPerCubicMeter) {
+        return shouldBuild(characterId, typeId, quantity, sourceKind, strategy,
+                freightPerCubicMeter, new HashMap<>());
+    }
+
+    /** Wie oben, mit einem Zwischenspeicher, der ueber mehrere Zeilen haelt. */
+    @Transactional(readOnly = true)
+    public boolean shouldBuild(Long characterId, long typeId, long quantity,
+                               String sourceKind, BuildStrategy strategy,
+                               double freightPerCubicMeter, Map<Long, Double> memo) {
         boolean herstellbar = "BUILDABLE".equals(sourceKind) || "REACTION".equals(sourceKind);
         if (!herstellbar) {
-            // Mineralien, PI-Gueter und Gas lassen sich per Industriejob nicht
-            // herstellen - dort gibt es nichts zu entscheiden.
             return false;
         }
         return switch (strategy) {
             case BUY_ALL -> false;
             case BUILD_ALL -> true;
-            case COST_EFFICIENT -> buildIsCheaper(characterId, typeId, freightPerCubicMeter);
+            case COST_EFFICIENT ->
+                    buildIsCheaper(characterId, typeId, freightPerCubicMeter, memo);
         };
     }
 
@@ -267,11 +275,26 @@ public class BuildVsBuyService {
      */
     @Transactional(readOnly = true)
     public boolean buildIsCheaper(Long characterId, long typeId, double freightPerCubicMeter) {
+        return buildIsCheaper(characterId, typeId, freightPerCubicMeter, new HashMap<>());
+    }
+
+    /**
+     * Wie oben, aber mit einem Zwischenspeicher, der ueber mehrere Zeilen haelt.
+     *
+     * <p>Der Unterschied ist kein Feinschliff. Die Stuecklisten eines Auftrags
+     * ueberlappen sich stark - dieselben Reaktionsprodukte und Mineralien tauchen
+     * unter Dutzenden Bauteilen wieder auf. Wer den Speicher je Zeile wegwirft,
+     * rechnet denselben Teilbaum immer wieder: bei einem Auftrag mit 515 Zeilen
+     * waren das ueber fuenftausend Datenbankabfragen fuer einen einzigen Klick
+     * auf "Moeglichst guenstig".</p>
+     */
+    @Transactional(readOnly = true)
+    public boolean buildIsCheaper(Long characterId, long typeId, double freightPerCubicMeter,
+                                  Map<Long, Double> memo) {
         BlueprintInfo bp = queryRepo.blueprintFor(typeId);
         if (bp == null) {
             return false;
         }
-        Map<Long, Double> memo = new HashMap<>();
         Double bauen = bauenJeStueck(characterId, bp, freightPerCubicMeter, memo,
                 new HashSet<>(Set.of(typeId)));
         Double kaufen = kaufenJeStueck(typeId, freightPerCubicMeter);

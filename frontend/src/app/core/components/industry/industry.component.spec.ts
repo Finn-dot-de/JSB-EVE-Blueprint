@@ -603,6 +603,24 @@ describe('IndustryComponent', () => {
       expect(industry.procurement).toHaveBeenCalledWith(1);
     });
 
+    it('klappt eine Tafel zu und wieder auf', () => {
+      const component = build();
+
+      // Gespeichert wird das Zugeklappte, nicht das Aufgeklappte: so ist der
+      // Ausgangszustand "alles offen", und eine neue Tafel versteckt sich nicht
+      // stillschweigend.
+      expect(component.panelOffen('bauort')).toBe(true);
+
+      component.panelUmschalten('bauort');
+      expect(component.panelOffen('bauort')).toBe(false);
+      // Die anderen bleiben davon unberührt.
+      expect(component.panelOffen('einkauf')).toBe(true);
+      expect(component.panelOffen('blaupausen')).toBe(true);
+
+      component.panelUmschalten('bauort');
+      expect(component.panelOffen('bauort')).toBe(true);
+    });
+
     it('bietet die drei Voreinstellungen in aufsteigendem Aufwand', () => {
       const component = build();
 

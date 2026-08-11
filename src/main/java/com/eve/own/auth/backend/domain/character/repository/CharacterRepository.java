@@ -25,4 +25,7 @@ public interface CharacterRepository extends JpaRepository<com.eve.own.auth.back
     List<Character> findAllWithCorporation();
 
     List<Character> findByCorporationId(Long corporationId);
+
+    /** Charaktere, deren Token sich nicht mehr erneuern laesst. */
+    java.util.List<Character> findByTokenInvalidSinceIsNotNull();
 }

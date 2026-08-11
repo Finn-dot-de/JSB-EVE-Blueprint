@@ -41,6 +41,7 @@ public class AuthService {
     private final AllianceRepository allianceRepo;
     private final AesEncryptionService encryptionService;
     private final CharacterRoleService roleService;
+    private final TokenHealthService tokenHealth;
 
     public AuthService(EveSsoClient ssoClient,
                        EsiService esiService,
@@ -48,7 +49,8 @@ public class AuthService {
                        CorporationRepository corpRepo,
                        AllianceRepository allianceRepo,
                        AesEncryptionService encryptionService,
-                       CharacterRoleService roleService) {
+                       CharacterRoleService roleService,
+                       TokenHealthService tokenHealth) {
         this.ssoClient = ssoClient;
         this.esiService = esiService;
         this.characterRepo = characterRepo;
@@ -56,6 +58,7 @@ public class AuthService {
         this.allianceRepo = allianceRepo;
         this.encryptionService = encryptionService;
         this.roleService = roleService;
+        this.tokenHealth = tokenHealth;
     }
 
     /**
@@ -80,22 +83,53 @@ public class AuthService {
      * <p>Erneuert bei Bedarf ueber den Refresh-Token und schreibt das Ergebnis
      * zurueck, damit parallele Aufrufer nicht erneut erneuern muessen.</p>
      */
-    @Transactional
+    /**
+     * Bewusst eine <b>eigene</b> Transaktion.
+     *
+     * <p>Ohne {@code REQUIRES_NEW} lief diese Methode in der Transaktion des
+     * Aufrufers mit - und riss sie mit sich, sobald ein Refresh-Token tot war.
+     * Der Ablauf war heimtueckisch: {@code ssoClient.refresh} wirft bei
+     * {@code invalid_grant}, Spring markiert die gemeinsame Transaktion als
+     * rollback-only, der Aufrufer faengt die Ausnahme und macht weiter - und
+     * erst beim Commit fliegt eine {@code UnexpectedRollbackException}. Alles
+     * dazwischen ist verloren, obwohl es funktioniert hat.</p>
+     *
+     * <p>Gemessen in Produktion: drei Charaktere mit abgelaufenem Refresh-Token
+     * legten damit den kompletten Industriejob-Abgleich fuer 225 Charaktere
+     * lahm, bei jedem Lauf, alle zehn Minuten.</p>
+     *
+     * <p>Der zweite Grund ist ebenso wichtig: ein <em>erfolgreich</em>
+     * erneuerter Token wird jetzt sofort festgeschrieben. EVE dreht bei jeder
+     * Erneuerung auch den Refresh-Token weiter; ginge der Schreibvorgang durch
+     * ein spaeteres Rollback des Aufrufers verloren, waere die Kette gerissen
+     * und der Charakter beim naechsten Mal ausgesperrt.</p>
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public String getValidAccessToken(Character character) {
         if (character.getTokenExpiry() != null
                 && character.getTokenExpiry().isAfter(Instant.now().plus(EXPIRY_HEADROOM))) {
             return encryptionService.decrypt(character.getAccessToken());
         }
 
-        EveSsoClient.TokenResponse tokens =
-                ssoClient.refresh(encryptionService.decrypt(character.getRefreshToken()));
+        EveSsoClient.TokenResponse tokens;
+        try {
+            tokens = ssoClient.refresh(encryptionService.decrypt(character.getRefreshToken()));
+        } catch (RuntimeException e) {
+            // Der Vermerk wird in einer eigenen Transaktion geschrieben - diese
+            // hier rollt gleich zurueck, und mit ihr ginge er sonst unter.
+            tokenHealth.markInvalid(character.getId(), e.getMessage());
+            throw e;
+        }
         if (tokens == null || tokens.access_token() == null) {
+            tokenHealth.markInvalid(character.getId(), "EVE lieferte keinen Token zurück.");
             throw new IllegalStateException(
                     "EVE-Token fuer Charakter " + character.getId() + " liess sich nicht erneuern.");
         }
 
         storeTokens(character, tokens);
         characterRepo.save(character);
+        // Hat es geklappt, ist ein alter Vermerk hinfaellig.
+        tokenHealth.markValid(character.getId());
         return tokens.access_token();
     }
 
@@ -163,7 +197,18 @@ public class AuthService {
     }
 
     /** Token verschluesselt ablegen - sie liegen dauerhaft in der Datenbank. */
+    /**
+     * Schreibt frische Tokens - und nimmt dabei die Abmelde-Marke zurueck.
+     *
+     * <p>Hier und nicht erst nach einem erfolgreichen Refresh: dieselbe Methode
+     * bedient auch die Anmeldung, und genau die ist der Moment, in dem der
+     * Spieler das Problem geloest hat. Wer nur den Refresh-Pfad entwarnt,
+     * laesst die Marke nach einer Neuanmeldung stehen.</p>
+     */
     private void storeTokens(Character character, EveSsoClient.TokenResponse tokens) {
+        character.setTokenInvalidSince(null);
+        character.setTokenInvalidReason(null);
+        character.setTokenInvalidNotifiedAt(null);
         character.setAccessToken(encryptionService.encrypt(tokens.access_token()));
         if (tokens.refresh_token() != null) {
             // Beim Erneuern liefert CCP nicht immer einen neuen Refresh-Token.

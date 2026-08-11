@@ -42,4 +42,14 @@ public final class CharacterDtos {
 
     public record AdminAccountDto(Long mainId, String mainName, String portraitUrl,
                                   String corporationName, List<AdminAccountCharDto> alts) {}
+
+    /**
+     * Ein Charakter, dessen Anmeldung abgelaufen ist.
+     *
+     * @param invalidSince seit wann - der Zeitpunkt des ERSTEN Fehlschlags,
+     *                     damit "seit gestern" von "seit gerade eben" zu
+     *                     unterscheiden ist
+     */
+    public record TokenHealthDto(Long characterId, String name,
+                                 String invalidSince, String reason) {}
 }

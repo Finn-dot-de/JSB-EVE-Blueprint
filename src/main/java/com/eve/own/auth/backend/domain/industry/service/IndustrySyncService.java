@@ -12,6 +12,7 @@ import com.eve.own.auth.backend.domain.industry.repository.CharacterBlueprintRep
 import com.eve.own.auth.backend.domain.industry.repository.IndustryJobRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryQueryRepository;
 import com.eve.own.auth.backend.esi.EsiService;
+import com.eve.own.auth.backend.esi.EsiResponse;
 import com.eve.own.auth.backend.esi.EsiService.EsiBlueprintResponse;
 import com.eve.own.auth.backend.esi.EsiService.EsiCorpStructureResponse;
 import com.eve.own.auth.backend.esi.EsiService.EsiIndustryJobResponse;
@@ -142,23 +143,44 @@ public class IndustrySyncService {
      */
     @Transactional
     public int syncBlueprints(Character character) {
+        // Fehlschlaege auf WARN und nicht auf DEBUG. In Produktion steht das Log
+        // auf INFO; jeder dieser Wege war dort unsichtbar, und "die Blaupausen
+        // werden nicht eingelesen" liess sich nicht von "es gibt keine"
+        // unterscheiden. Ein Sync, der stillschweigend nichts tut, ist schlimmer
+        // als einer, der laut scheitert.
         String token;
         try {
             token = authService.getValidAccessToken(character);
         } catch (RuntimeException e) {
-            log.debug("Kein gültiges Token für Charakter {}: {}", character.getId(), e.getMessage());
+            log.warn("Blaupausen {}: kein gültiges Token ({}). Meist ein abgelaufener "
+                    + "Refresh-Token - der Charakter muss sich neu anmelden.",
+                    character.getName(), e.getMessage());
             return -1;
         }
 
         List<EsiBlueprintResponse> bps;
         try {
-            bps = esiService.getCharacterBlueprints(character.getId(), token).dataOr(null);
+            EsiResponse<List<EsiBlueprintResponse>> antwort =
+                    esiService.getCharacterBlueprints(character.getId(), token);
+            if (antwort.notModified() && !antwort.hasData()) {
+                // ESI sagt "unveraendert", liefert aber keinen Inhalt: der Body
+                // war zu gross zum Zwischenspeichern. Der Bestand bleibt stehen,
+                // das ist richtig - aber es muss nachvollziehbar sein, warum
+                // hier nichts geschrieben wurde.
+                log.info("Blaupausen {}: unverändert (304 ohne Inhalt) - Bestand bleibt.",
+                        character.getName());
+                return 0;
+            }
+            bps = antwort.dataOr(null);
         } catch (RuntimeException e) {
-            log.debug("Blaupausen für Charakter {} nicht abrufbar: {}",
-                    character.getId(), e.getMessage());
+            log.warn("Blaupausen {} nicht abrufbar: {}. Prüfe den Scope "
+                    + "esi-characters.read_blueprints.v1 - er fehlt, wenn die "
+                    + "Anmeldung mit einer anderen ESI-Anwendung erfolgte.",
+                    character.getName(), e.getMessage());
             return -1;
         }
         if (bps == null) {
+            log.warn("Blaupausen {}: ESI antwortete ohne Inhalt.", character.getName());
             return 0;
         }
 

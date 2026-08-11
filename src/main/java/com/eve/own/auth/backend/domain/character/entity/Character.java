@@ -41,6 +41,37 @@ public class Character {
     @Column(name = "token_expiry")
     private Instant tokenExpiry;
 
+    /**
+     * Seit wann sich der Token dieses Charakters nicht mehr erneuern laesst.
+     *
+     * <p>{@code null} heisst gesund. Steht hier ein Zeitpunkt, hat EVE die
+     * Erneuerung abgelehnt - meist mit {@code invalid_grant}, weil der
+     * Refresh-Token abgelaufen oder zurueckgezogen wurde. Der Charakter muss
+     * sich dann neu anmelden.</p>
+     *
+     * <p>Ohne dieses Feld existierte die Information nur als Logzeile und war
+     * danach weg: niemand konnte sagen, <em>welche</em> Charaktere betroffen
+     * sind, und deshalb liess sich weder etwas anzeigen noch jemand
+     * benachrichtigen. Es ist die Grundlage fuer beides.</p>
+     */
+    @Column(name = "token_invalid_since")
+    private Instant tokenInvalidSince;
+
+    /** Warum die Erneuerung scheiterte - fuer die Anzeige, gekuerzt. */
+    @Column(name = "token_invalid_reason", length = 255)
+    private String tokenInvalidReason;
+
+    /**
+     * Wann wegen dieses Vorfalls benachrichtigt wurde.
+     *
+     * <p>Getrennt vom Zeitpunkt des Fehlschlags, damit eine Benachrichtigung
+     * genau einmal je Vorfall hinausgeht. Ohne dieses Feld bekaeme der Spieler
+     * alle zehn Minuten dieselbe Nachricht - und haette den Bot nach einer
+     * Stunde stummgeschaltet.</p>
+     */
+    @Column(name = "token_invalid_notified_at")
+    private Instant tokenInvalidNotifiedAt;
+
     @Column(name = "main_character_id")
     private Long mainCharacterId;
 

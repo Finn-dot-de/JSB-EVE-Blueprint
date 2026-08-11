@@ -8,6 +8,7 @@ import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import jakarta.persistence.Tuple;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -53,7 +54,23 @@ public class MyAssetService {
      * Der Account des eingeloggten Charakters: dessen Main, oder er selbst,
      * wenn er keinem Main zugeordnet ist.
      */
-    @Transactional(readOnly = true)
+    /**
+     * Eigene Transaktion, damit ein unbekannter Charakter nicht den Aufrufer
+     * mitreisst.
+     *
+     * <p>Diese Methode wirft, wenn zu einer Kennung kein Charakter mehr in der
+     * Datenbank steht - etwa nach einer Ruecksetzung auf Gast, waehrend das JWT
+     * noch gueltig ist. Mehrere Aufrufer fangen das bewusst ab und antworten
+     * milde: die Bauortsuche laesst dann den Hinweis "hier liegt schon Material
+     * von dir" weg, die Planung rechnet ohne Forschungsboni weiter.</p>
+     *
+     * <p>Ohne {@code REQUIRES_NEW} ging diese Milde nach hinten los. Die
+     * Ausnahme markierte die gemeinsame Transaktion als rollback-only, der
+     * Aufrufer lieferte sein Ergebnis - und der Commit warf eine
+     * {@code UnexpectedRollbackException}. Aus "ein Hinweis fehlt" wurde
+     * "die ganze Suche antwortet mit 500".</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public Long resolveMainId(Long characterId) {
         Character c = characterRepo.findById(characterId)
                 .orElseThrow(() -> new IllegalStateException("Charakter " + characterId + " ist nicht registriert."));

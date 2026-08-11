@@ -653,6 +653,69 @@ export class IndustryComponent {
 
   zustandLabel = zustandLabel;
 
+  readonly bpSyncRunning = signal(false);
+  readonly bpSyncNote = signal<string | null>(null);
+
+  /**
+   * Liest die Blaupausen sofort neu ein.
+   *
+   * Die Antwort sagt ausdrücklich, bei wie vielen Charakteren der Zugriff
+   * scheiterte. Ohne diese Zahl ist "keine Blaupausen gefunden" nicht von
+   * "der Abruf läuft gar nicht" zu unterscheiden - genau das war das Problem.
+   */
+  syncBlueprints() {
+    this.bpSyncRunning.set(true);
+    this.bpSyncNote.set(null);
+    this.industry.syncBlueprints().subscribe({
+      next: (r) => {
+        this.bpSyncNote.set(
+          r.withoutAccess > 0
+            ? `${r.written} Blaupausen eingelesen. Bei ${r.withoutAccess} Charakter(en) ` +
+              `scheiterte der Zugriff: ${r.characters.join(', ')} - meist ein abgelaufener ` +
+              `Refresh-Token, hilft eine neue Anmeldung.`
+            : `${r.written} Blaupausen eingelesen.`,
+        );
+        this.bpSyncRunning.set(false);
+        const detail = this.openOrder();
+        if (detail) this.loadProcurement(detail.order.id);
+      },
+      error: () => {
+        this.bpSyncNote.set('Der Abruf ließ sich nicht anstoßen.');
+        this.bpSyncRunning.set(false);
+      },
+    });
+  }
+
+  // ===========================================================
+  //  Ein- und ausklappbare Tafeln
+  // ===========================================================
+
+  /**
+   * Welche Tafeln zugeklappt sind.
+   *
+   * Gespeichert wird das Zugeklappte, nicht das Aufgeklappte: so ist der
+   * Ausgangszustand "alles offen", und eine neu hinzukommende Tafel ist
+   * sichtbar, statt sich stillschweigend zu verstecken.
+   *
+   * Bewusst nur die Nachschlagewerke - Bauort, Blaupausen, Einkaufsliste. Die
+   * Fertigung klappt über ihre Stufen, und die Kostenkacheln des Einkaufs
+   * bleiben immer stehen: sie sind die Antwort, die Liste darunter ist die
+   * Begründung.
+   */
+  private readonly zugeklappt = signal<ReadonlySet<string>>(new Set());
+
+  panelOffen(name: string): boolean {
+    return !this.zugeklappt().has(name);
+  }
+
+  panelUmschalten(name: string) {
+    const naechste = new Set(this.zugeklappt());
+    if (!naechste.delete(name)) {
+      naechste.add(name);
+    }
+    this.zugeklappt.set(naechste);
+  }
+
   /**
    * Stunden statt Sekunden.
    *

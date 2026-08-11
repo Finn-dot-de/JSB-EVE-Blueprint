@@ -21,11 +21,43 @@ public class CharacterController {
 
     private final AccountService accountService;
     private final CorporationStatsService corporationStatsService;
+    private final com.eve.own.auth.backend.domain.auth.service.TokenHealthService tokenHealth;
+    private final com.eve.own.auth.backend.domain.assets.service.MyAssetService assetService;
 
     public CharacterController(AccountService accountService,
-                               CorporationStatsService corporationStatsService) {
+                               CorporationStatsService corporationStatsService,
+                               com.eve.own.auth.backend.domain.auth.service.TokenHealthService tokenHealth,
+                               com.eve.own.auth.backend.domain.assets.service.MyAssetService assetService) {
         this.accountService = accountService;
         this.corporationStatsService = corporationStatsService;
+        this.tokenHealth = tokenHealth;
+        this.assetService = assetService;
+    }
+
+    /**
+     * Welche eigenen Charaktere sich neu anmelden muessen.
+     *
+     * <p>Nur die des eigenen Kontos - fremde Anmeldeprobleme gehen niemanden
+     * etwas an. Ohne diesen Endpunkt lebte die Information nur im Serverlog,
+     * und der Spieler erfuhr erst dann davon, dass sein Charakter draussen ist,
+     * wenn dessen Daten unbemerkt veralteten.</p>
+     */
+    @GetMapping("/token-health")
+    public List<CharacterDtos.TokenHealthDto> tokenHealth() {
+        java.util.Set<Long> eigene;
+        try {
+            eigene = assetService.ownCharacterIds(
+                    assetService.resolveMainId(CurrentUser.characterId()));
+        } catch (IllegalStateException e) {
+            return List.of();
+        }
+        return tokenHealth.invalidTokens().stream()
+                .filter(c -> eigene.contains(c.getId()))
+                .map(c -> new CharacterDtos.TokenHealthDto(
+                        c.getId(), c.getName(),
+                        c.getTokenInvalidSince() == null ? null : c.getTokenInvalidSince().toString(),
+                        c.getTokenInvalidReason()))
+                .toList();
     }
 
     /** Die eigenen Charaktere, Main und Alts. */

@@ -8,7 +8,6 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Legt die Indizes an, ohne die der Industrie-Assistent unbenutzbar langsam ist.
@@ -96,6 +95,24 @@ public class IndustryIndexMigration implements ApplicationRunner {
             """);
 
     /** Braucht die Trigramm-Erweiterung, deshalb getrennt und nach ihr. */
+    /**
+     * Indizes auf die <b>eigenen</b> Tabellen.
+     *
+     * <p>Bisher standen hier nur die Stammdaten. Die eigenen Tabellen wachsen
+     * aber mit dem Betrieb, und ohne diese beiden Indizes liest jede Blaupausen-
+     * und Jobabfrage die ganze Tabelle: gemessen 167 Millisekunden je Planabruf
+     * bei 5.000 Zeilen und 925 bei 30.000 - je Aufruf, nicht insgesamt.</p>
+     */
+    private static final List<String> OWN_INDEXES = List.of(
+            """
+            CREATE INDEX IF NOT EXISTS idx_bp_char_type
+                ON character_blueprints (character_id, type_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_jobs_owner
+                ON industry_jobs (owner_character_id)
+            """);
+
     private static final String TRIGRAM_INDEX = """
             CREATE INDEX IF NOT EXISTS idx_invtypes_typename_trgm
                 ON evesde."invTypes" USING gin ("typeName" gin_trgm_ops)
@@ -104,10 +121,25 @@ public class IndustryIndexMigration implements ApplicationRunner {
     @PersistenceContext
     private EntityManager em;
 
+    /**
+     * Bewusst OHNE {@code @Transactional}.
+     *
+     * <p>In PostgreSQL bricht ein fehlgeschlagenes DDL die laufende Transaktion
+     * ab; jede weitere Anweisung darin scheitert dann mit "current transaction is
+     * aborted". Zusammen mit dem {@code catch} je Anweisung sah es aus, als
+     * ginge es weiter - tatsaechlich kam nach dem ersten Fehler <em>kein
+     * einziger</em> Index mehr zustande, und am Ende stand trotzdem eine
+     * Erfolgsmeldung. Ohne umschliessende Transaktion steht jedes CREATE INDEX
+     * fuer sich, und ein Fehlschlag kostet genau diesen einen.</p>
+     */
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
         int angelegt = 0;
+        for (String ddl : OWN_INDEXES) {
+            if (execute(ddl)) {
+                angelegt++;
+            }
+        }
         for (String ddl : INDEXES) {
             angelegt += execute(ddl) ? 1 : 0;
         }

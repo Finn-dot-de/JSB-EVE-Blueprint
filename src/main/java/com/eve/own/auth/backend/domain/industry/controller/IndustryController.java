@@ -5,7 +5,9 @@ import com.eve.own.auth.backend.domain.industry.dto.IndustryDtos;
 import com.eve.own.auth.backend.domain.industry.service.IndustryOrderService;
 import com.eve.own.auth.backend.domain.industry.service.IndustryPlanningService;
 import com.eve.own.auth.backend.domain.industry.service.IndustryStructureService;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +42,8 @@ public class IndustryController {
     private final IndustryPlanningService planning;
     private final IndustryOrderService orders;
     private final IndustryStructureService structures;
+    private final com.eve.own.auth.backend.domain.industry.service.IndustrySyncService sync;
+    private final com.eve.own.auth.backend.domain.character.repository.CharacterRepository characterRepo;
 
     // ===========================================================
     //  Planen
@@ -69,6 +73,37 @@ public class IndustryController {
             @RequestParam(required = false) Long buildSystemId) {
         return planning.preview(CurrentUser.characterId(), productTypeId, quantity, depth,
                 buildSystemId);
+    }
+
+    /**
+     * Liest die Blaupausen des Kontos sofort neu ein.
+     *
+     * <p>Der Zeitplan holt sie alle sechs Stunden. Wer gerade eine Blaupause
+     * gekauft oder erforscht hat, will nicht sechs Stunden warten - und wer den
+     * Verdacht hat, dass der Abruf gar nicht laeuft, braucht eine Antwort statt
+     * eines Zeitplans. Die Rueckgabe sagt, wie viele Zeilen geschrieben wurden
+     * und bei wie vielen Charakteren der Zugriff scheiterte.</p>
+     */
+    @PostMapping("/blueprints/sync")
+    public Map<String, Object> syncBlueprints() {
+        Long mainId = CurrentUser.characterId();
+        int geschrieben = 0;
+        int ohneZugriff = 0;
+        List<String> betroffen = new ArrayList<>();
+
+        for (var c : characterRepo.findAll()) {
+            int n = sync.syncBlueprints(c);
+            if (n < 0) {
+                ohneZugriff++;
+                betroffen.add(c.getName());
+            } else {
+                geschrieben += n;
+            }
+        }
+        log.info("Blaupausen von Hand eingelesen ({}): {} Zeilen, {} ohne Zugriff.",
+                mainId, geschrieben, ohneZugriff);
+        return Map.of("written", geschrieben, "withoutAccess", ohneZugriff,
+                "characters", betroffen);
     }
 
     /**

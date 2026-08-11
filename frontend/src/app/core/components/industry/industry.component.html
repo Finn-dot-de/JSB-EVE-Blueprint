@@ -270,7 +270,19 @@
        ============================================================ -->
   @if (summary() || openOrder()) {
     <section class="surface-panel bauort">
-      <h3>Bauort</h3>
+      <button type="button" class="panel-kopf" [attr.aria-expanded]="panelOffen('bauort')"
+              (click)="panelUmschalten('bauort')">
+        <h3>Bauort</h3>
+        @if (openOrder()?.order?.buildLocationName; as ort) {
+          <span class="panel-kurz">{{ ort }}</span>
+        } @else {
+          <span class="panel-kurz">nicht gewählt</span>
+        }
+        <i class="fa-solid" aria-hidden="true"
+           [class.fa-chevron-down]="panelOffen('bauort')"
+           [class.fa-chevron-right]="!panelOffen('bauort')"></i>
+      </button>
+      @if (panelOffen('bauort')) {
       @if (openOrder()) {
         <p class="bauort-stand">
           @if (openOrder()!.order.buildLocationName) {
@@ -322,6 +334,7 @@
           der Rolle Station&#8209;Manager angemeldet war.
         </p>
       }
+      }
     </section>
   }
 
@@ -330,7 +343,24 @@
        ============================================================ -->
   @if (blueprints().length) {
     <section class="surface-panel blaupausen">
-      <h3>Blaupausen und Formeln</h3>
+      <button type="button" class="panel-kopf" [attr.aria-expanded]="panelOffen('blaupausen')"
+              (click)="panelUmschalten('blaupausen')">
+        <h3>Blaupausen und Formeln</h3>
+        <span class="panel-kurz">{{ blueprints().length }}</span>
+        <i class="fa-solid" aria-hidden="true"
+           [class.fa-chevron-down]="panelOffen('blaupausen')"
+           [class.fa-chevron-right]="!panelOffen('blaupausen')"></i>
+      </button>
+      @if (panelOffen('blaupausen')) {
+      <div class="bp-abruf">
+        <button type="button" class="ve-knopf" [disabled]="bpSyncRunning()"
+                (click)="syncBlueprints()">
+          {{ bpSyncRunning() ? 'liest ein …' : 'Blaupausen jetzt einlesen' }}
+        </button>
+        @if (bpSyncNote(); as note) {
+          <span class="bp-abruf-note">{{ note }}</span>
+        }
+      </div>
       <p class="bp-lead">
         Alles, wofür es eine Vorlage gibt – auch für Teile, die du kaufst. So siehst
         du, was du bräuchtest, wenn du doch alles selbst herstellen willst.
@@ -365,6 +395,7 @@
           </li>
         }
       </ul>
+      }
     </section>
   }
 
@@ -373,7 +404,19 @@
        ============================================================ -->
   @if (procurement(); as p) {
     <section class="surface-panel einkauf">
-      <h3>Einkauf in Jita</h3>
+      <!-- Die vier Kacheln bleiben immer stehen: sie sind die Antwort auf
+           "was kostet mich das". Was darunter klappt, ist die Begründung -
+           die Liste der einzelnen Positionen. -->
+      <button type="button" class="panel-kopf" [attr.aria-expanded]="panelOffen('einkauf')"
+              (click)="panelUmschalten('einkauf')">
+        <h3>Einkauf in Jita</h3>
+        <span class="panel-kurz">
+          {{ p.lines.length }} {{ p.lines.length === 1 ? 'Position' : 'Positionen' }}
+        </span>
+        <i class="fa-solid" aria-hidden="true"
+           [class.fa-chevron-down]="panelOffen('einkauf')"
+           [class.fa-chevron-right]="!panelOffen('einkauf')"></i>
+      </button>
 
       <div class="einkauf-kopf">
         <div class="einkauf-zahl">
@@ -392,6 +435,7 @@
         </div>
       </div>
 
+      @if (panelOffen('einkauf')) {
       <p class="einkauf-weg">
         @if (!p.locationChosen) {
           Noch kein Bauort gewählt – gerechnet wird mit dem teureren Sprungfrachter,
@@ -456,6 +500,7 @@
             }
           </tbody>
         </table>
+      }
       }
     </section>
   }

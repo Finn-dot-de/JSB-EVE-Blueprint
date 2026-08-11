@@ -219,6 +219,14 @@ export interface BlueprintCheck {
   note: string | null;
 }
 
+/** Was ein Blaupausen-Abruf ergeben hat. */
+export interface BlueprintSync {
+  written: number;
+  withoutAccess: number;
+  /** Namen der Charaktere ohne Zugriff - meist ein abgelaufener Refresh-Token. */
+  characters: string[];
+}
+
 /** Zugriff auf den Industrie-Assistenten. */
 @Injectable({ providedIn: 'root' })
 export class IndustryService {
@@ -297,6 +305,17 @@ export class IndustryService {
     return this.http.put<OrderDetail>(`${this.base}/orders/${orderId}/strategy`, null, {
       params: { strategy },
     });
+  }
+
+  /**
+   * Liest die Blaupausen sofort neu ein, statt auf den Zeitplan zu warten.
+   *
+   * Der Plan holt sie alle sechs Stunden. Wer gerade eine Blaupause gekauft hat
+   * — oder den Verdacht, dass der Abruf gar nicht läuft — braucht eine Antwort
+   * und keinen Zeitplan.
+   */
+  syncBlueprints(): Observable<BlueprintSync> {
+    return this.http.post<BlueprintSync>(`${this.base}/blueprints/sync`, null);
   }
 
   /** Reichen die vorhandenen Blaupausen samt ihrer Läufe? */

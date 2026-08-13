@@ -16,11 +16,14 @@ import com.eve.own.auth.backend.domain.industry.repository.IndustryOrderJobRepos
 import com.eve.own.auth.backend.domain.industry.repository.IndustryOrderRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryOrderRequirementRepository;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -138,6 +141,9 @@ public class IndustryOrderService {
             r.setTypeId(row.typeId());
             r.setTypeName(row.typeName());
             r.setQuantityNeeded(row.needed());
+            // Die Marke, auf die beim Neurechnen zurueckgesetzt wird. Ohne sie
+            // sammelt jede Runde die Beitraege der Unterzweige erneut auf.
+            r.setBaseQuantity(row.needed());
             r.setSourceKind(row.sourceKind());
             r.setDecision(row.decision());
             r.setDepth(row.depth());
@@ -211,16 +217,23 @@ public class IndustryOrderService {
         Map<Long, Holding> bestand =
                 planning.holdingsFor(characterId, typen, order.getBuildSystemId());
 
+        Map<Long, Long> entfaellt = entfaelltDurchGebautes(order, gespeichert, bestand);
+
         List<IndustryDtos.RequirementDto> rows = new ArrayList<>(gespeichert.size());
         for (IndustryOrderRequirement r : gespeichert) {
             Holding h = bestand.get(r.getTypeId());
             long vorhanden = h == null ? 0 : h.quantity();
-            rows.add(new IndustryDtos.RequirementDto(
-                    r.getTypeId(), r.getTypeName(), r.getQuantityNeeded(), vorhanden,
+            // Nie mehr gutschreiben, als ueberhaupt gebraucht wird - sonst
+            // wandert der Ueberschuss als negative Menge in die Anzeige.
+            long verbaut = Math.min(
                     Math.max(0, r.getQuantityNeeded() - vorhanden),
+                    entfaellt.getOrDefault(r.getTypeId(), 0L));
+            rows.add(new IndustryDtos.RequirementDto(
+                    r.getTypeId(), r.getTypeName(), r.getQuantityNeeded(), vorhanden, verbaut,
+                    Math.max(0, r.getQuantityNeeded() - vorhanden - verbaut),
                     r.getSourceKind(),
                     "BUILDABLE".equals(r.getSourceKind()) || "REACTION".equals(r.getSourceKind()),
-                    r.getDecision(), r.getDepth(), r.getParentTypeId(),
+                    r.getDecision(), r.getDepth(), stufeVon(r), r.getParentTypeId(),
                     r.getUnitPrice(), Boolean.TRUE.equals(r.getPriceMissing()),
                     r.getPackagedVolume() == null ? 0.0 : r.getPackagedVolume(),
                     h == null ? 0 : h.onCharacters(),
@@ -235,8 +248,15 @@ public class IndustryOrderService {
                 0, order.getMaterialEfficiency(), order.getTimeEfficiency(),
                 true, order.getBlueprintOwned() != null && order.getBlueprintOwned());
 
+        // Die Kanten kommen live aus den Stammdaten, nicht aus der Tabelle:
+        // dort steht je Typ nur eine Elternangabe, und ein Material hat oft
+        // viele Verbraucher. Die Abfrage misst wenige Millisekunden.
+        List<IndustryDtos.MaterialEdgeDto> kanten = queryRepo.orderEdges(order.getId()).stream()
+                .map(e -> new IndustryDtos.MaterialEdgeDto(e.produktTypeId(), e.materialTypeId()))
+                .toList();
+
         return new IndustryDtos.OrderDetailDto(
-                summary(characterId, order), summary, rows, jobsOf(order));
+                summary(characterId, order), summary, rows, kanten, jobsOf(order));
     }
 
     /**
@@ -700,68 +720,333 @@ public class IndustryOrderService {
         requirementRepo.deleteAll(tiefer);
         requirementRepo.flush();
 
-        // Breitensuche ueber die gebauten Knoten. Die Tiefe ist durch die
-        // Stammdaten begrenzt; der Zaehler schuetzt zusaetzlich davor, dass ein
-        // Zyklus in fremden Daten die Schleife nicht enden laesst.
         Map<Long, IndustryOrderRequirement> nachTyp = new LinkedHashMap<>();
         ebeneEins.forEach(r -> nachTyp.put(r.getTypeId(), r));
 
-        List<IndustryOrderRequirement> welle = new ArrayList<>(ebeneEins);
-        for (int ebene = 1; ebene <= MAX_EXPANSION_DEPTH && !welle.isEmpty(); ebene++) {
-            List<IndustryOrderRequirement> naechste = new ArrayList<>();
-            for (IndustryOrderRequirement eltern : welle) {
-                if (!"BUILD".equals(eltern.getDecision())) {
-                    continue;
-                }
-                // Die Materialeffizienz der Blaupause *dieses Bauteils* - nicht die
-                // des Endprodukts. Ohne sie steht in der Tabelle die Menge fuer
-                // ME 0, und das verzerrt die Frage "kaufen oder bauen" spuerbar:
-                // bei einem Capital Core Temperature Regulator entscheidet genau
-                // dieser Unterschied darueber, ob Eigenbau acht Millionen kostet
-                // oder zehn spart.
-                var bpInfo = queryRepo.blueprintFor(eltern.getTypeId());
-                var ctx = bpInfo == null
-                        ? null
-                        : planning.contextFor(order.getCreatedByCharacterId(), bpInfo);
-                long laeufe = bpInfo == null
-                        ? eltern.getQuantityNeeded()
-                        : IndustryMath.runsForQuantity(
-                                eltern.getQuantityNeeded(), bpInfo.unitsPerRun());
+        // Drei getrennte Durchgaenge, und die Trennung ist der eigentliche Punkt.
+        //
+        // Frueher lief das als Breitensuche nach Tiefe in einem Zug: ein Knoten
+        // wurde aufgeloest, sobald er das erste Mal auftauchte. Eine Stueckliste
+        // ist aber ein Netz - Reinforced Carbon Fiber wird in einem Phoenix von
+        // siebzehn Teilen gebraucht. Traf die Suche es spaeter erneut, addierte
+        // sie nur noch die Menge; seine Kinder waren da laengst aus der ersten,
+        // viel zu kleinen Teilsumme gerechnet. Gemessen: 23.097 gebraucht, die
+        // Kinder standen bei 7.200. Bei Pressurized Oxidizers war es Faktor 81.
+        // Nach unten hin fehlte damit systematisch Material auf der Einkaufsliste.
+        //
+        // Deshalb erst die Struktur, dann die Reihenfolge, dann die Mengen.
+        Map<Long, List<IndustryQueryRepository.BomNode>> zutaten = new LinkedHashMap<>();
+        Map<Long, Set<Long>> verbraucher = new HashMap<>();
+        erkundeStruktur(order, nachTyp, zutaten, verbraucher, frueher);
 
-                for (var kind : queryRepo.billOfMaterials(eltern.getTypeId(), 1)) {
-                    // Die Menge JE LAUF, wie sie in den Stammdaten steht - nicht
-                    // die je Stueck. Eine Reaktion liefert 10.000 Stueck aus 100
-                    // Einheiten Material; je Stueck sind das 0,01, und wer das
-                    // aufrundet, rechnet mit 1 statt 100.
-                    long menge = ctx == null
-                            ? (long) Math.ceil(kind.quantityPerUnit() * eltern.getQuantityNeeded())
-                            : IndustryMath.materialForJob(laeufe, kind.quantityPerRun(), ctx);
+        List<Long> reihenfolge = topologisch(nachTyp.keySet(), zutaten, verbraucher);
+        rechneMengen(order, reihenfolge, nachTyp, zutaten);
+        setzeStufen(reihenfolge, nachTyp, zutaten);
 
-                    IndustryOrderRequirement vorhanden = nachTyp.get(kind.typeId());
-                    if (vorhanden != null) {
-                        // Aus einem zweiten Zweig - die Mengen addieren sich.
-                        vorhanden.setQuantityNeeded(vorhanden.getQuantityNeeded() + menge);
-                        continue;
-                    }
+        fillVolumesAndPrices(nachTyp.values());
+        requirementRepo.saveAll(nachTyp.values());
+    }
 
+    /**
+     * Erster Durchgang: welche Knoten gibt es und wer braucht wen.
+     *
+     * <p>Ohne eine einzige Menge, und das ist Absicht. Die Menge eines Knotens
+     * steht erst fest, wenn <em>alle</em> seine Verbraucher bekannt sind - wer
+     * beim ersten Treffer schon rechnet, rechnet aus einer Teilsumme.</p>
+     *
+     * <p>Der Zyklusschutz steckt in {@code erkundet}: ein Knoten wird genau
+     * einmal aufgeklappt. Zwei Blaupausen, die einander als Material fuehren,
+     * beenden die Schleife damit von selbst, ohne dass jemand eine Tiefe raten
+     * muss.</p>
+     */
+    private void erkundeStruktur(
+            IndustryOrder order,
+            Map<Long, IndustryOrderRequirement> nachTyp,
+            Map<Long, List<IndustryQueryRepository.BomNode>> zutaten,
+            Map<Long, Set<Long>> verbraucher,
+            Map<Long, String> frueher) {
+
+        Deque<Long> offen = new ArrayDeque<>(nachTyp.keySet());
+        Set<Long> erkundet = new HashSet<>();
+
+        while (!offen.isEmpty()) {
+            Long typ = offen.poll();
+            if (!erkundet.add(typ)) {
+                continue;
+            }
+            IndustryOrderRequirement zeile = nachTyp.get(typ);
+            if (zeile == null || !"BUILD".equals(zeile.getDecision())
+                    || zeile.getDepth() >= MAX_EXPANSION_DEPTH) {
+                continue;
+            }
+            List<IndustryQueryRepository.BomNode> kinder = queryRepo.billOfMaterials(typ, 1);
+            if (kinder.isEmpty()) {
+                continue;
+            }
+            zutaten.put(typ, kinder);
+
+            for (var kind : kinder) {
+                verbraucher.computeIfAbsent(kind.typeId(), k -> new LinkedHashSet<>()).add(typ);
+                if (!nachTyp.containsKey(kind.typeId())) {
                     IndustryOrderRequirement r = new IndustryOrderRequirement();
                     r.setOrderId(order.getId());
                     r.setTypeId(kind.typeId());
                     r.setTypeName(kind.typeName());
-                    r.setQuantityNeeded(menge);
+                    r.setQuantityNeeded(0L);
+                    r.setBaseQuantity(0L);
                     r.setSourceKind(kind.sourceKind());
                     r.setDecision(frueher.getOrDefault(kind.typeId(), "BUY"));
-                    r.setDepth(eltern.getDepth() + 1);
-                    r.setParentTypeId(eltern.getTypeId());
+                    // Die erste Begegnung ist der kuerzeste Weg - genau das, was
+                    // depth aussagen soll. Fuer die Reihenfolge dient buildLevel.
+                    r.setDepth(zeile.getDepth() + 1);
+                    r.setParentTypeId(typ);
                     nachTyp.put(kind.typeId(), r);
-                    naechste.add(r);
                 }
+                offen.add(kind.typeId());
             }
-            welle = naechste;
+        }
+    }
+
+    /**
+     * Zweiter Durchgang: eine Reihenfolge, in der jeder Verbraucher vor seinem
+     * Material steht.
+     *
+     * <p>Kahn ueber die Verbraucherzahl. Ein Knoten ist an der Reihe, sobald
+     * jeder, der ihn braucht, abgearbeitet ist - dann und nur dann ist seine
+     * Menge vollstaendig.</p>
+     *
+     * <p>Was uebrig bleibt, ist ein Kreisbezug. Der wird benannt und hinten
+     * angehaengt, nicht verschwiegen: Eine erfundene Reihenfolge waere schlimmer
+     * als eine fehlende, weil man ihr ansieht, dass sie eine ist.</p>
+     */
+    private List<Long> topologisch(
+            Set<Long> knoten,
+            Map<Long, List<IndustryQueryRepository.BomNode>> zutaten,
+            Map<Long, Set<Long>> verbraucher) {
+
+        Map<Long, Integer> offeneVerbraucher = new HashMap<>();
+        for (Long typ : knoten) {
+            int zahl = (int) verbraucher.getOrDefault(typ, Set.of()).stream()
+                    .filter(knoten::contains)
+                    .count();
+            offeneVerbraucher.put(typ, zahl);
         }
 
-        fillVolumesAndPrices(nachTyp.values());
-        requirementRepo.saveAll(nachTyp.values());
+        Deque<Long> bereit = new ArrayDeque<>();
+        knoten.stream().filter(t -> offeneVerbraucher.get(t) == 0).forEach(bereit::add);
+
+        List<Long> reihenfolge = new ArrayList<>(knoten.size());
+        Set<Long> erledigt = new HashSet<>();
+        while (!bereit.isEmpty()) {
+            Long typ = bereit.poll();
+            if (!erledigt.add(typ)) {
+                continue;
+            }
+            reihenfolge.add(typ);
+            for (var kind : zutaten.getOrDefault(typ, List.of())) {
+                Integer rest = offeneVerbraucher.computeIfPresent(
+                        kind.typeId(), (k, v) -> v - 1);
+                if (rest != null && rest == 0) {
+                    bereit.add(kind.typeId());
+                }
+            }
+        }
+
+        if (reihenfolge.size() < knoten.size()) {
+            List<Long> rest = knoten.stream().filter(t -> !erledigt.contains(t)).toList();
+            log.warn("Kreisbezug in der Stueckliste: {} Zeilen ohne verlaessliche "
+                    + "Reihenfolge, ihre Mengen sind Untergrenzen. Typen: {}",
+                    rest.size(), rest);
+            reihenfolge.addAll(rest);
+        }
+        return reihenfolge;
+    }
+
+    /**
+     * Dritter Durchgang: die Mengen, in der Reihenfolge von eben.
+     *
+     * <p>Ebene-1-Zeilen fallen auf ihre Marke zurueck, tiefere auf null. Sonst
+     * addiert jedes Umschalten einer Kaufen/Bauen-Entscheidung die Beitraege der
+     * Unterzweige erneut auf denselben Stand.</p>
+     */
+    private void rechneMengen(
+            IndustryOrder order,
+            List<Long> reihenfolge,
+            Map<Long, IndustryOrderRequirement> nachTyp,
+            Map<Long, List<IndustryQueryRepository.BomNode>> zutaten) {
+
+        for (IndustryOrderRequirement zeile : nachTyp.values()) {
+            long marke = zeile.getBaseQuantity() != null
+                    ? zeile.getBaseQuantity()
+                    // Altauftrag ohne Marke: der heutige Stand gilt. Ein bereits
+                    // aufgelaufener Fehler bleibt, waechst aber nicht weiter.
+                    : zeile.getQuantityNeeded();
+            zeile.setBaseQuantity(marke);
+            zeile.setQuantityNeeded(marke);
+        }
+
+        for (Long typ : reihenfolge) {
+            IndustryOrderRequirement eltern = nachTyp.get(typ);
+            if (eltern == null || !"BUILD".equals(eltern.getDecision())) {
+                continue;
+            }
+            List<IndustryQueryRepository.BomNode> kinder = zutaten.get(typ);
+            if (kinder == null || kinder.isEmpty()) {
+                continue;
+            }
+
+            // Die Materialeffizienz der Blaupause *dieses Bauteils* - nicht die
+            // des Endprodukts. Ohne sie steht in der Tabelle die Menge fuer
+            // ME 0, und das verzerrt die Frage "kaufen oder bauen" spuerbar:
+            // bei einem Capital Core Temperature Regulator entscheidet genau
+            // dieser Unterschied darueber, ob Eigenbau acht Millionen kostet
+            // oder zehn spart.
+            var bpInfo = queryRepo.blueprintFor(typ);
+            var ctx = bpInfo == null
+                    ? null
+                    : planning.contextFor(order.getCreatedByCharacterId(), bpInfo);
+            long laeufe = bpInfo == null
+                    ? eltern.getQuantityNeeded()
+                    : IndustryMath.runsForQuantity(
+                            eltern.getQuantityNeeded(), bpInfo.unitsPerRun());
+
+            for (var kind : kinder) {
+                // Die Menge JE LAUF, wie sie in den Stammdaten steht - nicht
+                // die je Stueck. Eine Reaktion liefert 10.000 Stueck aus 100
+                // Einheiten Material; je Stueck sind das 0,01, und wer das
+                // aufrundet, rechnet mit 1 statt 100.
+                long menge = ctx == null
+                        ? (long) Math.ceil(kind.quantityPerUnit() * eltern.getQuantityNeeded())
+                        : IndustryMath.materialForJob(laeufe, kind.quantityPerRun(), ctx);
+
+                IndustryOrderRequirement zeile = nachTyp.get(kind.typeId());
+                if (zeile != null) {
+                    zeile.setQuantityNeeded(zeile.getQuantityNeeded() + menge);
+                }
+            }
+        }
+    }
+
+    /**
+     * Was an Material entfaellt, weil das Bauteil darueber schon fertig ist.
+     *
+     * <p>Der gemeldete Fehler: "Wenn man etwas gebaut hatte und die Materialien
+     * gibt es nicht mehr, weil sie verbraucht wurden, geht die Beschaffung von
+     * vorn los." Die Ursache liegt nicht bei den Jobs, sondern in der
+     * Bruttorechnung. {@link #rechneMengen} loest die Zutaten aus der
+     * <em>vollen</em> Menge des Bauteils auf und sieht den Bestand nie an - die
+     * Methode bekommt ihn gar nicht. Liegen 1.551 fertige Auto-Integrity
+     * Preservation Seals im Hangar und der Auftrag fordert 800, wird der
+     * Zutatenbedarf trotzdem fuer alle 800 aufaddiert. Der Bestand wird nur auf
+     * der eigenen Zeile verrechnet, nie nach unten weitergereicht.</p>
+     *
+     * <p>Hier wird er weitergereicht: Von oben nach unten, Stufe fuer Stufe.
+     * Was fertig dasteht, muss nicht mehr aus Zutaten entstehen - und die
+     * Zutaten fallen mit.</p>
+     *
+     * <p><b>Bewusst aus dem Bestand und nicht aus den Jobs.</b> Ein fertiges
+     * Bauteil im Hangar ist eine Messung. Was ein Job verbraucht hat, waere
+     * eine Herleitung: ESI nennt die Materialien eines Jobs nicht, und
+     * Blaupausen-, Struktur- und Rig-Effizienz zusammen ergaben an einem echten
+     * Job eine Spanne von 76.149 bis 90.000 Einheiten. Die naheliegende
+     * Annahme ueberschaetzt - und ueberschaetzter Verbrauch heisst zu viel
+     * abgehakt. Dann steht jemand mitten im Bau ohne Zutaten da.</p>
+     *
+     * <p>Aus demselben Grund wird bei den Laeufen <em>abgerundet</em>: Lieber
+     * eine Einheit zu wenig gutschreiben als eine zu viel.</p>
+     */
+    private Map<Long, Long> entfaelltDurchGebautes(
+            IndustryOrder order,
+            List<IndustryOrderRequirement> zeilen,
+            Map<Long, Holding> bestand) {
+
+        Map<Long, Long> entfaellt = new HashMap<>();
+
+        // Von der hoechsten Stufe abwaerts: Ein Bauteil muss fertig gerechnet
+        // sein, bevor seine Zutaten an der Reihe sind.
+        List<IndustryOrderRequirement> absteigend = zeilen.stream()
+                .sorted((a, b) -> Integer.compare(stufeVon(b), stufeVon(a)))
+                .toList();
+
+        for (IndustryOrderRequirement p : absteigend) {
+            if (!"BUILD".equals(p.getDecision())) {
+                continue;
+            }
+            Holding h = bestand.get(p.getTypeId());
+            long vorhanden = h == null ? 0 : h.quantity();
+            long erledigt = Math.min(
+                    p.getQuantityNeeded(),
+                    vorhanden + entfaellt.getOrDefault(p.getTypeId(), 0L));
+            if (erledigt <= 0) {
+                continue;
+            }
+
+            var bpInfo = queryRepo.blueprintFor(p.getTypeId());
+            if (bpInfo == null) {
+                continue;
+            }
+            var ctx = planning.contextFor(order.getCreatedByCharacterId(), bpInfo);
+            // Abgerundet, nicht aufgerundet: ein angefangener Lauf ist kein
+            // fertiges Stueck, und zu viel gutgeschrieben ist der teure Fehler.
+            long laeufe = erledigt / Math.max(1, bpInfo.unitsPerRun());
+            if (laeufe <= 0) {
+                continue;
+            }
+
+            for (var kind : queryRepo.billOfMaterials(p.getTypeId(), 1)) {
+                long menge = IndustryMath.materialForJob(laeufe, kind.quantityPerRun(), ctx);
+                entfaellt.merge(kind.typeId(), menge, Long::sum);
+            }
+        }
+        return entfaellt;
+    }
+
+    /**
+     * Die Fertigungsstufe einer gespeicherten Zeile.
+     *
+     * <p>Auftraege, die vor der Einfuehrung des Feldes angelegt wurden, haben
+     * keine. Der Rueckfall setzt Gekauftes auf null und alles Gebaute auf eins -
+     * dann steht die Anzeige flach da, statt in einer <em>falschen</em>
+     * Reihenfolge. Auf {@code depth} zurueckzufallen waere schlimmer als nichts:
+     * die Tiefe waechst vom Endprodukt weg, die Stufe waechst auf es zu. Die
+     * Anzeige stuende exakt verkehrt herum.</p>
+     *
+     * <p>Ein einziges Neurechnen setzt den echten Wert.</p>
+     */
+    private static int stufeVon(IndustryOrderRequirement r) {
+        if (r.getBuildLevel() != null) {
+            return r.getBuildLevel();
+        }
+        return "BUILD".equals(r.getDecision()) ? 1 : 0;
+    }
+
+    /**
+     * Setzt die Fertigungsstufe: was gekauft wird ist null, Gebautes liegt eine
+     * Stufe ueber seinem hoechsten Material.
+     *
+     * <p>Rueckwaerts durch die topologische Reihenfolge, damit jedes Material
+     * seine Stufe hat, bevor sein Verbraucher gerechnet wird.</p>
+     */
+    private void setzeStufen(
+            List<Long> reihenfolge,
+            Map<Long, IndustryOrderRequirement> nachTyp,
+            Map<Long, List<IndustryQueryRepository.BomNode>> zutaten) {
+
+        Map<Long, Integer> stufe = new HashMap<>();
+        for (int i = reihenfolge.size() - 1; i >= 0; i--) {
+            Long typ = reihenfolge.get(i);
+            IndustryOrderRequirement zeile = nachTyp.get(typ);
+            if (zeile == null || !"BUILD".equals(zeile.getDecision())) {
+                stufe.put(typ, 0);
+                continue;
+            }
+            int hoechstes = 0;
+            for (var kind : zutaten.getOrDefault(typ, List.of())) {
+                hoechstes = Math.max(hoechstes, stufe.getOrDefault(kind.typeId(), 0));
+            }
+            stufe.put(typ, hoechstes + 1);
+        }
+        nachTyp.forEach((typ, zeile) -> zeile.setBuildLevel(stufe.getOrDefault(typ, 0)));
     }
 
     /**

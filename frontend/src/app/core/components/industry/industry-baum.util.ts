@@ -10,61 +10,6 @@ import { Requirement } from '../../services/industry.service';
 export type Zustand = 'LAEUFT' | 'GEDECKT' | 'STARTKLAR' | 'FEHLT' | 'WARTET';
 
 /**
- * Der Rang eines Materials in der Fertigung: 0 ist Beschaffung, darüber wird gebaut.
- *
- * <p>Nicht aus {@code depth} abgeleitet, und das ist der Kern der Sache. Die
- * Tiefe ist der <em>kürzeste Weg zur Wurzel</em>, nicht die Fertigungsebene:
- * Tritanium, das ein Schiff unmittelbar braucht, steht auf Tiefe 1 — nach Tiefe
- * gruppiert säße es ganz oben neben dem Schiff, obwohl es das Erste ist, was man
- * kauft.</p>
- *
- * <p>Stattdessen zählt die Entscheidung: was gekauft wird, ist Rang 0. Was
- * gebaut wird, liegt eine Stufe über seinem höchsten bekannten Kind. Damit
- * behauptet die Achse nur, was die Daten hergeben.</p>
- *
- * <p>Der Zyklusschutz ist kein Zierrat: die Elternangaben stammen aus fremden
- * Stammdaten, und zwei Blaupausen, die einander als Material führen, würden die
- * Rekursion sonst nicht beenden.</p>
- */
-export function raengeVon(zeilen: Requirement[]): Map<number, number> {
-  const nachTyp = new Map(zeilen.map((r) => [r.typeId, r]));
-  const kinder = new Map<number, number[]>();
-  for (const r of zeilen) {
-    if (r.parentTypeId == null) continue;
-    const liste = kinder.get(r.parentTypeId);
-    if (liste) liste.push(r.typeId);
-    else kinder.set(r.parentTypeId, [r.typeId]);
-  }
-
-  const rang = new Map<number, number>();
-  const laufend = new Set<number>();
-
-  const von = (typeId: number): number => {
-    const fertig = rang.get(typeId);
-    if (fertig !== undefined) return fertig;
-
-    const zeile = nachTyp.get(typeId);
-    if (!zeile || zeile.decision !== 'BUILD') return 0;
-    if (laufend.has(typeId)) return 0;
-
-    laufend.add(typeId);
-    let hoechstes = 0;
-    for (const kind of kinder.get(typeId) ?? []) {
-      hoechstes = Math.max(hoechstes, von(kind));
-    }
-    laufend.delete(typeId);
-
-    // Gebaut heißt mindestens Rang eins - auch wenn kein Kind bekannt ist.
-    const wert = Math.max(1, hoechstes + 1);
-    rang.set(typeId, wert);
-    return wert;
-  };
-
-  for (const r of zeilen) rang.set(r.typeId, von(r.typeId));
-  return rang;
-}
-
-/**
  * Was mit einem Knoten gerade los ist.
  *
  * <p>Der Zustand kommt aus den <em>eigenen bekannten Kindern</em> und nicht aus
@@ -110,13 +55,38 @@ export function zustandLabel(zustand: Zustand): string {
 /**
  * Wie eine Fertigungsstufe heißt.
  *
- * <p>Rang null ist das, was man kauft; darüber wird gebaut. Die oberste Stufe
- * traegt keinen eigenen Namen — dort steht das Endprodukt, und das nennt sich
- * selbst.</p>
+ * <p>Nummeriert statt benannt, und das ist der Punkt. „Vorprodukte" und
+ * „Bauteile" klingen nach Materialklassen, waren aber nie welche — es waren
+ * die Positionen 1 und 2 einer Zahlenreihe, und wer sie las, suchte nach einer
+ * fachlichen Bedeutung, die es nicht gab.</p>
+ *
+ * <p>Eine Nummer sagt, was gemeint ist: Erst Schritt 1, dann Schritt 2. Die
+ * Reihenfolge ist zugesichert — jedes Material liegt auf einer kleineren Stufe
+ * als sein Produkt —, deshalb darf die Anzeige sie auch als Anweisung
+ * ausgeben.</p>
  */
 export function stufenLabel(rang: number, hoechsterRang: number): string {
   if (rang === 0) return 'Beschaffung';
-  if (rang === hoechsterRang) return 'Endmontage';
-  if (rang === 1) return 'Vorprodukte';
-  return 'Bauteile';
+  const name =
+    rang === hoechsterRang ? 'Endmontage' : rang === 1 ? 'Vorprodukte' : 'Bauteile';
+  return `Schritt ${rang} · ${name}`;
+}
+
+/**
+ * Was in dieser Stufe zu tun ist — Reaktion, Fertigung oder beides.
+ *
+ * <p>Der Wunsch „erst alle Reaktionen, dann die Fertigung" ist global nicht
+ * immer erfüllbar: Es gibt Aufträge, in denen auf Stufe 1 gefertigt und auf
+ * Stufe 2 reagiert wird. Die Abhängigkeit hat Vorrang, sonst wäre die
+ * Anleitung nicht ausführbar. Wo eine Stufe gemischt ist, sagt sie das —
+ * statt eine Sortierung vorzutäuschen, die die Daten nicht hergeben.</p>
+ */
+export function aktivitaetenLabel(zeilen: Requirement[]): string {
+  const gebaut = zeilen.filter((r) => r.decision === 'BUILD');
+  const reaktion = gebaut.some((r) => r.sourceKind === 'REACTION');
+  const fertigung = gebaut.some((r) => r.sourceKind === 'BUILDABLE');
+  if (reaktion && fertigung) return 'Reaktion + Fertigung';
+  if (reaktion) return 'Reaktion';
+  if (fertigung) return 'Fertigung';
+  return 'Einkauf';
 }

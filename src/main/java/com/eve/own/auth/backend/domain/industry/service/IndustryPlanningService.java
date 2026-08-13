@@ -220,11 +220,17 @@ public class IndustryPlanningService {
 
             rows.add(new IndustryDtos.RequirementDto(
                     node.typeId(), node.typeName(), braucht, vorhanden,
+                    // In der Vorschau ist noch nichts gebaut, also entfaellt nichts.
+                    0,
                     Math.max(0, braucht - vorhanden),
                     node.sourceKind(),
                     BUILDABLE_KINDS.contains(node.sourceKind()),
                     "BUY",
-                    node.depth(), node.parentTypeId(),
+                    // In der Vorschau ist noch nichts entschieden, alles steht auf
+                    // BUY - damit ist jede Zeile Beschaffung und traegt Stufe 0.
+                    // Eine Fertigungsreihenfolge gibt es erst, wenn der Auftrag
+                    // angelegt und die Kaufen/Bauen-Frage beantwortet ist.
+                    node.depth(), 0, node.parentTypeId(),
                     null, true,
                     volumen.getOrDefault(node.typeId(), 0.0),
                     hat == null ? 0 : hat.onCharacters(),

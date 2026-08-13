@@ -166,6 +166,40 @@
         }
       </div>
 
+      @if (stufenFehlen()) {
+        <p class="stufen-fehlen">
+          Die Fertigungsreihenfolge fehlt in der Antwort des Servers — alle
+          Positionen stehen deshalb in einer Gruppe. Das Backend ist älter als
+          diese Ansicht; nach einem Neustart mit aktuellem Stand stimmt die
+          Aufteilung wieder.
+        </p>
+      }
+
+      <!-- Die Antwort auf "was mache ich jetzt", bevor irgendjemand scrollen
+           muss. Sammelt die startklaren Schritte aus allen Stufen; tiefste
+           zuerst, weil die am meisten blockieren. -->
+      @if (jetztMachbar().length > 0) {
+        <section class="jetzt">
+          <h4>Jetzt machbar</h4>
+          <p class="jetzt-hinweis">
+            Für diese Schritte liegt das Material bereit — sie lassen sich
+            sofort anschieben.
+          </p>
+          <ul class="jetzt-liste">
+            @for (k of jetztMachbar(); track k.zeile.typeId) {
+              <li>
+                <span class="jetzt-art" [class.jetzt-reaktion]="k.zeile.sourceKind === 'REACTION'">
+                  {{ kindLabel(k.zeile.sourceKind) }}
+                </span>
+                <span class="jetzt-name">{{ k.zeile.typeName }}</span>
+                <span class="jetzt-menge">{{ k.zeile.missing | number }}</span>
+                <span class="jetzt-stufe">Schritt {{ k.rang }}</span>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
       <ol class="stufen">
         @for (stufe of stufen(); track stufe.rang) {
           <li class="stufe" [class.stufe-offen]="istOffen(stufe.rang)"
@@ -180,11 +214,17 @@
               </span>
               <span class="stufe-titel">
                 <strong>{{ stufe.label }}</strong>
+                @if (stufe.rang > 0) {
+                  <span class="stufe-aktivitaet">{{ stufe.aktivitaet }}</span>
+                }
                 <small>
                   {{ stufe.knoten.length }}
                   {{ stufe.knoten.length === 1 ? 'Position' : 'Positionen' }}
                   @if (stufe.laeuft > 0) { · {{ stufe.laeuft }} im Ofen }
-                  @if (stufe.offen > 0) { · {{ stufe.offen }} offen }
+                  @if (stufe.startklar > 0) { · {{ stufe.startklar }} startklar }
+                  @if (stufe.offen - stufe.startklar > 0) {
+                    · {{ stufe.offen - stufe.startklar }} offen
+                  }
                 </small>
               </span>
               <span class="stufe-balken" aria-hidden="true">
@@ -234,6 +274,11 @@
                         <span class="zahl">{{ amount(k.zeile.needed) }}</span>
                         <small>
                           {{ amount(k.zeile.have) }} da
+                          @if (k.zeile.alreadyBuilt > 0) {
+                            <!-- Getrennt von "da": das Material liegt nicht
+                                 greifbar herum, es steckt schon im Bauteil. -->
+                            · <span class="verbaut">{{ amount(k.zeile.alreadyBuilt) }} verbaut</span>
+                          }
                           @if (k.zeile.haveElsewhere > 0) {
                             · +{{ amount(k.zeile.haveElsewhere) }} anderswo
                           }
@@ -327,7 +372,11 @@
             </li>
           }
         </ul>
-      } @else if (locationQuery().length > 1) {
+      } @else if (locationQuery().length > 1 && !locationQueryIstGesetzterOrt()) {
+        <!-- Nur melden, wenn wirklich nichts passt. Steht im Feld der Name des
+             bereits gesetzten Bauorts, widerspräche "Kein Bauort gefunden" der
+             Zeile drei Zeilen darüber - und wer das liest, hält einen
+             eingestellten Auftrag für kaputt. -->
         <p class="leer">
           Kein Bauort gefunden. Sonnensysteme finden sich über ihren Namensanfang;
           eigene Corp&#8209;Strukturen erscheinen zusätzlich, sobald ein Charakter mit
@@ -417,6 +466,29 @@
            [class.fa-chevron-down]="panelOffen('einkauf')"
            [class.fa-chevron-right]="!panelOffen('einkauf')"></i>
       </button>
+
+      <!-- Außerhalb des Kopfknopfs: ein Knopf im Knopf wäre nicht bedienbar,
+           und Kopieren soll das Panel nicht auf- oder zuklappen. -->
+      @if (p.lines.length) {
+        <div class="einkauf-werkzeuge">
+          <button type="button" class="ve-knopf" (click)="copyMultibuy()"
+                  title="Alle Positionen als Multibuy in die Zwischenablage - im Spiel mit Strg+V in das Multibuy-Fenster einfügen.">
+            <i class="fa-solid fa-copy" aria-hidden="true"></i>
+            Für Multibuy kopieren
+          </button>
+          @if (copyStatus() === 'ok') {
+            <span class="kopiert">
+              {{ p.lines.length }} Positionen kopiert
+            </span>
+          }
+          @if (copyStatus() === 'fehler') {
+            <span class="kopiert-fehler">
+              Die Zwischenablage war nicht erreichbar — das geht nur über HTTPS
+              oder localhost.
+            </span>
+          }
+        </div>
+      }
 
       <div class="einkauf-kopf">
         <div class="einkauf-zahl">

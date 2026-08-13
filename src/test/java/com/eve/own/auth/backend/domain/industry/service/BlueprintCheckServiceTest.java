@@ -133,11 +133,9 @@ class BlueprintCheckServiceTest {
         when(blueprintRepo.findBest(any(), any())).thenReturn(List.of(bp(-1, false, 10, 20)));
 
         var gebaut = new IndustryDtos.RequirementDto(
-                komponente, "Komponente", 1000, 0, 1000, "BUILDABLE", true, "BUILD",
-                1, null, null, false, 1.0, 0, 0);
+                komponente, "Komponente", 1000, 0, 0, 1000, "BUILDABLE", true, "BUILD", 1, 1, null, null, false, 1.0, 0, 0);
         var gekauft = new IndustryDtos.RequirementDto(
-                34L, "Tritanium", 5000, 0, 5000, "MINERAL", false, "BUY",
-                1, null, null, false, 0.01, 0, 0);
+                34L, "Tritanium", 5000, 0, 0, 5000, "MINERAL", false, "BUY", 1, 0, null, null, false, 0.01, 0, 0);
 
         var zeilen = service.check(1L, RAVEN, 50, List.of(gebaut, gekauft));
 
@@ -159,8 +157,8 @@ class BlueprintCheckServiceTest {
         when(blueprintRepo.findBest(any(), any())).thenReturn(List.of());
 
         var gekauft = new IndustryDtos.RequirementDto(
-                reaktionsprodukt, "Reinforced Carbon Fiber", 7791, 0, 7791,
-                "REACTION", true, "BUY", 2, null, null, false, 1.0, 0, 0);
+                reaktionsprodukt, "Reinforced Carbon Fiber", 7791, 0, 0, 7791,
+                "REACTION", true, "BUY", 2, 0, null, null, false, 1.0, 0, 0);
 
         var zeilen = service.check(1L, RAVEN, 50, List.of(gekauft));
 
@@ -184,8 +182,7 @@ class BlueprintCheckServiceTest {
         when(blueprintRepo.findBest(any(), any())).thenReturn(List.of(bp(-1, false, 0, 0)));
 
         var gebaut = new IndustryDtos.RequirementDto(
-                komponente, "Komponente", 1000, 0, 1000, "BUILDABLE", true, "BUILD",
-                1, null, null, false, 1.0, 0, 0);
+                komponente, "Komponente", 1000, 0, 0, 1000, "BUILDABLE", true, "BUILD", 1, 1, null, null, false, 1.0, 0, 0);
 
         var zeilen = service.check(1L, RAVEN, 50, List.of(gebaut));
 

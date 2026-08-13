@@ -56,8 +56,8 @@ class ProcurementServiceTest {
 
     private static IndustryDtos.RequirementDto tritanium(long fehlt) {
         return new IndustryDtos.RequirementDto(
-                TRITANIUM, "Tritanium", 5_200_000, 5_200_000 - fehlt, fehlt,
-                "MINERAL", false, "BUY", 1, null, null, false, 0.01, 1, 0);
+                TRITANIUM, "Tritanium", 5_200_000, 5_200_000 - fehlt, 0, fehlt,
+                "MINERAL", false, "BUY", 1, 0, null, null, false, 0.01, 1, 0);
     }
 
     private static final long PYERITE = 35L;
@@ -65,8 +65,8 @@ class ProcurementServiceTest {
 
     private static IndustryDtos.RequirementDto pyerite(long fehlt) {
         return new IndustryDtos.RequirementDto(
-                PYERITE, "Pyerite", fehlt, 0, fehlt,
-                "MINERAL", false, "BUY", 1, null, null, false, 0.01, 1, 0);
+                PYERITE, "Pyerite", fehlt, 0, 0, fehlt,
+                "MINERAL", false, "BUY", 1, 0, null, null, false, 0.01, 1, 0);
     }
 
     @Test
@@ -234,11 +234,11 @@ class ProcurementServiceTest {
         when(queryRepo.jitaSell(komponente)).thenReturn(206_700_000.0);
 
         var gebaut = new IndustryDtos.RequirementDto(
-                komponente, "Capital Core Temperature Regulator", 1, 0, 1,
-                "BUILDABLE", true, "BUILD", 1, null, null, false, 28_000.0, 0, 0);
+                komponente, "Capital Core Temperature Regulator", 1, 0, 0, 1,
+                "BUILDABLE", true, "BUILD", 1, 1, null, null, false, 28_000.0, 0, 0);
         var zutat = new IndustryDtos.RequirementDto(
-                11400L, "Core Temperature Regulator", 34, 0, 34,
-                "BUILDABLE", true, "BUY", 2, komponente, null, false, 180.0, 0, 0);
+                11400L, "Core Temperature Regulator", 34, 0, 0, 34,
+                "BUILDABLE", true, "BUY", 2, 0, komponente, null, false, 180.0, 0, 0);
         when(queryRepo.jitaSell(11400L)).thenReturn(3_270_000.0);
 
         var plan = service.plan(List.of(gebaut, zutat), PERIMETER, 0.9);
@@ -339,8 +339,7 @@ class ProcurementServiceTest {
         when(queryRepo.jitaSell(komponente)).thenReturn(1500.0);
 
         var bedarf = new IndustryDtos.RequirementDto(
-                komponente, "Morphite", 100, 0, 100, "MINERAL", false, "BUY",
-                1, null, null, false, 0.01, 0, 0);
+                komponente, "Morphite", 100, 0, 0, 100, "MINERAL", false, "BUY", 1, 0, null, null, false, 0.01, 0, 0);
 
         var plan = service.plan(List.of(bedarf), PERIMETER, 0.9);
 

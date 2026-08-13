@@ -196,6 +196,57 @@ public class IndustryQueryRepository {
     public static final List<String> SOURCE_KINDS =
             List.of("BUILDABLE", "REACTION", "MINERAL", "PI", "GAS", "RAW");
 
+    /** Eine Materialkante: {@code material} geht in {@code produkt} ein. */
+    public record MaterialEdge(long produktTypeId, long materialTypeId) {}
+
+    /**
+     * Alle Materialkanten zwischen den Zeilen eines Auftrags.
+     *
+     * <p>Es gibt sie, weil die Bedarfstabelle sie nicht tragen kann. Dort steht
+     * je Auftrag und Typ <em>eine</em> Zeile mit einer Elternangabe - eine
+     * Stueckliste ist aber ein Netz: In einem gemessenen Phoenix-Auftrag hat
+     * Reinforced Carbon Fiber siebzehn Verbraucher, und von 214 echten Kanten
+     * liessen sich 71 ablegen. Wer aus der Tabelle ableiten will, ob ein Bauteil
+     * startklar ist, uebersieht zwei Drittel seiner Zutaten.</p>
+     *
+     * <p>Bewusst live aus den Stammdaten und nicht eingefroren. Eingefroren
+     * werden die <em>Mengen</em>, damit der Fortschrittsbalken nicht springt;
+     * die Struktur aendert sich nur, wenn CCP ein Rezept aendert - und dann hat
+     * sich die echte Baureihenfolge tatsaechlich geaendert.</p>
+     *
+     * <p>Ohne Mengen, und das ist wichtig: Fuenf Produkte haben mehrere
+     * Blaupausen derselben Aktivitaet. Fuer die blosse Frage "haengt das
+     * zusammen" ist das unschaedlich, fuer eine Menge waere es falsch.</p>
+     */
+    public List<MaterialEdge> orderEdges(long orderId) {
+        Query query = em.createNativeQuery("""
+                SELECT DISTINCT p."productTypeID" AS produkt,
+                                m."materialTypeID" AS material
+                FROM evesde."industryActivityProducts" p
+                JOIN evesde."industryActivityMaterials" m
+                  ON m."typeID" = p."typeID" AND m."activityID" = p."activityID"
+                WHERE p."activityID" IN (%1$s)
+                  -- Beide Enden muessen Zeilen desselben Auftrags sein. Das
+                  -- Endprodukt ist keine Bedarfszeile und kommt darum extra
+                  -- dazu; ohne es fehlen die Kanten der obersten Ebene.
+                  AND (p."productTypeID" IN (
+                           SELECT r.type_id FROM industry_order_requirements r
+                           WHERE r.order_id = :orderId)
+                       OR p."productTypeID" = (
+                           SELECT o.product_type_id FROM industry_orders o
+                           WHERE o.id = :orderId))
+                  AND m."materialTypeID" IN (
+                           SELECT r.type_id FROM industry_order_requirements r
+                           WHERE r.order_id = :orderId)
+                """.formatted(PRODUCING_ACTIVITIES), Tuple.class);
+        query.setParameter("orderId", orderId);
+
+        List<Tuple> rows = query.getResultList();
+        return rows.stream()
+                .map(r -> new MaterialEdge(num(r, "produkt"), num(r, "material")))
+                .toList();
+    }
+
     /**
      * Loest ein Produkt bis auf seine Grundbestandteile auf.
      *

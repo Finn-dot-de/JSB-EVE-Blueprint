@@ -17,7 +17,7 @@ import {
 import { latestRequest } from '../../shared/latest-request.util';
 import {
   Zustand,
-  raengeVon,
+  aktivitaetenLabel,
   stufenLabel,
   zustandLabel,
   zustandVon,
@@ -37,10 +37,14 @@ export interface Knoten {
 export interface Stufe {
   rang: number;
   label: string;
+  /** Reaktion, Fertigung oder beides - damit niemand raten muss, wo es läuft. */
+  aktivitaet: string;
   knoten: Knoten[];
   gedeckt: number;
   laeuft: number;
   offen: number;
+  /** Wieviel davon sich sofort anschieben lässt. */
+  startklar: number;
 }
 
 /**
@@ -194,6 +198,81 @@ export class IndustryComponent {
     if (gerundet >= 0.5) return 'Highsec';
     if (gerundet > 0.0) return 'Lowsec';
     return 'Nullsec';
+  }
+
+  /**
+   * Ob im Suchfeld nur der Name des bereits gesetzten Bauorts steht.
+   *
+   * Nach dem Setzen bleibt der Name im Feld stehen. Die Suche findet ihn nicht
+   * wieder — Sonnensysteme kommen über den Namensanfang, ein gesetzter Ort ist
+   * keine Sucheingabe —, und darunter erschien "Kein Bauort gefunden", während
+   * drei Zeilen höher "Dieser Auftrag baut in AH-B84" stand. Zwei Aussagen, die
+   * einander widersprechen; wer das liest, hält einen eingestellten Auftrag für
+   * kaputt.
+   */
+  locationQueryIstGesetzterOrt(): boolean {
+    const gesetzt = this.openOrder()?.order.buildLocationName;
+    if (!gesetzt) return false;
+    return this.locationQuery().trim().toLowerCase() === gesetzt.trim().toLowerCase();
+  }
+
+  /** Rückmeldung des Kopierknopfs - ohne sie weiß niemand, ob es geklappt hat. */
+  readonly copyStatus = signal<'idle' | 'ok' | 'fehler'>('idle');
+
+  /**
+   * Die Einkaufsliste im Multibuy-Format von EVE: ein Posten je Zeile,
+   * Name und Menge durch einen Tabulator getrennt.
+   *
+   * Genommen wird, was man **tatsächlich kauft** — bei einer Erz-Empfehlung
+   * also das komprimierte Erz und dessen Menge, nicht das Mineral. Wer die
+   * Mineralien einfügt, kauft am Rat der Liste vorbei.
+   *
+   * Zeilen ohne Marktpreis bleiben drin. Ein fehlender Preis heißt nicht, dass
+   * das Material nicht gebraucht wird — es stillschweigend wegzulassen wäre
+   * eine unvollständige Liste, die vollständig aussieht.
+   */
+  multibuyText(): string {
+    const p = this.procurement();
+    if (!p) return '';
+    return p.lines
+      .map((z) => {
+        const name = z.buyTypeName ?? z.typeName;
+        const menge = z.buyTypeName ? z.buyQuantity : z.neededQuantity;
+        return `${name}\t${Math.max(1, Math.ceil(menge))}`;
+      })
+      .join('\n');
+  }
+
+  /**
+   * Legt die Liste in die Zwischenablage.
+   *
+   * Der Umweg über ein Textfeld ist kein Zierrat: `navigator.clipboard` gibt es
+   * nur in einem sicheren Kontext. Über HTTPS und auf localhost geht es, beim
+   * Aufruf über eine nackte LAN-Adresse nicht — und dort schlüge der Knopf
+   * sonst wortlos fehl.
+   */
+  async copyMultibuy(): Promise<void> {
+    const text = this.multibuyText();
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const feld = document.createElement('textarea');
+        feld.value = text;
+        feld.style.position = 'fixed';
+        feld.style.opacity = '0';
+        document.body.appendChild(feld);
+        feld.select();
+        const geklappt = document.execCommand('copy');
+        document.body.removeChild(feld);
+        if (!geklappt) throw new Error('Kopieren abgelehnt');
+      }
+      this.copyStatus.set('ok');
+    } catch {
+      this.copyStatus.set('fehler');
+    }
+    setTimeout(() => this.copyStatus.set('idle'), 2500);
   }
 
   /** Woher der Ort stammt - entscheidet, wie sicher die Auskunft ist. */
@@ -530,14 +609,27 @@ export class IndustryComponent {
     return je;
   });
 
-  /** Kinder je Elternteil - die einzige Verbindung, die die Daten hergeben. */
+  /**
+   * Die Zutaten je Bauteil — aus dem vollständigen Graphen, nicht aus der
+   * Elternangabe der Zeile.
+   *
+   * Der Unterschied ist keine Feinheit: Eine Zeile trägt genau einen
+   * Elternteil, ein Material hat aber oft viele Verbraucher. Wer daraus die
+   * Zutaten ableitet, sieht bei einem gemessenen Phoenix-Auftrag zwei Drittel
+   * davon nicht — und ein Bauteil behauptet „startklar", während ihm etwas
+   * fehlt. Genau das ist die gefährliche Richtung: Eine Zeile eine Stufe zu
+   * tief ist ein Schönheitsfehler, eine falsche Startfreigabe ist eine
+   * Falschaussage.
+   */
   private readonly kinderNachEltern = computed(() => {
+    const nachTyp = new Map(this.zeilen().map((r) => [r.typeId, r]));
     const je = new Map<number, Requirement[]>();
-    for (const r of this.zeilen()) {
-      if (r.parentTypeId == null) continue;
-      const liste = je.get(r.parentTypeId);
-      if (liste) liste.push(r);
-      else je.set(r.parentTypeId, [r]);
+    for (const kante of this.openOrder()?.edges ?? []) {
+      const material = nachTyp.get(kante.materialTypeId);
+      if (!material) continue;
+      const liste = je.get(kante.productTypeId);
+      if (liste) liste.push(material);
+      else je.set(kante.productTypeId, [material]);
     }
     return je;
   });
@@ -545,7 +637,6 @@ export class IndustryComponent {
   /** Jede Bedarfszeile samt Rang, Zustand und laufendem Job. */
   readonly knoten = computed<Knoten[]>(() => {
     const zeilen = this.zeilen();
-    const raenge = raengeVon(zeilen);
     const kinder = this.kinderNachEltern();
     const jobs = this.jobsNachTyp();
 
@@ -553,7 +644,9 @@ export class IndustryComponent {
       const job = jobs.get(zeile.typeId) ?? null;
       return {
         zeile,
-        rang: raenge.get(zeile.typeId) ?? 0,
+        // Aus dem Backend, nicht hier gerechnet: Die Ordnung braucht den
+        // ganzen Stücklistengraphen, und der steht in dieser Liste nicht.
+        rang: zeile.buildLevel ?? (zeile.decision === 'BUILD' ? 1 : 0),
         zustand: zustandVon(zeile, kinder.get(zeile.typeId) ?? [], job !== null),
         job,
       };
@@ -581,12 +674,51 @@ export class IndustryComponent {
       .map(([rang, knoten]) => ({
         rang,
         label: stufenLabel(rang, hoechster),
+        aktivitaet: aktivitaetenLabel(knoten.map((k) => k.zeile)),
         knoten,
-        gedeckt: knoten.filter((k) => k.zeile.missing <= 0).length,
+        // Jede Zeile zählt in genau einen Topf. Vorher zählten die drei
+        // Filter unabhängig voneinander dieselbe Zeile mehrfach - daher
+        // stand über einer einzigen Position "1 Position · 1 im Ofen · 1 offen".
+        gedeckt: knoten.filter((k) => k.zustand === 'GEDECKT').length,
         laeuft: knoten.filter((k) => k.zustand === 'LAEUFT').length,
-        offen: knoten.filter((k) => k.zeile.missing > 0).length,
+        offen: knoten.filter(
+          (k) => k.zustand === 'STARTKLAR' || k.zustand === 'FEHLT' || k.zustand === 'WARTET',
+        ).length,
+        startklar: knoten.filter((k) => k.zustand === 'STARTKLAR').length,
       }));
   });
+
+  /**
+   * Was sich jetzt sofort anschieben lässt — über alle Stufen hinweg.
+   *
+   * Die eigentliche Antwort auf „was mache ich als Nächstes". Ohne diesen
+   * Abschnitt muss man sich die startklaren Zeilen aus jeder Stufe einzeln
+   * zusammensuchen, und genau das war die Beschwerde.
+   *
+   * Zugesichert ist das erst, seit die Zutaten aus dem vollständigen Graphen
+   * kommen: Auf der lückenhaften Elternangabe hätte „startklar" bedeutet
+   * „soweit der eine bekannte Zweig reicht".
+   */
+  /**
+   * Ob das Backend die Fertigungsstufen überhaupt mitgeschickt hat.
+   *
+   * Sagt der Anzeige, dass sie es nicht weiß, statt eine Zahl einzusetzen.
+   * Genau daran ist es schon einmal gescheitert: Ein Backend ohne dieses Feld
+   * ließ jede Zeile auf „Schritt 0" fallen, alles landete in einer einzigen
+   * Gruppe mit 168 Positionen — und das sah aus wie ein Ergebnis, nicht wie
+   * ein Fehler.
+   */
+  readonly stufenFehlen = computed(() => {
+    const zeilen = this.zeilen();
+    return zeilen.length > 0 && zeilen.every((r) => r.buildLevel === undefined);
+  });
+
+  readonly jetztMachbar = computed<Knoten[]>(() =>
+    this.knoten()
+      .filter((k) => k.zustand === 'STARTKLAR')
+      // Von unten nach oben: Was am tiefsten liegt, blockiert am meisten.
+      .sort((a, b) => a.rang - b.rang),
+  );
 
   /**
    * Welche Stufe aufgeklappt ist.
@@ -784,7 +916,10 @@ export class IndustryComponent {
       case 'REACTION':
         return 'Reaktion';
       case 'BUILDABLE':
-        return 'Baubar';
+        // "Fertigung", nicht "Baubar": Das eine benennt die Tätigkeit, das
+        // andere nur eine Möglichkeit - und stand im Widerspruch zum Etikett
+        // "Fertigung · 25 Läufe" des laufenden Jobs in derselben Zeile.
+        return 'Fertigung';
       case 'PI':
         return 'PI – nicht per Industriejob baubar';
       case 'GAS':

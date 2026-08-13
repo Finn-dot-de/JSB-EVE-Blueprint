@@ -247,7 +247,7 @@ class IndustryOrderDecisionTest {
                 1, 1, 1, 3600, 1, 0, 10, 20, true, true);
         var zeile = new IndustryDtos.RequirementDto(
                 KOMPONENTE, "Auto-Integrity Preservation Seal", mengeEbeneEins, 0,
-                mengeEbeneEins, "BUILDABLE", true, "BUY", 1, null, null, false, 0, 0, 0);
+                0, mengeEbeneEins, "BUILDABLE", true, "BUY", 1, 0, null, null, false, 0, 0, 0);
         when(planning.preview(anyLong(), anyLong(), anyLong(), anyInt(), any())).thenReturn(
                 new IndustryDtos.PlanPreviewDto(638L, "Raven", 1,
                         zusammenfassung, List.of(zeile)));

@@ -1031,3 +1031,110 @@
   font-size: 0.82rem;
   color: var(--text-secondary);
 }
+
+/* --- "Jetzt machbar": die Antwort auf "was als Nächstes" --- */
+/* Steht bewusst über den Stufen und nicht darin: Wer wissen will, was er
+   sofort anschieben kann, soll nicht erst durch alle Stufen scrollen. */
+.jetzt {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ve-akzent, #ff4b1f);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ve-akzent, #ff4b1f) 8%, transparent);
+}
+
+.jetzt h4 {
+  margin: 0 0 0.15rem;
+  font-size: 0.95rem;
+}
+
+.jetzt-hinweis {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.jetzt-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.jetzt-liste li {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* Reaktion und Fertigung tragen verschiedene Farben - der Unterschied
+   entscheidet, ob der Job in eine Refinery oder in eine Fertigungsanlage
+   gehört, und war vorher nur am Wort zu erkennen. */
+.jetzt-art {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.jetzt-reaktion {
+  color: #7cc4ff;
+}
+
+.jetzt-menge {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.jetzt-stufe {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.stufe-aktivitaet {
+  margin-left: 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+/* Fehlende Stufen sind ein Fehler, kein Ergebnis - also auch so aussehen. */
+.stufen-fehlen {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid #e0b341;
+  border-radius: 4px;
+  background: color-mix(in srgb, #e0b341 10%, transparent);
+  font-size: 0.85rem;
+}
+
+/* "verbaut" ist erledigt, nicht vorhanden - eigene Farbe, damit es niemand
+   mit Bestand im Hangar verwechselt. */
+.verbaut {
+  color: #6fbf73;
+}
+
+/* --- Einkaufsliste: Multibuy kopieren --- */
+.einkauf-werkzeuge {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem 0;
+  flex-wrap: wrap;
+}
+
+.kopiert {
+  font-size: 0.8rem;
+  color: #6fbf73;
+}
+
+.kopiert-fehler {
+  font-size: 0.8rem;
+  color: #e0b341;
+}

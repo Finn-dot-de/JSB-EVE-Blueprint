@@ -28,7 +28,9 @@ function requirement(over: Partial<Requirement> = {}): Requirement {
     sourceKind: 'MINERAL',
     buildable: false,
     decision: 'BUY',
+    alreadyBuilt: 0,
     depth: 1,
+    buildLevel: 0,
     parentTypeId: null,
     unitPrice: null,
     priceMissing: true,
@@ -387,7 +389,7 @@ describe('IndustryComponent', () => {
 
   describe('Aufträge', () => {
     it('legt einen Auftrag an und räumt die Eingabe ab', () => {
-      const detail = { order: order(), summary: preview().summary, requirements: [], jobs: [] };
+      const detail = { order: order(), summary: preview().summary, requirements: [], edges: [], jobs: [] };
       industry.create.mockReturnValue(of(detail));
       const component = build();
       component.choose({
@@ -423,6 +425,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       });
 
@@ -436,6 +439,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [requirement({ decision: 'BUILD' })],
+        edges: [],
         jobs: [],
       };
       industry.decide.mockReturnValue(of(nachher));
@@ -444,6 +448,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       });
 
@@ -473,6 +478,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [requirement({ decision: 'BUILD' })],
+        edges: [],
         jobs: [],
       };
       industry.decide.mockReturnValue(of(nachher));
@@ -481,6 +487,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       });
       industry.procurement.mockClear();
@@ -499,6 +506,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [requirement({ decision: 'BUILD' })],
+        edges: [],
         jobs: [],
       };
       industry.applyStrategy.mockReturnValue(of(nachher));
@@ -507,6 +515,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       });
       industry.procurement.mockClear();
@@ -528,6 +537,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [requirement({ needed: 9999 })],
+        edges: [],
         jobs: [],
       };
       industry.recalculate.mockReturnValue(of(nachher));
@@ -536,6 +546,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       });
       industry.procurement.mockClear();
@@ -559,6 +570,7 @@ describe('IndustryComponent', () => {
         order: { ...order(), buildLocationName: 'K-6K16' },
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       });
       expect(component.bestandsOrt()).toBe('in K-6K16');
@@ -571,6 +583,7 @@ describe('IndustryComponent', () => {
         order: { ...order(), buildLocationName: 'Jita' },
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       };
       industry.setBuildLocation.mockReturnValue(of(nachher));
@@ -579,6 +592,7 @@ describe('IndustryComponent', () => {
         order: order(),
         summary: preview().summary,
         requirements: [],
+        edges: [],
         jobs: [],
       });
 
@@ -639,5 +653,78 @@ describe('IndustryComponent', () => {
       expect(industry.orders).toHaveBeenCalled();
       expect(component.orders()).toEqual([]);
     });
+  });
+});
+
+describe('IndustryComponent · Multibuy', () => {
+  function zeile(over: Record<string, unknown> = {}) {
+    return {
+      typeId: 34,
+      typeName: 'Tritanium',
+      neededQuantity: 5_200_000,
+      source: 'DIRECT',
+      buyTypeId: null,
+      buyTypeName: null,
+      buyQuantity: 0,
+      purchaseCost: 100,
+      volume: 1,
+      totalCost: 100,
+      alternative: null,
+      saving: 0,
+      note: null,
+      ...over,
+    };
+  }
+
+  function mitZeilen(lines: unknown[]) {
+    const c = build();
+    c.procurement.set({
+      jumpsFromJita: 1,
+      locationChosen: true,
+      transport: 'FREIGHTER',
+      transportLabel: 'Frachter',
+      freightPerCubicMeter: 120,
+      loadCapacity: 1,
+      goodsCost: 1,
+      freightCost: 1,
+      totalCost: 2,
+      volume: 1,
+      loads: 1,
+      withoutPrice: 0,
+      oreVerdict: null,
+      oreFactor: null,
+      lines,
+    } as never);
+    return c;
+  }
+
+  it('nimmt bei einer Erz-Empfehlung das Erz und dessen Menge', () => {
+    // Wer die Mineralien einfügt, kauft am Rat der Liste vorbei: empfohlen
+    // wurde das komprimierte Erz, und nur dessen Menge stimmt.
+    const c = mitZeilen([
+      zeile({ source: 'ORE', buyTypeId: 28430, buyTypeName: 'Compressed Veldspar', buyQuantity: 26_000 }),
+    ]);
+
+    expect(c.multibuyText()).toBe('Compressed Veldspar\t26000');
+  });
+
+  it('nimmt ohne Erz den Namen und den echten Bedarf', () => {
+    expect(mitZeilen([zeile()]).multibuyText()).toBe('Tritanium\t5200000');
+  });
+
+  it('behält Positionen ohne Marktpreis', () => {
+    // Ein fehlender Preis heißt nicht, dass das Material nicht gebraucht wird.
+    // Stillschweigend weglassen ergäbe eine Liste, die vollständig aussieht.
+    const c = mitZeilen([
+      zeile(),
+      zeile({ typeId: 35, typeName: 'Pyerite', neededQuantity: 10, purchaseCost: null, totalCost: null }),
+    ]);
+
+    expect(c.multibuyText().split('\n')).toHaveLength(2);
+    expect(c.multibuyText()).toContain('Pyerite\t10');
+  });
+
+  it('liefert leeren Text, solange keine Liste da ist', () => {
+    expect(build().multibuyText()).toBe('');
   });
 });

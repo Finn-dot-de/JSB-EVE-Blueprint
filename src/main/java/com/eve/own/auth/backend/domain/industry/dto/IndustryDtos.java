@@ -63,9 +63,28 @@ public final class IndustryDtos {
      * @param priceMissing ob kein Referenzpreis vorliegt - muss sichtbar sein,
      *                     statt als null ISK in die Summe einzugehen
      */
-    public record RequirementDto(long typeId, String typeName, long needed, long have, long missing,
+    /**
+     * @param depth      kuerzester Weg zum Endprodukt; 1 ist unmittelbares Material
+     * @param buildLevel Fertigungsstufe: 0 wird beschafft, darueber wird gebaut.
+     *                   Hierauf und <b>nicht</b> auf {@code depth} oder
+     *                   {@code parentTypeId} gehoert die Reihenfolge der Anzeige -
+     *                   fuer jede Materialkante gilt, dass das Material eine
+     *                   kleinere Stufe traegt als sein Produkt.
+     * @param parentTypeId einer der Verbraucher, nicht der einzige; eine
+     *                   Stueckliste ist ein Netz und hat je Material oft viele
+     */
+    /**
+     * @param alreadyBuilt was entfaellt, weil das Bauteil darueber schon fertig
+     *                     ist. <b>Getrennt von {@code have}</b>, und das ist
+     *                     keine Formsache: {@code have} heisst "liegt greifbar
+     *                     im Hangar", {@code alreadyBuilt} heisst "steckt schon
+     *                     im Bauteil". Wer beides zu einer Zahl verruehrt, kann
+     *                     nicht mehr sagen, ob er noch etwas holen muss.
+     */
+    public record RequirementDto(long typeId, String typeName, long needed, long have,
+                                 long alreadyBuilt, long missing,
                                  String sourceKind, boolean buildable, String decision,
-                                 int depth, Long parentTypeId,
+                                 int depth, int buildLevel, Long parentTypeId,
                                  Double unitPrice, boolean priceMissing,
                                  double packagedVolume, int onCharacters,
                                  long haveElsewhere) {}
@@ -114,9 +133,21 @@ public final class IndustryDtos {
                                  String createdAt) {}
 
     /** Ein Auftrag mit allem, was der Arbeitsbildschirm braucht. */
+    /**
+     * @param edges welches Material in welches Produkt eingeht. Getrennt von
+     *              {@code requirements}, weil eine Stueckliste ein Netz ist und
+     *              eine Zeile je Typ nur eine einzige Elternangabe tragen kann.
+     *              Ohne diese Liste laesst sich nicht sagen, ob ein Bauteil
+     *              wirklich startklar ist - nur, ob es der eine bekannte
+     *              Zweig hergibt.
+     */
     public record OrderDetailDto(OrderSummaryDto order, PlanSummaryDto summary,
                                  List<RequirementDto> requirements,
+                                 List<MaterialEdgeDto> edges,
                                  List<JobDto> jobs) {}
+
+    /** Eine Materialkante: {@code materialTypeId} geht in {@code productTypeId} ein. */
+    public record MaterialEdgeDto(long productTypeId, long materialTypeId) {}
 
     /** Ein Industriejob, wie ihn die Oberflaeche zeigt. */
     public record JobDto(long jobId, String activityLabel, Long productTypeId, String productName,

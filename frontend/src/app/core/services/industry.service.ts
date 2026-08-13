@@ -61,7 +61,27 @@ export interface Requirement {
   /** Ob "Bauen" überhaupt angeboten werden darf - bei PI-Gütern nicht. */
   buildable: boolean;
   decision: string;
+  /**
+   * Was entfällt, weil das Bauteil darüber schon fertig ist.
+   *
+   * Strikt getrennt von `have`: `have` heißt „liegt greifbar im Hangar",
+   * `alreadyBuilt` heißt „steckt schon im Bauteil". Wer beides zu einer Zahl
+   * verrührt, kann nicht mehr sagen, ob er noch etwas holen muss.
+   */
+  alreadyBuilt: number;
   depth: number;
+  /**
+   * Die Fertigungsstufe aus dem Backend: 0 wird beschafft, darüber wird gebaut.
+   *
+   * Hierauf gehört die Reihenfolge der Anzeige — und **nicht** auf `depth` oder
+   * `parentTypeId`. Beide taugen dafür nicht: `depth` ist der kürzeste Weg zum
+   * Endprodukt und wächst von ihm weg, während die Stufe auf es zu wächst.
+   * `parentTypeId` nennt nur *einen* Verbraucher, obwohl ein Material oft viele
+   * hat — in einem gemessenen Phoenix-Auftrag hatte Reinforced Carbon Fiber
+   * siebzehn. Aus einer solchen Liste lässt sich die Ordnung nicht wieder
+   * herstellen, deshalb rechnet sie das Backend über den ganzen Graphen.
+   */
+  buildLevel: number;
   parentTypeId: number | null;
   unitPrice: number | null;
   priceMissing: boolean;
@@ -118,10 +138,26 @@ export interface Job {
   assignedToOrder: boolean;
 }
 
+/** Eine Materialkante: `materialTypeId` geht in `productTypeId` ein. */
+export interface MaterialEdge {
+  productTypeId: number;
+  materialTypeId: number;
+}
+
 export interface OrderDetail {
   order: OrderSummary;
   summary: PlanSummary;
   requirements: Requirement[];
+  /**
+   * Der vollständige Stücklistengraph des Auftrags.
+   *
+   * Getrennt von `requirements`, weil eine Zeile je Typ nur *eine*
+   * Elternangabe tragen kann — Reinforced Carbon Fiber hat in einem
+   * gemessenen Phoenix-Auftrag siebzehn Verbraucher. Ohne diese Liste
+   * ließe sich nicht sagen, ob ein Bauteil wirklich startklar ist,
+   * sondern nur, ob der eine bekannte Zweig es hergibt.
+   */
+  edges: MaterialEdge[];
   jobs: Job[];
 }
 

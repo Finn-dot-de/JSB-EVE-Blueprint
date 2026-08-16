@@ -166,6 +166,22 @@
         }
       </div>
 
+      <label class="ohne-assets">
+        <input type="checkbox" [checked]="ohneEigeneAssets()"
+               (change)="toggleOhneEigeneAssets()" />
+        Eigene Bestände ignorieren
+        <small>rechnet, als läge nichts im Hangar</small>
+      </label>
+      @if (ohneEigeneAssets()) {
+        <!-- Muss dranstehen, solange der Blick aktiv ist. Sonst hält jemand
+             eine Zahl für den Stand seines Auftrags, die eine Was-wäre-wenn-
+             Rechnung ist. -->
+        <p class="ohne-assets-hinweis">
+          Alle Zahlen unten rechnen ohne deinen Bestand — auch „verbaut" und die
+          Einkaufsliste. Am Auftrag ändert das nichts.
+        </p>
+      }
+
       @if (stufenFehlen()) {
         <p class="stufen-fehlen">
           Die Fertigungsreihenfolge fehlt in der Antwort des Servers — alle

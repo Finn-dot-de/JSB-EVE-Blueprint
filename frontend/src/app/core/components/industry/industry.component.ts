@@ -358,7 +358,7 @@ export class IndustryComponent {
 
   /** Holt die Einkaufsliste zu einem Auftrag. */
   private loadProcurement(orderId: number) {
-    this.industry.procurement(orderId).subscribe({
+    this.industry.procurement(orderId, this.ohneEigeneAssets()).subscribe({
       next: (plan) => this.procurement.set(plan),
       error: () => this.procurement.set(null),
     });
@@ -397,14 +397,32 @@ export class IndustryComponent {
 
   trackByLine = (_: number, row: { typeId: number }) => row.typeId;
 
+  /**
+   * Ob gerechnet wird, als läge nichts im Hangar.
+   *
+   * Ein Blick, keine Eigenschaft des Auftrags: nicht gespeichert, beim nächsten
+   * Öffnen wieder aus. Wäre er am Auftrag hinterlegt, ließe sich später an
+   * keiner Zahl mehr erkennen, ob sie den Bestand berücksichtigt hat.
+   */
+  readonly ohneEigeneAssets = signal(false);
+
   open(order: OrderSummary) {
-    this.industry.order(order.id).subscribe({
+    this.industry.order(order.id, this.ohneEigeneAssets()).subscribe({
       next: (detail) => {
         this.openOrder.set(detail);
         this.loadProcurement(order.id);
       },
       error: () => this.error.set('Der Auftrag ließ sich nicht laden.'),
     });
+  }
+
+  /** Schaltet den Blick um und lädt den offenen Auftrag damit neu. */
+  toggleOhneEigeneAssets() {
+    this.ohneEigeneAssets.update((v) => !v);
+    const offen = this.openOrder();
+    if (offen) {
+      this.open(offen.order);
+    }
   }
 
   closeOrder() {

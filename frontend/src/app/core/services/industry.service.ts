@@ -310,8 +310,14 @@ export class IndustryService {
     return this.http.get<OrderSummary[]>(`${this.base}/orders`);
   }
 
-  order(id: number): Observable<OrderDetail> {
-    return this.http.get<OrderDetail>(`${this.base}/orders/${id}`);
+  /**
+   * @param ignoreOwnAssets rechnet, als läge nichts im Hangar — die Frage
+   *   „was kostet mich das komplett von null". Nur ein Blick: Am Auftrag ändert
+   *   sich nichts, und der Parameter wird nirgends gespeichert.
+   */
+  order(id: number, ignoreOwnAssets = false): Observable<OrderDetail> {
+    const query = ignoreOwnAssets ? '?ignoreOwnAssets=true' : '';
+    return this.http.get<OrderDetail>(`${this.base}/orders/${id}${query}`);
   }
 
   create(
@@ -359,9 +365,16 @@ export class IndustryService {
     return this.http.get<BlueprintCheck[]>(`${this.base}/orders/${orderId}/blueprints`);
   }
 
-  /** Die Einkaufsliste: was kaufen, wo, und was kostet der Weg. */
-  procurement(orderId: number): Observable<Procurement> {
-    return this.http.get<Procurement>(`${this.base}/orders/${orderId}/procurement`);
+  /**
+   * Die Einkaufsliste: was kaufen, wo, und was kostet der Weg.
+   *
+   * @param ignoreOwnAssets wie bei `order`. Muss mitgereicht werden — sonst
+   *   ändern sich oben die Stufen und unten bleibt die Einkaufsliste stehen,
+   *   also zwei Zahlen zum selben Auftrag, die einander widersprechen.
+   */
+  procurement(orderId: number, ignoreOwnAssets = false): Observable<Procurement> {
+    const query = ignoreOwnAssets ? '?ignoreOwnAssets=true' : '';
+    return this.http.get<Procurement>(`${this.base}/orders/${orderId}/procurement${query}`);
   }
 
   /** Stellt eine Zeile von Kaufen auf Bauen um - und löst dabei eine Ebene tiefer auf. */

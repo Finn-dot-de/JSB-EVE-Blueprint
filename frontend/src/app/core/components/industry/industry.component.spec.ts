@@ -497,8 +497,38 @@ describe('IndustryComponent', () => {
 
       // Beide hängen am Bedarf - ohne Nachladen zeigen sie weiter den alten
       // Stand, ohne dass man es ihnen ansieht.
-      expect(industry.procurement).toHaveBeenCalledWith(1);
+      expect(industry.procurement).toHaveBeenCalledWith(1, false);
       expect(industry.blueprints).toHaveBeenCalledWith(1);
+    });
+
+    it('reicht "ohne eigene Bestände" an BEIDE Abrufe weiter', () => {
+      // Genau hier lag der Fehler: Der Schalter erreichte nur die Stufen.
+      // Unten blieb die Einkaufsliste stehen - zwei Zahlen zum selben
+      // Auftrag, die einander widersprachen.
+      const component = build();
+      component.openOrder.set({ order: { id: 7 } } as never);
+      industry.order.mockClear();
+      industry.procurement.mockClear();
+
+      component.toggleOhneEigeneAssets();
+
+      expect(component.ohneEigeneAssets()).toBe(true);
+      expect(industry.order).toHaveBeenCalledWith(7, true);
+      expect(industry.procurement).toHaveBeenCalledWith(7, true);
+    });
+
+    it('nimmt den Schalter wieder zurück', () => {
+      const component = build();
+      // Die Antwort muss den Auftrag zurückgeben - open() setzt openOrder
+      // daraus neu, und der zweite Umschalter braucht ihn wieder.
+      industry.order.mockReturnValue(of({ order: { id: 7 } } as never));
+      component.openOrder.set({ order: { id: 7 } } as never);
+
+      component.toggleOhneEigeneAssets();
+      component.toggleOhneEigeneAssets();
+
+      expect(component.ohneEigeneAssets()).toBe(false);
+      expect(industry.order).toHaveBeenLastCalledWith(7, false);
     });
 
     it('wendet eine Voreinstellung an und lädt danach alles neu', () => {
@@ -525,7 +555,7 @@ describe('IndustryComponent', () => {
       expect(industry.applyStrategy).toHaveBeenCalledWith(1, 'COST_EFFICIENT');
       expect(component.openOrder()).toBe(nachher);
       // Die Einkaufsliste ändert sich mit jeder Entscheidung mit.
-      expect(industry.procurement).toHaveBeenCalledWith(1);
+      expect(industry.procurement).toHaveBeenCalledWith(1, false);
       expect(component.strategyRunning()).toBe(false);
     });
 
@@ -555,7 +585,7 @@ describe('IndustryComponent', () => {
 
       expect(industry.recalculate).toHaveBeenCalledWith(1);
       expect(component.openOrder()).toBe(nachher);
-      expect(industry.procurement).toHaveBeenCalledWith(1);
+      expect(industry.procurement).toHaveBeenCalledWith(1, false);
       expect(component.recalcRunning()).toBe(false);
     });
 
@@ -614,7 +644,7 @@ describe('IndustryComponent', () => {
       expect(industry.setBuildLocation).toHaveBeenCalledWith(1, 30000142, null, 'Jita');
       expect(component.openOrder()).toBe(nachher);
       // Die Einkaufsliste hängt am Bestand, und der ändert sich mit dem Ort.
-      expect(industry.procurement).toHaveBeenCalledWith(1);
+      expect(industry.procurement).toHaveBeenCalledWith(1, false);
     });
 
     it('klappt eine Tafel zu und wieder auf', () => {

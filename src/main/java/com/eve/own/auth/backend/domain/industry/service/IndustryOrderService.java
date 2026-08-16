@@ -208,14 +208,40 @@ public class IndustryOrderService {
     /** Ein Auftrag mit Bedarfstabelle und Jobs. */
     @Transactional(readOnly = true)
     public IndustryDtos.OrderDetailDto detail(Long characterId, Long orderId) {
+        return detail(characterId, orderId, false);
+    }
+
+    /**
+     * Ein Auftrag, wahlweise ohne Anrechnung eigener Bestaende.
+     *
+     * <p>{@code ignoreOwnAssets} beantwortet die Frage "was kostet mich das
+     * komplett von null" - ohne dass jemand dafuer einen zweiten Auftrag
+     * anlegen muss.</p>
+     *
+     * <p><b>Ein Blick, keine Eigenschaft des Auftrags.</b> Der Schalter kommt
+     * am Abruf und wird nirgends gespeichert. Wuerde er am Auftrag haengen,
+     * waere spaeter an keiner Zahl mehr zu erkennen, ob sie den Bestand
+     * beruecksichtigt hat oder nicht.</p>
+     *
+     * <p>Er schaltet <em>beides</em> ab: den Bestand und die Gutschrift fuer
+     * bereits fertige Bauteile. Die stammt naemlich ebenfalls aus dem Bestand -
+     * bliebe sie stehen, waehrend {@code have} auf null faellt, waere das
+     * Ergebnis weder "von null" noch "mit allem", sondern eine dritte Zahl, die
+     * nichts beantwortet. Weil {@link #entfaelltDurchGebautes} seinerseits am
+     * Bestand haengt, genuegt dafuer die leere Karte hier.</p>
+     */
+    @Transactional(readOnly = true)
+    public IndustryDtos.OrderDetailDto detail(Long characterId, Long orderId,
+                                              boolean ignoreOwnAssets) {
         IndustryOrder order = ownedOrder(characterId, orderId);
         List<IndustryOrderRequirement> gespeichert =
                 requirementRepo.findByOrderIdOrderByDepthAscQuantityNeededDesc(orderId);
 
         Set<Long> typen = new HashSet<>();
         gespeichert.forEach(r -> typen.add(r.getTypeId()));
-        Map<Long, Holding> bestand =
-                planning.holdingsFor(characterId, typen, order.getBuildSystemId());
+        Map<Long, Holding> bestand = ignoreOwnAssets
+                ? Map.of()
+                : planning.holdingsFor(characterId, typen, order.getBuildSystemId());
 
         Map<Long, Long> entfaellt = entfaelltDurchGebautes(order, gespeichert, bestand);
 
@@ -436,8 +462,23 @@ public class IndustryOrderService {
      */
     @Transactional(readOnly = true)
     public IndustryDtos.ProcurementDto procurement(Long characterId, Long orderId) {
+        return procurement(characterId, orderId, false);
+    }
+
+    /**
+     * Die Einkaufsliste, wahlweise ohne Anrechnung eigener Bestaende.
+     *
+     * <p>Der Schalter muss hier durchgereicht werden, weil die Liste zwar aus
+     * {@link #detail} entsteht, aber ueber einen eigenen Endpunkt abgeholt
+     * wird. Ohne ihn aendern sich oben die Stufen und unten bleibt die
+     * Einkaufsliste stehen - zwei Zahlen zum selben Auftrag, die einander
+     * widersprechen.</p>
+     */
+    @Transactional(readOnly = true)
+    public IndustryDtos.ProcurementDto procurement(Long characterId, Long orderId,
+                                                   boolean ignoreOwnAssets) {
         IndustryOrder order = ownedOrder(characterId, orderId);
-        IndustryDtos.OrderDetailDto detail = detail(characterId, orderId);
+        IndustryDtos.OrderDetailDto detail = detail(characterId, orderId, ignoreOwnAssets);
 
         Double security = null;
         if (order.getBuildSystemId() != null) {

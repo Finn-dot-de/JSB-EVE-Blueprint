@@ -127,17 +127,26 @@ public class IndustryController {
         return orders.list(CurrentUser.characterId());
     }
 
+    /**
+     * @param ignoreOwnAssets rechnet, als laege nichts im Hangar - die Frage
+     *                        "was kostet mich das komplett von null". Nur ein
+     *                        Blick, am Auftrag aendert sich dadurch nichts.
+     */
     @GetMapping("/orders/{orderId}")
-    public IndustryDtos.OrderDetailDto detail(@PathVariable Long orderId) {
-        return orders.detail(CurrentUser.characterId(), orderId);
+    public IndustryDtos.OrderDetailDto detail(
+            @PathVariable Long orderId,
+            @RequestParam(defaultValue = "false") boolean ignoreOwnAssets) {
+        return orders.detail(CurrentUser.characterId(), orderId, ignoreOwnAssets);
     }
 
     /**
      * Die Einkaufsliste: was kaufen, wo, und was kostet der Weg.
      */
     @GetMapping("/orders/{orderId}/procurement")
-    public IndustryDtos.ProcurementDto procurement(@PathVariable Long orderId) {
-        return orders.procurement(CurrentUser.characterId(), orderId);
+    public IndustryDtos.ProcurementDto procurement(
+            @PathVariable Long orderId,
+            @RequestParam(defaultValue = "false") boolean ignoreOwnAssets) {
+        return orders.procurement(CurrentUser.characterId(), orderId, ignoreOwnAssets);
     }
 
     /** Reichen die vorhandenen Blaupausen samt ihrer Läufe? */

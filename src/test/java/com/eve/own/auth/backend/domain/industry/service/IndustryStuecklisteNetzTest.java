@@ -263,6 +263,46 @@ class IndustryStuecklisteNetzTest {
         assertThat(rcf.missing()).isEqualTo(5_520);
     }
 
+    @Test
+    @DisplayName("ignoriert auf Wunsch den gesamten eigenen Bestand")
+    void ohneEigeneAssetsStehtDerVolleBedarf() {
+        // "Was kostet mich das komplett von null" - ohne dafuer einen zweiten
+        // Auftrag anlegen zu muessen.
+        mitBlaupausen();
+        bestandLiefert(Map.of(
+                SEAL, new IndustryQueryRepository.Holding(SEAL, 368, 0, 1),
+                UNIT, new IndustryQueryRepository.Holding(UNIT, 184, 0, 1),
+                RCF, new IndustryQueryRepository.Holding(RCF, 500, 0, 1)));
+
+        service.setDecision(1L, ORDER, new IndustryDtos.DecisionRequest(UNIT, "BUILD"));
+        var detail = service.detail(1L, ORDER, true);
+
+        var rcf = zeileAus(detail, RCF);
+        assertThat(rcf.have()).isZero();
+        // Die eigentliche Falle: Die Gutschrift fuer fertige Bauteile stammt
+        // ebenfalls aus dem Bestand. Bliebe sie stehen, waehrend have auf null
+        // faellt, waere das Ergebnis weder "von null" noch "mit allem".
+        assertThat(rcf.alreadyBuilt()).isZero();
+        assertThat(rcf.missing()).isEqualTo(rcf.needed());
+    }
+
+    @Test
+    @DisplayName("laesst den Auftrag dabei unangetastet")
+    void derBlickAendertNichtsAmAuftrag() {
+        // Der Schalter ist ein Blick, keine Eigenschaft. Wer ihn setzt und
+        // wieder wegnimmt, muss dieselben Zahlen wie vorher sehen.
+        mitBlaupausen();
+        bestandLiefert(Map.of(SEAL, new IndustryQueryRepository.Holding(SEAL, 368, 0, 1)));
+        service.setDecision(1L, ORDER, new IndustryDtos.DecisionRequest(UNIT, "BUILD"));
+
+        long vorher = zeileAus(service.detail(1L, ORDER), RCF).alreadyBuilt();
+        service.detail(1L, ORDER, true);
+        long nachher = zeileAus(service.detail(1L, ORDER), RCF).alreadyBuilt();
+
+        assertThat(vorher).isEqualTo(3_680);
+        assertThat(nachher).isEqualTo(vorher);
+    }
+
     // ===========================================================
     //  Gerüst
     // ===========================================================

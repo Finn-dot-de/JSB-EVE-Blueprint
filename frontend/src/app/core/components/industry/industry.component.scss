@@ -1138,3 +1138,28 @@
   font-size: 0.8rem;
   color: #e0b341;
 }
+
+/* --- Blick "ohne eigene Bestände" --- */
+.ohne-assets {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ohne-assets small {
+  opacity: 0.6;
+}
+
+/* Der Hinweis muss auffallen: Er unterscheidet eine Was-wäre-wenn-Rechnung
+   vom tatsächlichen Stand des Auftrags. */
+.ohne-assets-hinweis {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.9rem;
+  border-left: 3px solid #e0b341;
+  border-radius: 4px;
+  background: color-mix(in srgb, #e0b341 10%, transparent);
+  font-size: 0.8rem;
+}

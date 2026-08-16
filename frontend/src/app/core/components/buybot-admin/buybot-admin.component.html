@@ -3,6 +3,32 @@
     <span class="close-x" (click)="close()">[x]</span>
     <h3>ADMIN-PANEL</h3>
 
+    <!-- 0. BETRIEBSZUSTAND -->
+    <fieldset>
+      <legend>Betriebszustand</legend>
+      <div style="display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 200px;">
+          <label>Ankauf aktiv</label>
+          <select [(ngModel)]="config.botEnabled">
+            <option [ngValue]="true">AKTIV - Website rechnet und kauft an</option>
+            <option [ngValue]="false">PAUSIERT - Offline-Hinweis statt Rechner</option>
+          </select>
+        </div>
+        <div style="flex: 1; min-width: 200px;">
+          <label>Überschrift im Pausen-Hinweis</label>
+          <input type="text" placeholder="BUYBOT PAUSIERT" [(ngModel)]="config.maintenanceTitle">
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="small" (click)="saveConfig()" style="height: 33px;">SPEICHERN</button>
+        </div>
+      </div>
+      <div style="margin-top: 10px;">
+        <label>Text im Pausen-Hinweis</label>
+        <textarea class="phrases" placeholder="Der Ankauf ist gerade deaktiviert..." [(ngModel)]="config.maintenanceMessage"></textarea>
+      </div>
+    </fieldset>
+
     <!-- 1. PREISBASIS -->
     <fieldset>
       <legend>Preisbasis</legend>
@@ -18,15 +44,22 @@
           <label>Standard-Modifikator (%)</label>
           <input type="number" min="0" max="200" step="1" [(ngModel)]="config.globalModifier">
         </div>
+        <div style="flex: 1; min-width: 150px;">
+          <label>Reprocessing-Ausbeute (%)</label>
+          <input type="number" min="1" max="100" step="0.5" [(ngModel)]="config.reprocessingRate">
+        </div>
         <div>
           <!-- Dummy-Label für saubere vertikale Ausrichtung -->
           <label>&nbsp;</label>
           <button class="small" (click)="saveConfig()" style="height: 33px;">SPEICHERN</button>
         </div>
       </div>
+      <p class="hint">
+        Die Ausbeute gilt für alle Regeln mit Häkchen bei "Reprocessed". Die SDE kennt nur die perfekte
+        Ausbeute (100 %) - eine NPC-Station schafft 50 %, mit Skills und Anlage entsprechend mehr.
+      </p>
     </fieldset>
 
-    <!-- 2. ABGABEORTE -->
     <!-- 2. ABGABEORTE -->
     <fieldset>
       <legend>Abgabeorte</legend>
@@ -46,7 +79,7 @@
               <td>{{ loc.name }}</td>
               <td>{{ loc.transportFee }}</td>
               <td>{{ loc.securityFee }}</td>
-              <td>{{ loc.stationId || '-' }}</td>
+              <td [class.status-warn]="!loc.stationId">{{ loc.stationId || 'fehlt' }}</td>
               <td style="text-align: center;"><button class="danger small" (click)="deleteLocation(loc.id!)">LÖSCHEN</button></td>
             </tr>
           }
@@ -73,6 +106,7 @@
         </tr>
         </tfoot>
       </table>
+      <p class="hint">Die Station-ID wird für die Vertragsprüfung gebraucht: ESI liefert den Vertragsstandort nur als ID.</p>
     </fieldset>
 
     <!-- 3. KATEGORIEN-WHITELIST -->
@@ -82,15 +116,26 @@
         @for (cat of categories; track cat.categoryId) {
           <div class="tag-chip">
             {{ cat.categoryName }} ({{ cat.modifier }}%)
+            @if (cat.useReprocessedValue) {
+              <span class="repro-chip" title="Bewertung über den Reprocessing-Wert">REPRO</span>
+            }
             <span class="x" (click)="deleteCategory(cat.categoryId!)">[x]</span>
           </div>
         }
       </div>
-      <div style="display: flex; gap: 10px; align-items: stretch;">
-        <input type="text" placeholder="Kategorie Name (z.B. Asteroid)" [(ngModel)]="newCat.name" style="flex: 1; padding: 6px;">
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <input type="text" placeholder="Kategorie Name (z.B. Asteroid)" [(ngModel)]="newCat.name" style="flex: 1; min-width: 180px; padding: 6px;">
         <input type="number" placeholder="Mod %" [(ngModel)]="newCat.modifier" style="width: 100px; padding: 6px;">
+        <label class="check-inline" title="Statt des Marktpreises den Wert der Reprocessing-Ausbeute ansetzen">
+          <input type="checkbox" [(ngModel)]="newCat.useReprocessedValue">
+          Reprocessed
+        </label>
         <button class="small" (click)="addCategory()">ERLAUBEN</button>
       </div>
+      <p class="hint">
+        Mit Häkchen wird der Wert der Reprocessing-Ausbeute angesetzt statt des Marktpreises des Items.
+        Ist ein Item nicht verwertbar, greift automatisch wieder der Marktpreis.
+      </p>
     </fieldset>
 
     <!-- 4. EINZELITEM-REGELN -->
@@ -101,6 +146,7 @@
         <tr>
           <th>Item Name</th>
           <th style="width: 160px;">Modifikator / Status</th>
+          <th style="width: 110px; text-align: center;">Reprocessed</th>
           <th style="width: 90px; text-align: center;">Aktion</th>
         </tr>
         </thead>
@@ -110,6 +156,10 @@
               <td>{{ type.typeName }}</td>
               <td [class.status-err]="type.isBlacklisted" [class.status-ok]="!type.isBlacklisted">
                 {{ type.isBlacklisted ? 'GESPERRT' : type.modifier + '%' }}
+              </td>
+              <td style="text-align: center;" [class]="reprocessClass(type)"
+                  [title]="type.reprocessable === false ? 'Dieses Item hat keine Reprocessing-Ausbeute - es gilt der Marktpreis' : ''">
+                {{ reprocessLabel(type) }}
               </td>
               <td style="text-align: center;"><button class="danger small" (click)="deleteType(type.typeId!)">LÖSCHEN</button></td>
             </tr>
@@ -125,13 +175,348 @@
               <label for="blacklistCheck" style="margin: 0; color: var(--red); cursor: pointer;">Sperren</label>
             </div>
           </td>
+          <td style="padding: 6px; text-align: center;">
+            <input type="checkbox" [(ngModel)]="newType.useReprocessedValue" [disabled]="newType.isBlacklisted"
+                   title="Statt des Marktpreises den Wert der Reprocessing-Ausbeute ansetzen" style="width: auto; margin: 0;">
+          </td>
           <td style="padding: 6px; text-align: center;"><button class="small" (click)="addType()">SPEICHERN</button></td>
         </tr>
         </tfoot>
       </table>
+      <p class="hint">
+        Einzelitems überlagern die Kategorie: erlaubte Kategorie + gesperrtes Item = gesperrt,
+        erlaubte Kategorie + eigener Modifikator = eigener Modifikator. Das gilt auch für "Reprocessed" -
+        die Einstellung am Item schlägt die der Kategorie.
+      </p>
+      <p class="hint">
+        Steht in der Spalte Reprocessed <span class="status-warn">JA (wirkungslos)</span>, hat das Item gar
+        keine Ausbeute - Mineralien und Mondgüter sind Endprodukte. Dann gilt weiter der Marktpreis.
+      </p>
     </fieldset>
 
-    <!-- 5. BOT-PERSÖNLICHKEIT -->
+    <!-- 5. VERTRAGSERSTELLUNG (Anleitung auf der Website) -->
+    <fieldset>
+      <legend>Vertragserstellung (wird dem Nutzer nach der Berechnung angezeigt)</legend>
+      <div style="display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;">
+        <div style="flex: 2; min-width: 220px;">
+          <label>Verträge laufen auf (Charakter- oder Corp-Name)</label>
+          <input type="text" placeholder="z.B. Konsti Buyback" [(ngModel)]="config.contractRecipient">
+        </div>
+        <div style="flex: 1; min-width: 120px;">
+          <label>Laufzeit (Tage)</label>
+          <input type="number" min="1" max="14" [(ngModel)]="config.contractExpireDays">
+        </div>
+        <div style="flex: 1; min-width: 120px;">
+          <label>Days to complete</label>
+          <input type="number" min="0" max="7" [(ngModel)]="config.contractDaysToComplete">
+        </div>
+      </div>
+      <div style="margin-top: 10px;">
+        <label>Zusatzhinweis im Vertrags-Kasten (optional)</label>
+        <textarea class="phrases" [(ngModel)]="config.contractNote"></textarea>
+      </div>
+      <div style="margin-top: 10px;">
+        <button class="small" (click)="saveConfig()">SPEICHERN</button>
+      </div>
+    </fieldset>
+
+    <!-- 6. VERTRAGSPRÜFUNG -->
+    <fieldset>
+      <legend>Vertragsprüfung (ESI)</legend>
+      <div style="display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 180px;">
+          <label>Automatische Prüfung</label>
+          <select [(ngModel)]="config.contractCheckEnabled">
+            <option [ngValue]="true">AN</option>
+            <option [ngValue]="false">AUS</option>
+          </select>
+        </div>
+        <div style="flex: 2; min-width: 220px;">
+          <label>Prüf-Charakter (Verträge laufen auf diesen Char)</label>
+          <select [(ngModel)]="config.contractCheckCharacterId">
+            <option [ngValue]="0">-- nicht gesetzt --</option>
+            @for (char of characters; track char.id) {
+              <option [ngValue]="char.id">{{ char.name }}</option>
+            }
+          </select>
+        </div>
+        <div style="flex: 1; min-width: 120px;">
+          <label>Toleranz (%)</label>
+          <input type="number" min="0" max="50" step="0.1" [(ngModel)]="config.priceTolerancePercent">
+        </div>
+        <div style="flex: 1; min-width: 120px;">
+          <label>Intervall (Min.)</label>
+          <input type="number" min="1" max="1440" [(ngModel)]="config.checkIntervalMinutes">
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px;">
+        <div style="flex: 1; min-width: 180px;">
+          <label>Meldeweg</label>
+          <select [(ngModel)]="config.notifyTarget">
+            <option value="NONE">Keine Meldung</option>
+            <option value="DISCORD">Discord-Webhook</option>
+            <option value="EVEMAIL">EVE-Mail</option>
+            <option value="BOTH">Beides</option>
+          </select>
+        </div>
+        <div style="flex: 2; min-width: 240px;">
+          <label>Discord-Webhook-URL</label>
+          <input type="text" placeholder="https://discord.com/api/webhooks/..." [(ngModel)]="config.discordWebhookUrl">
+        </div>
+        <div style="flex: 1; min-width: 160px;">
+          <label>EVE-Mail an (Character-ID, 0 = Prüf-Charakter)</label>
+          <input type="number" min="0" [(ngModel)]="config.notifyMailRecipientId">
+        </div>
+        <div style="flex: 1; min-width: 160px;">
+          <label>Auch fehlerfreie Verträge melden</label>
+          <select [(ngModel)]="config.notifyOnOk">
+            <option [ngValue]="true">Ja</option>
+            <option [ngValue]="false">Nein, nur Auffälligkeiten</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="hint">
+        Geprüft wird: Vertragstyp (nur Item-Exchange), Abgabeort per Station-ID, Preisabweichung über der Toleranz,
+        gesperrte und nicht gelistete Items sowie Items, die der Vertrag von uns zurückfordert.
+      </p>
+
+      <!-- Lebenszeichen der automatischen Prüfung -->
+      @if (checkStatus) {
+        <div class="scheduler-status">
+          <div class="status-line">
+            <span class="k">Automatik</span>
+            <span [class]="checkStatus.enabled ? 'status-ok' : 'status-warn'">
+              {{ checkStatus.enabled ? 'läuft, alle ' + checkStatus.intervalMinutes + ' Min.' : 'ausgeschaltet' }}
+            </span>
+          </div>
+          <div class="status-line">
+            <span class="k">Letzter Lauf</span>
+            <span [class]="checkStatus.lastRunSuccess ? '' : 'status-err'">
+              @if (checkStatus.lastRunAt) {
+                {{ checkStatus.lastRunAt | date:'HH:mm:ss':'UTC' }} EVE ({{ checkStatus.trigger }})
+              } @else {
+                seit dem Serverstart noch nicht gelaufen
+              }
+            </span>
+          </div>
+          @if (checkStatus.nextRunAt && checkStatus.enabled) {
+            <div class="status-line">
+              <span class="k">Nächster Lauf</span>
+              <span>{{ checkStatus.nextRunAt | date:'HH:mm:ss':'UTC' }} EVE</span>
+            </div>
+          }
+          @if (checkStatus.lastRunMessage) {
+            <div class="status-line">
+              <span class="k">Ergebnis</span>
+              <span [class]="checkStatus.lastRunSuccess ? '' : 'status-err'">{{ checkStatus.lastRunMessage }}</span>
+            </div>
+          }
+          @if (checkStatus.pendingNotifications > 0) {
+            <div class="status-line">
+              <span class="k">Offene Meldungen</span>
+              <span class="status-warn">{{ checkStatus.pendingNotifications }} - werden bei jedem Lauf erneut versucht</span>
+            </div>
+          }
+        </div>
+      }
+
+      <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+        <button class="small" (click)="saveConfig()">SPEICHERN</button>
+        <button class="small" (click)="runContractCheck()" [disabled]="isRunningCheck">
+          {{ isRunningCheck ? 'PRÜFE...' : 'JETZT PRÜFEN' }}
+        </button>
+        <button class="small" (click)="testNotification()" [disabled]="isTestingNotification">
+          {{ isTestingNotification ? 'SENDE...' : 'TESTNACHRICHT' }}
+        </button>
+        <button class="small" (click)="loadCheckResults()">BERICHTE NEU LADEN</button>
+      </div>
+    </fieldset>
+
+    <!-- 7. PRÜFBERICHTE -->
+    <fieldset>
+      <legend>
+        <button class="section-toggle" (click)="toggleSection('reports')"
+                [title]="isSectionOpen('reports') ? 'Zuklappen' : 'Aufklappen'">
+          <span class="marker">{{ isSectionOpen('reports') ? '[-]' : '[+]' }}</span>
+          Letzte Prüfberichte ({{ checkResults.length }})
+        </button>
+      </legend>
+
+      @if (isSectionOpen('reports')) {
+      @if (checkResults.length === 0) {
+        <div class="output-empty">Noch keine geprüften Verträge.</div>
+      } @else {
+        <div class="table-scroll">
+        <table class="admin-table sticky-head">
+          <thead>
+          <tr>
+            <th style="width: 96px;">Befund</th>
+            <th>Von</th>
+            <th style="width: 130px;">Eingestellt</th>
+            <th style="width: 120px;">Gefordert</th>
+            <th style="width: 120px;">Berechnet</th>
+            <th style="width: 80px;">Abw.</th>
+            <th style="width: 150px; text-align: center;">Aktion</th>
+          </tr>
+          </thead>
+          <tbody>
+            @for (res of checkResults; track res.contractId) {
+              <tr (click)="toggleResult(res.contractId)" style="cursor: pointer;">
+                <td [class]="verdictClass(res.verdict)">{{ res.verdict }}</td>
+                <td>{{ res.issuerName }}</td>
+                <td>{{ res.issuedAt ? (res.issuedAt | date:'dd.MM.yy HH:mm':'UTC') : '-' }}</td>
+                <td>{{ res.contractPrice | number:'1.0-0' }}</td>
+                <td>{{ res.expectedPrice | number:'1.0-0' }}</td>
+                <td [class]="verdictClass(res.verdict)">
+                  {{ res.deviationPercent !== null && res.deviationPercent !== undefined ? (res.deviationPercent | number:'1.2-2') + '%' : '-' }}
+                </td>
+                <td style="text-align: center;">
+                  <button class="small ghost" (click)="$event.stopPropagation(); forgetResult(res.contractId)">ERNEUT PRÜFEN</button>
+                </td>
+              </tr>
+              @if (expandedResult === res.contractId) {
+                <tr>
+                  <td colspan="7">
+                    <div class="check-detail">
+                      <div><b>Vertrag:</b> #{{ res.contractId }} ({{ res.contractType }})</div>
+                      <div><b>Ort:</b> {{ res.locationName || res.startLocationId }}</div>
+                      <div><b>Läuft ab:</b> {{ res.expiresAt ? (res.expiresAt | date:'dd.MM.yyyy HH:mm':'UTC') + ' EVE' : '-' }}</div>
+                      <div><b>Volumen:</b> {{ res.totalVolume | number:'1.2-2' }} m3</div>
+                      <div>
+                        <b>Gemeldet:</b>
+                        <span [class]="res.notified ? 'status-ok' : 'status-err'">{{ res.notified ? 'ja' : 'nein' }}</span>
+                        @if (res.notifyAttempts) {
+                          <span class="hint" style="display:inline;"> ({{ res.notifyAttempts }} Versuch(e))</span>
+                        }
+                      </div>
+                      @if (res.notifyError) {
+                        <div class="check-block">
+                          <b class="status-err">Meldung fehlgeschlagen:</b>
+                          <pre class="notify-error">{{ res.notifyError }}</pre>
+                        </div>
+                      }
+                      <div class="check-block"><b>Befund:</b><pre>{{ res.findings }}</pre></div>
+                      @if (res.itemSummary) {
+                        <div class="check-block"><b>Items:</b><pre>{{ res.itemSummary }}</pre></div>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+        </div>
+        <p class="hint">Zeile anklicken für Details. Ein geprüfter Vertrag wird nicht erneut gemeldet.</p>
+      }
+      }
+    </fieldset>
+
+    <!-- 8. PROTOKOLL -->
+    <fieldset>
+      <legend>
+        <button class="section-toggle" (click)="toggleSection('audit')"
+                [title]="isSectionOpen('audit') ? 'Zuklappen' : 'Aufklappen'">
+          <span class="marker">{{ isSectionOpen('audit') ? '[-]' : '[+]' }}</span>
+          Protokoll ({{ auditTotal }} Einträge)
+        </button>
+      </legend>
+
+      @if (isSectionOpen('audit')) {
+      <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px;">
+        <div style="flex: 1; min-width: 160px;">
+          <label>Bereich</label>
+          <select [(ngModel)]="auditCategory" (ngModelChange)="loadAuditEntries()">
+            <option value="">alle</option>
+            <option value="QUOTE">Preisanfragen</option>
+            <option value="ADMIN">Admin-Änderungen</option>
+            <option value="CONTRACT_CHECK">Vertragsprüfung</option>
+            <option value="NOTIFICATION">Benachrichtigungen</option>
+            <option value="SECURITY">Zugriff</option>
+            <option value="ERROR">Fehler</option>
+            <option value="REQUEST">Aufrufe</option>
+          </select>
+        </div>
+        <div style="flex: 1; min-width: 160px;">
+          <label>Mindestschwere</label>
+          <select [(ngModel)]="auditSeverity" (ngModelChange)="loadAuditEntries()">
+            <option value="">alle</option>
+            <option value="WARN">ab Warnung</option>
+            <option value="ERROR">nur Fehler</option>
+          </select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="small" (click)="loadAuditEntries()" style="height: 33px;">NEU LADEN</button>
+        </div>
+      </div>
+
+      @if (auditEntries.length === 0) {
+        <div class="output-empty">Keine Einträge für diesen Filter.</div>
+      } @else {
+        <div class="table-scroll">
+        <table class="admin-table sticky-head">
+          <thead>
+          <tr>
+            <th style="width: 130px;">Zeit (EVE)</th>
+            <th style="width: 70px;">Schwere</th>
+            <th style="width: 120px;">Bereich</th>
+            <th>Vorgang</th>
+            <th style="width: 130px;">Wer</th>
+            <th style="width: 110px;">IP</th>
+            <th style="width: 80px;">Fehler-ID</th>
+          </tr>
+          </thead>
+          <tbody>
+            @for (entry of auditEntries; track entry.id) {
+              <tr (click)="toggleAudit(entry.id)" style="cursor: pointer;">
+                <td>{{ entry.occurredAt | date:'dd.MM. HH:mm:ss':'UTC' }}</td>
+                <td [class]="severityClass(entry.severity)">{{ entry.severity }}</td>
+                <td>{{ entry.category }}</td>
+                <td>{{ entry.message }}</td>
+                <td>{{ entry.actorName }}</td>
+                <td>{{ entry.clientIp || '-' }}</td>
+                <td>{{ entry.requestId || '-' }}</td>
+              </tr>
+              @if (expandedAudit === entry.id) {
+                <tr>
+                  <td colspan="7">
+                    <div class="check-detail">
+                      @if (entry.path) {
+                        <div><b>Aufruf:</b> {{ entry.httpMethod }} {{ entry.path }}
+                          @if (entry.statusCode) { &rarr; {{ entry.statusCode }} }
+                          @if (entry.durationMs !== null && entry.durationMs !== undefined) { ({{ entry.durationMs }} ms) }
+                        </div>
+                      }
+                      @if (entry.actorCharacterId) {
+                        <div><b>Charakter-ID:</b> {{ entry.actorCharacterId }}</div>
+                      }
+                      @if (entry.userAgent) {
+                        <div><b>Client:</b> {{ entry.userAgent }}</div>
+                      }
+                      @if (entry.details) {
+                        <div class="check-block"><b>Details:</b><pre>{{ entry.details }}</pre></div>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+        </div>
+        <p class="hint">
+          Zeile anklicken für Details. Nicht angemeldete Spieler erscheinen als "anonym" - sie sind über
+          IP-Adresse und Fehler-ID zuzuordnen, die ihnen bei einem Fehler angezeigt wird.
+          Einträge werden nach der eingestellten Frist automatisch gelöscht.
+        </p>
+      }
+      }
+    </fieldset>
+
+    <!-- 9. BOT-PERSÖNLICHKEIT -->
     <fieldset>
       <legend>Bot-Persönlichkeit (ein Spruch pro Zeile, wird zufällig ausgewählt)</legend>
 
@@ -182,8 +567,10 @@
         </div>
       </div>
 
+      <p class="hint">Die Sprüche gelten für die deutsche Fassung. In der englischen Fassung greifen die eingebauten Texte.</p>
+
       <div style="margin-top:10px;">
-        <button class="small" (click)="saveConfig(); close()">TEXTE & SCHWELLEN SPEICHERN</button>
+        <button class="small" (click)="saveConfig(true)">TEXTE &amp; SCHWELLEN SPEICHERN</button>
       </div>
     </fieldset>
 

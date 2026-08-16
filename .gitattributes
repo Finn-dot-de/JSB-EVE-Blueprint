@@ -1,2 +1,8 @@
 /mvnw text eol=lf
+
+# Windows-Skripte brauchen CRLF, sonst stolpert cmd ueber die Sprungmarken
 *.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Linux-Skripte brauchen LF, sonst findet die Shell den Interpreter nicht
+*.sh text eol=lf

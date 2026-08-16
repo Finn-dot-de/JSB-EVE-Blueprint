@@ -2,8 +2,20 @@
   <div class="titlebar">
     <div class="brand">BUYBOT 3000</div>
     <div class="header-right">
-      <span class="injector-badge" title="Gesteuert durch Spring Boot">SECURE BACKEND <span class="num">ONLINE</span></span>
-      <div class="clock">{{ currentTime }}</div>
+      <button class="lang-switch" (click)="toggleLang()" [title]="i18n.t('lang.switchTitle')">
+        <span class="active">{{ i18n.t('lang.code') }}</span><span class="sep">|</span><span>{{ i18n.t('lang.other') }}</span>
+      </button>
+      <span class="injector-badge" [title]="injectorTooltip">
+        {{ i18n.t('header.injectors') }}
+        <span class="num">
+          @if (injectorCount !== null) {
+            {{ injectorCount | number:'1.0-1':i18n.locale }}
+          } @else {
+            -
+          }
+        </span>
+      </span>
+      <div class="clock"><span class="clock-label">{{ i18n.t('header.clockLabel') }}</span> {{ currentTime }}</div>
     </div>
   </div>
 
@@ -19,58 +31,71 @@
     </div>
   </div>
 
-  <fieldset>
-    <legend>ASSET-LISTE</legend>
-    <label for="itemsInput">Aus dem EVE-Inventar/Vertragsfenster kopierte Liste einfügen:</label>
-    <textarea id="itemsInput" [(ngModel)]="rawInput" placeholder="Tritanium 28000&#10;Pyerite  5400&#10;Veldspar  120000"></textarea>
+  @if (isMaintenance) {
+    <div class="maintenance-banner">
+      <div class="maintenance-title">{{ maintenanceTitle }}</div>
+      <div class="maintenance-text">{{ maintenanceMessage }}</div>
+    </div>
+  }
+
+  <fieldset [class.disabled-block]="isMaintenance">
+    <legend>{{ i18n.t('assets.legend') }}</legend>
+    <label for="itemsInput">{{ i18n.t('assets.label') }}</label>
+    <textarea id="itemsInput" [(ngModel)]="rawInput" [disabled]="isMaintenance"
+              [placeholder]="i18n.t('assets.placeholder')"></textarea>
 
     <div class="row" style="margin-top:10px;">
       <div>
-        <label for="stationSelect">Abgabeort</label>
-        <select id="stationSelect" [(ngModel)]="locationId">
+        <label for="stationSelect">{{ i18n.t('assets.location') }}</label>
+        <select id="stationSelect" [(ngModel)]="locationId" [disabled]="isMaintenance">
           @for (loc of locations; track loc.id) {
             <option [value]="loc.id">{{ loc.name }}</option>
           }
         </select>
+        <div class="hint">{{ i18n.t('assets.locationHint') }}</div>
       </div>
-      <div style="display:flex; align-items:flex-end; gap:10px;">
-        <button (click)="calculate()" [disabled]="isCalculating">BERECHNEN</button>
-        <button (click)="clear()" class="small" [disabled]="isCalculating">LEEREN</button>
+      <div style="display:flex; align-items:flex-start; gap:10px; padding-top:18px;">
+        <button (click)="calculate()" [disabled]="isCalculating || isMaintenance">{{ i18n.t('btn.calculate') }}</button>
+        <button (click)="clear()" class="small" [disabled]="isCalculating">{{ i18n.t('btn.clear') }}</button>
       </div>
     </div>
   </fieldset>
 
   <fieldset>
-    <legend>ERGEBNIS</legend>
+    <legend>{{ i18n.t('result.legend') }}</legend>
     <div class="output-wrap">
       @if (items.length === 0) {
-        <div class="output-empty">Noch keine Berechnung durchgeführt.</div>
+        <div class="output-empty">{{ i18n.t('result.empty') }}</div>
       } @else {
         <table class="output-table">
           <colgroup>
             <col class="col-qty"><col class="col-item"><col class="col-vol"><col class="col-status"><col class="col-price">
           </colgroup>
           <thead>
-          <tr><th>Anzahl</th><th>Item</th><th>Volumen m3</th><th>Bedarf</th><th>Preis ISK</th></tr>
+          <tr>
+            <th>{{ i18n.t('result.th.qty') }}</th>
+            <th>{{ i18n.t('result.th.item') }}</th>
+            <th>{{ i18n.t('result.th.volume') }}</th>
+            <th>{{ i18n.t('result.th.status') }}</th>
+            <th>{{ i18n.t('result.th.price') }}</th>
+          </tr>
           </thead>
           <tbody>
             @for (item of items; track $index) {
               <tr>
-                <td [title]="item.quantity">{{ item.quantity | number }}</td>
-                <td [title]="item.rawName">{{ item.rawName }}</td>
+                <td [title]="item.quantity">{{ item.quantity | number:'1.0-0':i18n.locale }}</td>
+                <td [title]="item.rawName">
+                  {{ item.rawName }}
+                  @if (item.priceSource === 'REPROCESSED') {
+                    <span class="repro-mark" [title]="i18n.t('result.reprocessedBasis')">♻</span>
+                  }
+                </td>
                 <td [title]="(item.volumeEach * item.quantity) + ' m3'">
-                  {{ (item.volumeEach * item.quantity) | number:'1.2-2' }}
+                  {{ (item.volumeEach * item.quantity) | number:'1.2-2':i18n.locale }}
                 </td>
-                <td [ngClass]="{
-                      'status-ok': item.status.includes('OK'),
-                      'status-err': item.status.includes('GEFUNDEN'),
-                      'status-warn': item.status.includes('GESPERRT') || item.status.includes('GELISTET')
-                    }"
-                    [title]="item.status">
-                  {{ item.status }}
-                </td>
-                <td class="price-cell" [title]="'Modifikator: ' + (item.appliedModifier || '0') + '%'">
-                  {{ item.totalPrice > 0 ? (item.totalPrice | number:'1.2-2') + ' ISK' : '-' }}
+                <td [ngClass]="statusClass(item)" [title]="statusLabel(item)">{{ statusLabel(item) }}</td>
+                <td class="price-cell" [title]="priceTooltip(item)">
+                  {{ item.totalPrice > 0 ? (item.totalPrice | number:'1.2-2':i18n.locale) + ' ISK' : '-' }}
                 </td>
               </tr>
             }
@@ -81,28 +106,96 @@
 
     @if (items.length > 0) {
       <div class="result-meta">
-        Gesamtvolumen: <span>{{ totalVolume | number:'1.2-2' }} m3</span>
+        {{ i18n.t('result.totalVolume') }}: <span>{{ totalVolume | number:'1.2-2':i18n.locale }} m3</span>
       </div>
     }
 
     <div class="summary-bar">
-      <span class="label">GESAMTPREIS</span>
-      <span class="total">{{ totalPrice !== null ? (totalPrice | number:'1.2-2') + ' ISK' : '-' }}</span>
-      <button class="small" (click)="copyToClipboard()" [disabled]="totalPrice === null">{{ copyButtonText }}</button>
+      <span class="label">{{ i18n.t('result.total') }}</span>
+      <span class="total">{{ totalPrice !== null ? (totalPrice | number:'1.2-2':i18n.locale) + ' ISK' : '-' }}</span>
+      <button class="small" (click)="copyToClipboard()" [disabled]="totalPrice === null">
+        {{ copyLabel('price', 'btn.copy') }}
+      </button>
     </div>
   </fieldset>
 
+  <!-- ======================= SCHRITT 2: VERTRAG ======================= -->
+  @if (hasResult && !isMaintenance) {
+    <fieldset class="contract-block">
+      <legend>{{ i18n.t('contract.legend') }}</legend>
+      <p class="hint">{{ i18n.t('contract.intro') }}</p>
+
+      <div class="contract-grid">
+        <div class="contract-cell">
+          <span class="k">{{ i18n.t('contract.recipient') }}</span>
+          <span class="v">
+            @if (contractRecipient) {
+              {{ contractRecipient }}
+              <button class="small ghost" (click)="copyRecipient()">{{ copyLabel('recipient', 'contract.copyRecipient') }}</button>
+            } @else {
+              <span class="muted">{{ i18n.t('contract.recipientMissing') }}</span>
+            }
+          </span>
+        </div>
+        <div class="contract-cell">
+          <span class="k">{{ i18n.t('contract.location') }}</span>
+          <span class="v">{{ contractLocationName }}</span>
+        </div>
+        <div class="contract-cell">
+          <span class="k">{{ i18n.t('contract.type') }}</span>
+          <span class="v">{{ i18n.t('contract.typeValue') }}</span>
+        </div>
+        <div class="contract-cell">
+          <span class="k">{{ i18n.t('contract.price') }}</span>
+          <span class="v strong">
+            {{ contractPrice | number:'1.0-0':i18n.locale }} ISK
+            <button class="small ghost" (click)="copyContractPrice()">{{ copyLabel('contractPrice', 'contract.copyPrice') }}</button>
+          </span>
+        </div>
+        <div class="contract-cell">
+          <span class="k">{{ i18n.t('contract.expire') }}</span>
+          <span class="v">{{ i18n.t('contract.expireDays', contractExpireDays) }}</span>
+        </div>
+        <div class="contract-cell">
+          <span class="k">{{ i18n.t('contract.daysToComplete') }}</span>
+          <span class="v">{{ contractDaysToComplete }}</span>
+        </div>
+      </div>
+
+      @if (hasRejectedItems) {
+        <div class="contract-warn">{{ i18n.t('contract.warnBlocked') }}</div>
+      }
+
+      <ol class="tutorial-steps contract-steps">
+        <li>{{ i18n.t('contract.step1') }}</li>
+        <li>{{ i18n.t('contract.step2') }}</li>
+        <li>{{ i18n.t('contract.step3') }}</li>
+        <li>{{ i18n.t('contract.step4') }}</li>
+        <li>{{ i18n.t('contract.step5') }}</li>
+      </ol>
+
+      @if (config?.contractNote) {
+        <div class="contract-note">{{ config?.contractNote }}</div>
+      }
+    </fieldset>
+  }
+
   <div class="footer-links">
-    <span>Preisquelle: Jita Market &nbsp;|&nbsp; Status: <span class="status-ok">online</span></span>
     <span>
-      <a (click)="openTutorial()">[ Tutorial ]</a>
+      {{ i18n.t('footer.source') }} &nbsp;|&nbsp; {{ i18n.t('footer.status') }}:
+      <span [class.status-ok]="!isMaintenance" [class.status-warn]="isMaintenance">
+        {{ isMaintenance ? i18n.t('footer.paused') : i18n.t('footer.online') }}
+      </span>
+    </span>
+    <span>
+      <a (click)="openTutorial('flow')">{{ i18n.t('footer.tutorial') }}</a>
 
       @if (isLoggedIn) {
         @if (isAdmin) {
-          &nbsp; <a (click)="openAdmin()">[ Admin-Panel ]</a>
+          &nbsp; <a (click)="openAdmin()">{{ i18n.t('footer.admin') }}</a>
         }
       } @else {
-        &nbsp; <a (click)="login()">[ EVE Login ]</a>
+        &nbsp;<!-- <a (click)="login()">{{ i18n.t('footer.login') }}</a>-->
       }
     </span>
   </div>
@@ -113,20 +206,85 @@
   <div class="modal-overlay open">
     <div class="modal">
       <span class="close-x" (click)="closeModals()">[x]</span>
-      <h3>TUTORIAL</h3>
-      <p class="hint">So funktioniert Buybot 3000 in 5 Schritten:</p>
-      <ol class="tutorial-steps">
-        <li><b>Asset-Liste kopieren.</b> Markiere im EVE-Inventar, Hangar oder Vertragsfenster deine Items (Strg+A, Strg+C) und füge sie in das Textfeld oben ein.</li>
-        <li><b>Abgabeort wählen.</b> Im Dropdown den Ort auswählen, an dem du die Items abgeben möchtest. Das beeinflusst den Preis (Transport- und Sicherheitsaufschlag).</li>
-        <li><b>Berechnen klicken.</b> Buybot fragt live die aktuellen Jita-Marktpreise ab und erstellt eine Tabelle.</li>
-        <li><b>Ergebnis prüfen.</b> Lange Namen oder Status-Texte per Maus-Hover vollständig anzeigen lassen. Ein Hover auf den Preis einer Zeile zeigt den angewendeten Preis-Modifikator.</li>
-        <li><b>Gesamtpreis kopieren.</b> Mit dem Knopf neben der Endsumme wird der Gesamtpreis direkt in die Zwischenablage kopiert.</li>
-      </ol>
-      <p class="hint">Status-Meldungen in der Ergebnistabelle: <b>OK</b> = wird angekauft, <b>NICHT GELISTET</b> = Kategorie/Item nicht freigegeben, <b>GESPERRT</b> = auf der Blacklist, <b>NICHT GEFUNDEN</b> = Item-Name konnte nicht erkannt werden.</p>
+      <h3>{{ i18n.t('tutorial.title') }}</h3>
+
+      <div class="tabs">
+        <button class="tab" [class.active]="tutorialTab === 'flow'" (click)="tutorialTab = 'flow'">{{ i18n.t('tutorial.tab.flow') }}</button>
+        <button class="tab" [class.active]="tutorialTab === 'price'" (click)="tutorialTab = 'price'">{{ i18n.t('tutorial.tab.price') }}</button>
+        <button class="tab" [class.active]="tutorialTab === 'status'" (click)="tutorialTab = 'status'">{{ i18n.t('tutorial.tab.status') }}</button>
+        <button class="tab" [class.active]="tutorialTab === 'contract'" (click)="tutorialTab = 'contract'">{{ i18n.t('tutorial.tab.contract') }}</button>
+      </div>
+
+      @switch (tutorialTab) {
+        @case ('flow') {
+          <p class="hint">{{ i18n.t('tutorial.flow.intro') }}</p>
+          <ol class="tutorial-steps">
+            <li>{{ i18n.t('tutorial.flow.1') }}</li>
+            <li>{{ i18n.t('tutorial.flow.2') }}</li>
+            <li>{{ i18n.t('tutorial.flow.3') }}</li>
+            <li>{{ i18n.t('tutorial.flow.4') }}</li>
+            <li>{{ i18n.t('tutorial.flow.5') }}</li>
+          </ol>
+        }
+        @case ('price') {
+          <p class="hint">{{ i18n.t('tutorial.price.intro') }}</p>
+          <ol class="tutorial-steps">
+            <li>{{ i18n.t('tutorial.price.1') }}</li>
+            <li>{{ i18n.t('tutorial.price.2') }}</li>
+            <li>{{ i18n.t('tutorial.price.3') }}</li>
+            <li>{{ i18n.t('tutorial.price.4') }}</li>
+            <li>{{ i18n.t('tutorial.price.5') }}</li>
+            <li>{{ i18n.t('tutorial.price.6') }}</li>
+          </ol>
+        }
+        @case ('status') {
+          <p class="hint">{{ i18n.t('tutorial.status.intro') }}</p>
+          <ul class="status-legend">
+            <li><span class="badge status-ok">{{ i18n.t('status.OK') }}</span> {{ i18n.t('tutorial.status.ok') }}</li>
+            <li><span class="badge status-warn">{{ i18n.t('status.NOT_LISTED') }}</span> {{ i18n.t('tutorial.status.notListed') }}</li>
+            <li><span class="badge status-warn">{{ i18n.t('status.BLOCKED') }}</span> {{ i18n.t('tutorial.status.blocked') }}</li>
+            <li><span class="badge status-err">{{ i18n.t('status.UNKNOWN') }}</span> {{ i18n.t('tutorial.status.unknown') }}</li>
+          </ul>
+          <p class="hint">{{ i18n.t('tutorial.status.hint') }}</p>
+        }
+        @case ('contract') {
+          <p class="hint">{{ i18n.t('tutorial.contract.intro') }}</p>
+          <ol class="tutorial-steps">
+            <li>{{ i18n.t('tutorial.contract.1') }}</li>
+            <li>{{ i18n.t('tutorial.contract.2') }}</li>
+            <li>{{ i18n.t('tutorial.contract.3') }}</li>
+            <li>{{ i18n.t('tutorial.contract.4') }}</li>
+            <li>{{ i18n.t('tutorial.contract.5') }}</li>
+          </ol>
+          @if (contractRecipient) {
+            <p class="hint">{{ i18n.t('contract.recipient') }}: <b>{{ contractRecipient }}</b></p>
+          }
+        }
+      }
+
+      <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+        <button class="small" (click)="closeModals()">{{ i18n.t('btn.close') }}</button>
+      </div>
     </div>
   </div>
 }
 
 @if (showAdmin) {
-  <app-buybot-admin (closePanel)="closeModals()"></app-buybot-admin>
+  <app-buybot-admin (closePanel)="closeModals()" (configSaved)="reloadConfig()"></app-buybot-admin>
+}
+
+<!-- ======================= HANDY-WEICHE ======================= -->
+@if (showMobileGate) {
+  <div class="mobile-gate">
+    <div class="mobile-card">
+      <div class="mobile-face">( &middot;_&middot; )</div>
+      <h3>{{ i18n.t('mobile.title') }}</h3>
+      <p>{{ i18n.t('mobile.message') }}</p>
+      <p class="hint">{{ i18n.t('mobile.hint') }}</p>
+      <div class="mobile-actions">
+        <button class="small" (click)="dismissMobileGate()">{{ i18n.t('mobile.continue') }}</button>
+        <button class="small ghost" (click)="toggleLang()">{{ i18n.t('lang.other') }}</button>
+      </div>
+    </div>
+  </div>
 }

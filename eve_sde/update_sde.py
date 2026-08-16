@@ -19,17 +19,12 @@ PG_DB = os.getenv("PG_DB", "eve_own_auth")
 PG_USER = os.getenv("PG_USER", "eve_user")
 PG_PASS = os.getenv("PG_PASS", "secret_password")
 
+# Nur die vier Tabellen, die der Buybot wirklich braucht:
+#   invCategories/invGroups/invTypes -> Namensauflösung, Volumen, Kategorie-Whitelist
+#   invTypeMaterials                 -> Reprocessing-Ausbeute
+# Jede weitere Tabelle kostet nur Importzeit und Plattenplatz.
 TABLES_TO_IMPORT = [
-    "invCategories", "invGroups", "invTypes", "invMarketGroups",
-    "invMetaGroups", "invMetaTypes", "invTraits", "invFlags",
-    "invTypeMaterials", "invVolumes",
-    "industryActivity", "industryActivityMaterials", "industryActivityProducts",
-    "industryActivitySkills", "industryActivityProbabilities", "industryBlueprints",
-    "planetSchematics", "planetSchematicsPinMap", "planetSchematicsTypeMap",
-    "dgmAttributeTypes", "dgmTypeAttributes", "dgmEffects",
-    "dgmTypeEffects", "dgmAttributeCategories",
-    "mapDenormalize", "mapJumps", "mapSolarSystemJumps",
-    "mapSolarSystems", "mapRegions", "mapConstellations"
+    "invCategories", "invGroups", "invTypes", "invTypeMaterials"
 ]
 
 def map_sqlite_to_pg_type(sqlite_type):

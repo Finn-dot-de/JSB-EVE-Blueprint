@@ -7,9 +7,9 @@ services:
     environment:
       POSTGRES_DB: eve_own_auth
       POSTGRES_USER: eve_user
-      POSTGRES_PASSWORD: secret_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret_password}
     ports:
-      - "5434:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - ./pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -32,7 +32,7 @@ services:
       - PG_PORT=5432
       - PG_DB=eve_own_auth
       - PG_USER=eve_user
-      - PG_PASS=secret_password
+      - PG_PASS=${POSTGRES_PASSWORD:-secret_password}
       - FORCE_SDE_UPDATE=false
 
   backend:
@@ -46,14 +46,23 @@ services:
       sde-updater:
         condition: service_completed_successfully
     ports:
-      - "8080:8080"
+      # Ebenfalls nur lokal: nach aussen geht alles ueber den Reverse-Proxy,
+      # sonst liesse sich HTTPS und die Zugriffskontrolle davor umgehen.
+      - "127.0.0.1:8080:8080"
     env_file:
       - .env
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/eve_own_auth
       - SPRING_DATASOURCE_USERNAME=eve_user
-      - SPRING_DATASOURCE_PASSWORD=secret_password
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD:-secret_password}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+    healthcheck:
+      # busybox-wget ist im Alpine-Image vorhanden, curl nicht.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   frontend-dev:
     build:

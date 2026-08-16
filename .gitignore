@@ -62,3 +62,7 @@ build/
 ## DB
 /pg_data
 
+
+backup_*.sql
+sicherung_*.sql
+.env.alt-*

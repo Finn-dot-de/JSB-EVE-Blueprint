@@ -1,6 +1,6 @@
-import {Routes} from '@angular/router';
-import {authGuard} from './core/auth/auth.guard';
+import { Routes } from '@angular/router';
 
+/** Der Buybot ist eine Ein-Seiten-Anwendung; alles andere landet auf dem Rechner. */
 export const routes: Routes = [
   {path: '', redirectTo: 'buybot', pathMatch: 'full'},
   {

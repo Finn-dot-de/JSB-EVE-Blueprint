@@ -8,11 +8,11 @@
         <version>4.1.0</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
-    <groupId>eve-own-auth</groupId>
-    <artifactId>eve-own-auth</artifactId>
+    <groupId>eve-buy-bot</groupId>
+    <artifactId>eve-buy-bot</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>eve-own-auth</name>
-    <description>eve-own-auth</description>
+    <name>eve-buy-bot</name>
+    <description>eve-buy-bot</description>
     <url/>
     <licenses>
         <license/>
@@ -101,10 +101,10 @@
             <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- Nur fuer den Health-Endpunkt, den der Docker-Healthcheck abfragt. -->
         <dependency>
-            <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.5.0</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
     </dependencies>
 

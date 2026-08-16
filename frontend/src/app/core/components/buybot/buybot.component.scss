@@ -528,3 +528,484 @@ table.admin-table th, table.admin-table td {
     opacity: 0;
   }
 }
+
+/* =========================================
+   SPRACHUMSCHALTER (Länderkennung statt Flagge)
+   ========================================= */
+.lang-switch {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 3px 8px;
+  letter-spacing: 0;
+  border-color: var(--green-dim);
+  color: var(--green-dim);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lang-switch:hover {
+  background: transparent;
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.lang-switch .active {
+  color: var(--green-bright);
+}
+
+.lang-switch .sep {
+  opacity: 0.5;
+}
+
+.titlebar .clock .clock-label {
+  opacity: 0.65;
+  margin-right: 4px;
+}
+
+/* =========================================
+   WARTUNGSMODUS
+   ========================================= */
+.maintenance-banner {
+  border: 1px solid var(--amber);
+  background: rgba(255, 176, 0, 0.08);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.maintenance-title {
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  color: var(--amber);
+  letter-spacing: 1px;
+}
+
+.maintenance-text {
+  font-size: 12.5px;
+  color: var(--green-dim);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+fieldset.disabled-block {
+  opacity: 0.55;
+}
+
+/* =========================================
+   SCHRITT 2 - VERTRAG ERSTELLEN
+   ========================================= */
+.contract-block {
+  border-color: var(--green);
+}
+
+.contract-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 8px 18px;
+  margin: 10px 0 12px;
+}
+
+.contract-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 2px solid var(--green-dim);
+  padding-left: 10px;
+}
+
+.contract-cell .k {
+  font-size: 11px;
+  color: var(--green-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.contract-cell .v {
+  font-size: 13.5px;
+  color: var(--green-bright);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.contract-cell .v.strong {
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+}
+
+.contract-cell .v .muted {
+  color: var(--amber);
+  font-size: 12px;
+}
+
+button.ghost {
+  border-color: var(--green-dim);
+  color: var(--green-dim);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+button.ghost:hover {
+  background: transparent;
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.contract-warn {
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-size: 12px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.contract-note {
+  border-top: 1px dashed var(--green-dim);
+  margin-top: 10px;
+  padding-top: 8px;
+  font-size: 12px;
+  color: var(--green-dim);
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
+.contract-steps {
+  margin-top: 4px;
+}
+
+/* =========================================
+   TUTORIAL - TABS & STATUS-LEGENDE
+   ========================================= */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid var(--green-dim);
+  margin: 10px 0 14px;
+}
+
+button.tab {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  padding: 5px 12px;
+  border: 1px solid var(--green-dim);
+  border-bottom: none;
+  color: var(--green-dim);
+  margin-bottom: -1px;
+  letter-spacing: 0;
+}
+
+button.tab:hover {
+  background: transparent;
+  color: var(--green);
+  border-color: var(--green);
+}
+
+button.tab.active {
+  color: var(--green-bright);
+  border-color: var(--green);
+  background: rgba(51, 255, 51, 0.08);
+}
+
+.status-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.status-legend li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.status-legend .badge {
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  padding: 1px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.status-ok {
+  color: var(--green-bright);
+}
+
+.status-warn {
+  color: var(--amber);
+}
+
+.status-err {
+  color: var(--red);
+}
+
+/* =========================================
+   REPROCESSING-KENNZEICHNUNG
+   ========================================= */
+.repro-chip {
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  padding: 0 4px;
+  line-height: 14px;
+}
+
+label.check-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--green);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+label.check-inline input[type=checkbox] {
+  width: auto;
+  margin: 0;
+}
+
+.repro-mark {
+  color: var(--amber);
+  cursor: help;
+  margin-left: 4px;
+}
+
+/* =========================================
+   AUFKLAPPBARE ABSCHNITTE IM ADMIN-PANEL
+   Lange Listen bleiben zu, bis man sie braucht.
+   ========================================= */
+button.section-toggle {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  letter-spacing: 1px;
+  border: none;
+  padding: 0;
+  color: var(--green);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+button.section-toggle:hover {
+  background: transparent;
+  color: var(--green-bright);
+}
+
+button.section-toggle .marker {
+  color: var(--green-dim);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+}
+
+button.section-toggle:hover .marker {
+  color: var(--green-bright);
+}
+
+/* Eigener Scrollbereich, damit eine lange Liste nicht alles darunter wegschiebt */
+.table-scroll {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--green-dim);
+  background: #020602;
+}
+
+.table-scroll table.admin-table {
+  margin-bottom: 0;
+}
+
+/* Kopfzeile bleibt beim Scrollen stehen */
+table.admin-table.sticky-head th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #041004;
+}
+
+/* =========================================
+   PRÜFBERICHTE IM ADMIN-PANEL
+   ========================================= */
+.check-detail {
+  font-size: 12px;
+  color: var(--green-dim);
+  line-height: 1.6;
+  padding: 4px 2px;
+}
+
+.check-detail b {
+  color: var(--green-bright);
+}
+
+.check-block {
+  margin-top: 6px;
+}
+
+.check-detail pre.notify-error {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* Lebenszeichen der automatischen Vertragsprüfung */
+.scheduler-status {
+  border: 1px solid var(--green-dim);
+  background: #020602;
+  padding: 8px 10px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.scheduler-status .status-line {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  line-height: 1.6;
+}
+
+.scheduler-status .status-line .k {
+  flex: 0 0 130px;
+  color: var(--green-dim);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+}
+
+.check-detail pre {
+  margin: 4px 0 0;
+  padding: 8px;
+  border: 1px solid var(--green-dim);
+  background: #020602;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11.5px;
+  color: var(--green);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+
+/* =========================================
+   HANDY-WEICHE - Buybot lebt vom EVE-Client,
+   den es auf dem Telefon nicht gibt.
+   ========================================= */
+.mobile-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background-image: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.15) 0px, rgba(0, 0, 0, 0.15) 1px, transparent 1px, transparent 3px);
+}
+
+.mobile-card {
+  border: 1px solid var(--green);
+  background: var(--panel);
+  padding: 22px 18px;
+  max-width: 460px;
+  text-align: center;
+  box-shadow: 0 0 24px rgba(51, 255, 51, 0.15);
+}
+
+.mobile-face {
+  font-family: 'VT323', monospace;
+  font-size: 34px;
+  color: var(--green-bright);
+  text-shadow: 0 0 10px rgba(51, 255, 51, 0.8);
+  margin-bottom: 8px;
+}
+
+.mobile-card h3 {
+  margin: 0 0 10px;
+  font-size: 24px;
+}
+
+.mobile-card p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--green-dim);
+  margin: 0 0 10px;
+}
+
+.mobile-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+/* =========================================
+   KLEINERE BILDSCHIRME (Laptop / Tablet)
+   ========================================= */
+@media (max-width: 1024px) {
+  :host {
+    padding: 14px;
+  }
+
+  .crt {
+    padding: 14px;
+  }
+
+  .titlebar .brand {
+    font-size: 24px;
+  }
+
+  .contract-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .titlebar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .titlebar .header-right {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .bot-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .face {
+    align-self: flex-start;
+  }
+
+  .bubble::before {
+    display: none;
+  }
+
+  .row > div {
+    min-width: 100%;
+  }
+
+  table.output-table {
+    table-layout: auto;
+    font-size: 11.5px;
+  }
+
+  .summary-bar {
+    flex-wrap: wrap;
+  }
+
+  .footer-links {
+    flex-direction: column;
+    gap: 6px;
+  }
+}

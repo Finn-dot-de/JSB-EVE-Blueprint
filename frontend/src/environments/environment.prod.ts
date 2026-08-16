@@ -1,4 +1,6 @@
 export const environment = {
   production: true,
-  apiUrl: 'http://localhost:8080/api'
+  // Relativ, damit der Browser über die eigene Domain geht und Nginx
+  // (frontend/nginx.conf) /api/ an den Backend-Container weiterreicht.
+  apiUrl: '/api'
 };

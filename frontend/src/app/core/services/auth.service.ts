@@ -4,6 +4,15 @@ import { catchError, of, tap } from 'rxjs';
 import { Router } from '@angular/router';
 import {environment} from '../../../environments/environment';
 
+/**
+ * Rollen, die den Admin-Bereich freischalten.
+ *
+ * Muss mit der Regel im Backend uebereinstimmen (@PreAuthorize an
+ * BuybotAdminController und AuditController) - sonst sieht jemand den Knopf,
+ * bekommt aber beim Klick eine Fehlermeldung, oder umgekehrt.
+ */
+export const ADMIN_ROLES = ['ROLE_IT_ADMIN', 'ROLE_CEO', 'ROLE_DIRECTOR'];
+
 export interface AuthUser {
   characterId: number;
   characterName: string;

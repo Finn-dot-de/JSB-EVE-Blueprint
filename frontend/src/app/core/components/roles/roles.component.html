@@ -1,12 +1,23 @@
 <div class="roles-container">
 
   <div class="section-divider">
-    <span>Corporation Roles & Titles</span>
+    <span>Corporation Titles</span>
   </div>
 
-  @if (loading()) {
+  <p class="section-hint">
+    Jeder Ingame-Titel kann genau eine Rolle dieser Anwendung vergeben. Wer den Titel in EVE
+    trägt, bekommt die Rolle beim nächsten Abgleich automatisch zugewiesen.
+  </p>
+
+  @if (loadingTitles()) {
     <div class="loading-container">
       <div class="loading-spinner"></div>
+    </div>
+  } @else if (titles().length === 0) {
+    <div class="empty-hint">
+      <i class="fa-solid fa-circle-info"></i>
+      Es sind keine Corp-Titel abrufbar. Dafür muss ein Charakter mit Ingame-Director-Rechten
+      hier angemeldet sein.
     </div>
   } @else {
 
@@ -22,28 +33,24 @@
             <div class="role-name-box">
               <span class="role-name">
                 @if (title.mappedRole?.includes('ADMIN') || title.mappedRole?.includes('DIRECTOR')) {
-                  <i class="fa-solid fa-lock" style="font-size: 0.8rem; margin-right: 4px; opacity: 0.7;"></i>
+                  <i class="fa-solid fa-lock lock-icon"></i>
                 }
                 {{ title.name }}
               </span>
               @if (title.mappedRole) {
                 <span class="mapped-badge">{{ title.mappedRole }}</span>
+              } @else {
+                <span class="mapped-badge unmapped">vergibt keine Rolle</span>
               }
             </div>
           </div>
 
           <div class="role-right">
-            <div class="member-count">
-              <span>-</span>
-              <i class="fa-solid fa-user"></i>
-            </div>
-
             <div class="action-buttons">
-              <button class="btn-action edit" (click)="editMapping(title)" title="Mapping bearbeiten">
+              <button class="btn-action edit" (click)="openMapping(title)"
+                      [attr.aria-label]="'Zuordnung von ' + title.name + ' bearbeiten'"
+                      title="Zuordnung bearbeiten">
                 <i class="fa-solid fa-pen"></i>
-              </button>
-              <button class="btn-action more">
-                <i class="fa-solid fa-ellipsis"></i>
               </button>
             </div>
           </div>
@@ -53,4 +60,159 @@
     </div>
 
   }
+
+  <div class="section-divider">
+    <span>Auth-Rollen</span>
+  </div>
+
+  <p class="section-hint">
+    Eingebaute Rollen stecken im Programm, aus Titeln entstandene hängen an der jeweiligen
+    Zuordnung. Frei bearbeiten und löschen lassen sich nur eigene Rollen.
+  </p>
+
+  @if (loadingRoles()) {
+    <div class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+  } @else {
+
+    <div class="role-table-wrapper">
+      <table class="role-table">
+        <thead>
+          <tr>
+            <th>Rolle</th>
+            <th>Beschreibung</th>
+            <th>Herkunft</th>
+            <th>Vergeben durch</th>
+            <th class="column-action">Aktion</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (role of roles(); track role.name) {
+            <tr>
+              <td class="cell-role">
+                {{ role.name }}
+                @if (role.special) {
+                  <span class="special-badge" title="Bleibt bei einer Neuberechnung erhalten">
+                    <i class="fa-solid fa-thumbtack"></i> fest vergeben
+                  </span>
+                }
+              </td>
+              <td class="cell-description">{{ role.description }}</td>
+              <td>
+                <span class="source-badge" [ngClass]="'source-' + role.source">
+                  {{ sourceLabel(role.source) }}
+                </span>
+              </td>
+              <td class="cell-titles">
+                @if (role.grantingTitles.length > 0) {
+                  {{ role.grantingTitles.join(', ') }}
+                } @else {
+                  <span class="muted">-</span>
+                }
+              </td>
+              <td class="column-action">
+                @if (isDeletable(role)) {
+                  <button class="btn-action delete" (click)="askDelete(role.name)"
+                          [attr.aria-label]="role.name + ' löschen'" title="Rolle löschen">
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <form class="create-role" (ngSubmit)="createRole()">
+      <h3>Eigene Rolle anlegen</h3>
+      <div class="create-role-fields">
+        <label class="field">
+          <span>Name</span>
+          <input type="text" name="roleName" [(ngModel)]="newRole.name"
+                 placeholder="z.B. Recruiter" autocomplete="off">
+        </label>
+        <label class="field field-wide">
+          <span>Beschreibung</span>
+          <input type="text" name="roleDescription" [(ngModel)]="newRole.description"
+                 placeholder="Wofür ist diese Rolle da?" autocomplete="off">
+        </label>
+        <label class="field-check">
+          <input type="checkbox" name="roleSpecial" [(ngModel)]="newRole.special">
+          <span>Fest vergeben</span>
+        </label>
+        <button type="submit" class="btn-primary" [disabled]="!canCreateRole()">
+          <i class="fa-solid fa-plus"></i> Anlegen
+        </button>
+      </div>
+      <p class="field-hint">
+        Der Name wird auf die übliche Form gebracht - "Recruiter" wird zu
+        <code>ROLE_RECRUITER</code>. "Fest vergeben" heisst: die Rolle bleibt beim Charakter,
+        auch wenn kein Titel sie mehr vergibt. Sie wird dann von Hand zugewiesen.
+      </p>
+    </form>
+
+  }
+
 </div>
+
+@if (editingTitle(); as title) {
+  <div class="modal-backdrop" (click)="closeMapping()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Zuordnung für "{{ title.name }}"</h3>
+
+      <label class="field">
+        <span>Diese Rolle vergeben</span>
+        <select [ngModel]="selectedRole()" (ngModelChange)="selectedRole.set($event)">
+          <option [value]="noRoleOption">— keine Rolle —</option>
+          @for (group of roleGroups(); track group.label) {
+            <optgroup [label]="group.label">
+              @for (role of group.roles; track role.name) {
+                <option [value]="role.name">{{ role.name }}</option>
+              }
+            </optgroup>
+          }
+          <option [value]="customRoleOption">Eigene Rolle eintippen …</option>
+        </select>
+      </label>
+
+      @if (selectedRole() === customRoleOption) {
+        <label class="field">
+          <span>Neuer Rollenname</span>
+          <input type="text" [ngModel]="customRoleName()"
+                 (ngModelChange)="customRoleName.set($event)"
+                 placeholder="z.B. Recruiter" autocomplete="off">
+        </label>
+        <p class="field-hint">
+          Wird zu <code>ROLE_…</code> in Grossbuchstaben normalisiert.
+        </p>
+      }
+
+      <div class="modal-actions">
+        <button class="btn-secondary" (click)="closeMapping()">Abbrechen</button>
+        <button class="btn-primary" (click)="saveMapping()" [disabled]="!canSaveMapping()">
+          <i class="fa-solid fa-floppy-disk"></i> Speichern
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (pendingDelete(); as roleName) {
+  <div class="modal-backdrop" (click)="cancelDelete()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ roleName }} löschen?</h3>
+      <p class="modal-text">
+        Charaktere, die diese Rolle nur über sie zugewiesen bekommen haben, verlieren sie beim
+        nächsten Abgleich.
+      </p>
+      <div class="modal-actions">
+        <button class="btn-secondary" (click)="cancelDelete()">Abbrechen</button>
+        <button class="btn-danger" (click)="confirmDelete()" [disabled]="saving()">
+          <i class="fa-solid fa-trash"></i> Löschen
+        </button>
+      </div>
+    </div>
+  </div>
+}

@@ -1,0 +1,398 @@
+<div class="roles-container">
+  <div class="section-divider">
+    <span>Mining Steuern</span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn" [class.active]="activeTab() === 'USER'" (click)="setTab('USER')">
+      <i class="fa-solid fa-hammer"></i> Meine Rechnung
+    </button>
+    @if (isLeadership) {
+      <button class="tab-btn" [class.active]="activeTab() === 'LEDGERS'" (click)="setTab('LEDGERS')">
+        <i class="fa-solid fa-users"></i> Bilanzen (Admin)
+      </button>
+      <button class="tab-btn" [class.active]="activeTab() === 'ADMIN'" (click)="setTab('ADMIN')">
+        <i class="fa-solid fa-scale-balanced"></i> Steuersätze (Admin)
+      </button>
+    }
+  </div>
+
+  <!-- ======================== USER ANSICHT ======================== -->
+  @if (activeTab() === 'USER') {
+
+    <!-- ---------- Aufklappbare Corp-Rangliste ---------- -->
+    <div class="leaderboard-block">
+      <button class="leaderboard-toggle" (click)="toggleLeaderboard()"
+              [class.open]="showLeaderboard()">
+        <i class="fa-solid fa-trophy"></i>
+        <span class="toggle-text">
+          <strong>Mining-Rangliste der Corp</strong>
+          <small>Wer hat am meisten abgebaut?</small>
+        </span>
+        <i class="fa-solid fa-chevron-down chevron"></i>
+      </button>
+
+      @if (showLeaderboard()) {
+        <div class="surface-panel leaderboard-panel">
+
+          <div class="leaderboard-head">
+            <div class="form-group">
+              <label>Zeitraum</label>
+              <select [(ngModel)]="selectedLeaderMonth" (ngModelChange)="onLeaderMonthChange()">
+                @for (m of leaderboard()?.availableMonths ?? []; track m) {
+                  <option [ngValue]="m">{{ formatMonthLabel(m) }}</option>
+                }
+                <option [ngValue]="'ALL'">Gesamter Zeitraum</option>
+              </select>
+            </div>
+
+            <div class="metric-switch">
+              <button [class.active]="leaderMetric() === 'VOLUME'" (click)="setLeaderMetric('VOLUME')">
+                <i class="fa-solid fa-cube"></i> Volumen
+              </button>
+              <button [class.active]="leaderMetric() === 'VALUE'" (click)="setLeaderMetric('VALUE')">
+                <i class="fa-solid fa-coins"></i> ISK-Wert
+              </button>
+            </div>
+
+            @if (leaderboard(); as lb) {
+              <div class="leaderboard-total">
+                <span class="total-label">Corp gesamt</span>
+                <span class="total-value">
+                  @if (leaderMetric() === 'VOLUME') {
+                    {{ formatVolumeCompact(lb.totalVolume) }}
+                  } @else {
+                    {{ formatIsk(lb.totalValue) }}
+                  }
+                </span>
+              </div>
+            }
+          </div>
+
+          @if (loadingLeaderboard()) {
+            <div class="loading-container"><div class="loading-spinner"></div></div>
+          } @else if (leaderboard(); as lb) {
+            @if (lb.rows.length > 0) {
+              <div class="leader-list">
+                @for (row of lb.rows; track row.mainId) {
+                  <div class="leader-row" [class.me]="row.isMe" [class.podium]="row.rank <= 3">
+                    <div class="leader-rank" [attr.data-rank]="row.rank">
+                      @if (row.rank === 1) { 🥇 }
+                      @else if (row.rank === 2) { 🥈 }
+                      @else if (row.rank === 3) { 🥉 }
+                      @else { {{ row.rank }} }
+                    </div>
+
+                    <img class="leader-portrait" [src]="row.portraitUrl"
+                         (error)="onPortraitError($event)" [alt]="row.mainName" loading="lazy">
+
+                    <div class="leader-body">
+                      <div class="leader-name-row">
+                        <span class="leader-name">
+                          {{ row.mainName }}
+                          @if (row.isMe) { <span class="me-tag">DU</span> }
+                        </span>
+                        <span class="leader-value">{{ formatLeaderValue(row.volume, row.value) }}</span>
+                      </div>
+
+                      <div class="leader-bar-track">
+                        <div class="leader-bar-fill" [style.width]="leaderBarWidth(row.volume, row.value)"></div>
+                      </div>
+
+                      <div class="leader-meta">
+                        <span>{{ leaderShare(row.volume, row.value) }} der Corp</span>
+                        <span>
+                          @if (leaderMetric() === 'VOLUME') {
+                            {{ formatIsk(row.value) }}
+                          } @else {
+                            {{ formatVolumeCompact(row.volume) }}
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+
+              <p class="leaderboard-hint">
+                <i class="fa-solid fa-circle-info"></i>
+                Zusammengefasst pro Account (Main inkl. aller Alts). Bewertet mit den
+                gleichen Jita-Buy-Preisen wie die Steuerabrechnung. Grundlage ist das
+                Mining-Ledger aus ESI &ndash; das reicht nur eine begrenzte Zeit zurück.
+              </p>
+            } @else {
+              <div class="empty-leader">
+                <i class="fa-solid fa-pickaxe"></i>
+                <p>Für {{ formatMonthLabel(lb.month) }} liegen keine Mining-Daten vor.</p>
+              </div>
+            }
+          }
+        </div>
+      }
+    </div>
+
+    @if (loadingLedger()) {
+      <div class="loading-container"><div class="loading-spinner"></div></div>
+    } @else if (myLedger().length > 0) {
+
+      @if (currentMonthLedger(); as monthLedger) {
+
+        @if (myLedgerData(); as data) {
+          <div class="surface-panel" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid" [style.border-color]="data.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
+            <div>
+              <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">Corp Master Wallet Konto</h3>
+              <div style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">
+                Zeitraum-Steuern: {{ formatIskFull(data.totalDebt) }} | Geleistete Zahlungen: {{ formatIskFull(data.totalPaid) }}
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary);">Aktueller Saldo</div>
+              <div style="font-size: 1.8rem; font-weight: 700;" [style.color]="data.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
+                @if (data.currentBalance >= 0) {
+                  + {{ formatIskFull(data.currentBalance) }} (Guthaben)
+                } @else {
+                  {{ formatIskFull(data.currentBalance) }} (Schulden)
+                }
+              </div>
+            </div>
+          </div>
+        }
+
+        <div class="month-navigation">
+          <button class="nav-arrow" (click)="olderMonth()" [disabled]="selectedMonthIndex() === myLedger().length - 1" title="Vorheriger Monat">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+
+          <h2 class="month-title">Abrechnung: {{ monthLedger.month }}</h2>
+
+          <button class="nav-arrow" (click)="newerMonth()" [disabled]="selectedMonthIndex() === 0" title="Nächster Monat">
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
+
+        <div style="margin-bottom: 4rem;">
+
+          <!-- Box: Gesamte Steuerschuld & Volumen -->
+          <!-- Der Verlauf endete fest auf rgba(22,25,37,1), der dunklen
+               Kartenfarbe. Im hellen Thema lief er damit von Blassrosa nach
+               Fast-Schwarz, und der Text war in beiden Haelften unlesbar.
+               Jetzt endet er auf der Kartenfarbe des jeweiligen Themas. -->
+          <div class="surface-panel text-center invoice-hero"
+               [class.paid]="monthLedger.isPaid"
+               style="margin-bottom: 1rem; position: relative;">
+
+            @if (monthLedger.isPaid) {
+              <div class="invoice-badge paid"><i class="fa-solid fa-check"></i> BEZAHLT</div>
+            } @else {
+              <div class="invoice-badge open"><i class="fa-solid fa-triangle-exclamation"></i> OFFEN</div>
+            }
+
+            <div class="invoice-amount" [class.paid]="monthLedger.isPaid">
+              {{ formatIskFull(monthLedger.totalTax) }}
+            </div>
+
+            <div style="display: flex; justify-content: center; gap: 2rem; color: var(--text-secondary); font-size: 0.95rem; margin-top: 1.5rem;">
+              <span><strong>Bezahlt:</strong> {{ formatIskFull(monthLedger.taxPaid) }}</span>
+              <span><strong>Fehlt noch:</strong> {{ formatIskFull(monthLedger.totalTax - monthLedger.taxPaid > 0 ? monthLedger.totalTax - monthLedger.taxPaid : 0) }}</span>
+              <span style="border-left: 1px solid var(--border-color); padding-left: 2rem; color: var(--text-primary);">
+                <i class="fa-solid fa-cube" style="color: var(--accent-color); margin-right: 8px"></i> <strong>Gesamtvolumen:</strong> {{ formatVolume(getTotalVolume(monthLedger.details)) }}
+              </span>
+            </div>
+
+            @if (!monthLedger.isPaid) {
+              <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 1.5rem; font-style: italic;">
+                Bitte überweise den offenen Betrag an das Corporation Master Wallet. Betreff: <strong>Steuer {{ monthLedger.month }}</strong>
+              </p>
+            }
+          </div>
+
+          <!-- Erze für diesen Monat -->
+          <div class="surface-panel">
+            <table class="eve-table">
+              <thead>
+              <tr>
+                <th>Erz</th>
+                <th>Kategorie</th>
+                <th style="text-align: right;">Menge</th>
+                <th style="text-align: right;">Volumen</th>
+                <th style="text-align: right;">Jita Buy (Live)</th>
+                <th style="text-align: right;">Steuern</th>
+              </tr>
+              </thead>
+              <tbody>
+                @for (item of monthLedger.details; track item.typeId) {
+                  <tr>
+                    <td>
+                      <div style="display: flex; align-items: center; gap: 10px;">
+                        <img [src]="typeIcon(item.typeId, 32)" style="width: 24px; border-radius: 4px;">
+                        <span>{{ item.typeName }}</span>
+                      </div>
+                    </td>
+                    <td><span class="badge" [ngClass]="item.category.toLowerCase()">{{ item.category }}</span></td>
+                    <td style="text-align: right; color: var(--text-secondary);">{{ item.quantity.toLocaleString('de-DE') }}</td>
+                    <td style="text-align: right; color: var(--text-primary); font-weight: 500;">{{ formatVolume(item.volume) }}</td>
+                    <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(item.jitaPrice) }}</td>
+                    <td style="text-align: right; font-weight: 600; color: #ff3366;">{{ formatIskFull(item.taxToPay) }}</td>
+                  </tr>
+                }
+                @if (monthLedger.details.length === 0) {
+                  <tr><td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 2rem;">In diesem Monat wurde nichts abgebaut.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      }
+    } @else {
+      <!-- Fallback, wenn das Array komplett leer ist (nie geminert) -->
+      <div class="surface-panel text-center" style="color: var(--text-secondary); padding: 4rem;">
+        <i class="fa-solid fa-bed fa-3x" style="margin-bottom: 1rem; opacity: 0.5;"></i>
+        <p>Du hast bisher noch nichts geminert.</p>
+      </div>
+    }
+  }
+
+  <!-- ======================== ADMIN ANSICHT ======================== -->
+  @if (activeTab() === 'LEDGERS' && isLeadership) {
+    <div class="surface-panel" style="margin-bottom: 2rem;">
+      <h3 style="margin-top: 0; color: var(--text-primary);"><i class="fa-solid fa-users"></i> Account-Bilanzen (Schulden & Guthaben)</h3>
+
+      @if (loadingAdminLedgers()) {
+        <div class="loading-container"><div class="loading-spinner"></div></div>
+      } @else {
+        <div style="max-height: 500px; overflow-y: auto; padding-right: 5px;">
+          <table class="eve-table">
+            <thead style="position: sticky; top: 0; background-color: var(--bg-surface); z-index: 1;">
+            <tr>
+              <th>Pilot (Main)</th>
+              <th style="text-align: right;">Erzeugte Steuern</th>
+              <th style="text-align: right;">Bezahlt</th>
+              <th style="text-align: right;">Aktueller Saldo</th>
+            </tr>
+            </thead>
+            <tbody>
+              @for (pilot of adminLedgers(); track pilot.mainId) {
+                <tr>
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <img [src]="pilot.portraitUrl" style="width: 32px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <span style="font-weight: 500;">{{ pilot.mainName }}</span>
+                    </div>
+                  </td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(pilot.totalTax) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(pilot.totalPaid) }}</td>
+                  <td style="text-align: right; font-weight: 700; font-size: 1.05rem;"
+                      [style.color]="pilot.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
+                    @if (pilot.currentBalance >= 0) {
+                      + {{ formatIskFull(pilot.currentBalance) }}
+                    } @else {
+                      {{ formatIskFull(pilot.currentBalance) }}
+                    }
+                  </td>
+                </tr>
+              }
+              @if (adminLedgers().length === 0) {
+                <tr><td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Keine Bilanzen gefunden.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ======================== ADMIN ANSICHT (STEUERSÄTZE) ======================== -->
+  @if (activeTab() === 'ADMIN' && isLeadership) {
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+      <!-- Box 1: Dropdown für einzelnes Erz -->
+      <div class="surface-panel">
+        <h3 style="margin-top: 0; color: var(--accent-color);"><i class="fa-solid fa-list"></i> Steuersatz festlegen</h3>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label>Verfügbares Material wählen</label>
+          <select [(ngModel)]="selectedTypeId">
+            <option [ngValue]="null">-- Bitte wählen --</option>
+            @for (rate of taxRates(); track rate.typeId) {
+              <option [value]="rate.typeId">{{ rate.typeName }} ({{ rate.category }})</option>
+            }
+          </select>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: flex-end;">
+          <div class="form-group">
+            <label>Steuer in % (vom Jita Buy)</label>
+            <input type="number" [(ngModel)]="newTaxPercentage" placeholder="z.B. 10 für 10%">
+          </div>
+          <button class="btn-primary" (click)="saveTaxRateFromDropdown()" [disabled]="!selectedTypeId">Speichern</button>
+        </div>
+      </div>
+
+      <!-- Box 2: Massen Update -->
+      <div class="surface-panel" style="border-left: 3px solid #ff3366;">
+        <h3 style="margin-top: 0; color: #ff3366;"><i class="fa-solid fa-layer-group"></i> Steuer-Update</h3>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          Überschreibt die Steuer <strong>aller Erze</strong> der gewählten Kategorie gleichzeitig.
+        </p>
+        <div style="display: flex; gap: 1rem; align-items: flex-end;">
+          <div class="form-group">
+            <label>Ziel-Kategorie</label>
+            <select [(ngModel)]="bulkCategory">
+              <option value="ORE">Alle Asteroid Ores</option>
+              <option value="MOON">Alle Moon Ores</option>
+              <option value="ICE">Alles Eis</option>
+              <option value="GAS">Alles Gas</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Steuer in %</label>
+            <input type="number" [(ngModel)]="bulkTaxPercentage" placeholder="z.B. 10">
+          </div>
+          <button class="btn-primary" style="background-color: #ff3366;" (click)="saveBulkTax()">Ausführen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabelle der erfassten Erze -->
+    <div class="surface-panel">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin-top: 0;">Erfasste Erze & Steuersätze</h3>
+        <span style="font-size: 0.8rem; color: var(--text-secondary);"><i class="fa-solid fa-info-circle"></i> Jita Preise werden stündlich aktualisiert.</span>
+      </div>
+
+      @if (loadingTaxes()) {
+        <div class="loading-container"><div class="loading-spinner"></div></div>
+      } @else {
+        <table class="eve-table">
+          <thead>
+          <tr>
+            <th>Name</th>
+            <th>Kategorie</th>
+            <th style="text-align: right;">Jita Preis</th>
+            <th style="text-align: right;">Steuer (%)</th>
+            <th style="text-align: right;">Aktion</th>
+          </tr>
+          </thead>
+          <tbody>
+            @for (rate of taxRates(); track rate.typeId) {
+              <tr>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <img [src]="typeIcon(rate.typeId, 32)" style="width: 24px; border-radius: 4px;">
+                    <span style="font-weight: 500;">{{ rate.typeName }}</span>
+                  </div>
+                </td>
+                <td><span class="badge" [ngClass]="rate.category.toLowerCase()">{{ rate.category }}</span></td>
+                <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(rate.currentJitaBuy) }}</td>
+                <td style="text-align: right; color: #00dfa2; font-weight: 600;">{{ rate.taxPercentage }} %</td>
+                <td style="text-align: right;">
+                  <button class="btn-icon btn-danger-hover" (click)="deleteTaxRate(rate.typeId)">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
+  }
+</div>

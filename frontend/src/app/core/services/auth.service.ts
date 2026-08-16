@@ -2,7 +2,9 @@ import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { catchError, of, tap } from 'rxjs';
 import { Router } from '@angular/router';
+import { ToastService } from './toast.service';
 import {environment} from '../../../environments/environment';
+import { SIZE_LARGE, portrait } from '../shared/eve-image.util';
 
 export interface AuthUser {
   characterId: number;
@@ -17,13 +19,14 @@ export interface AuthUser {
 export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
+  private toastService = inject(ToastService);
 
   currentUser = signal<AuthUser | null>(null);
   loading = signal<boolean>(true);
 
   portraitUrl = computed(() => {
     const user = this.currentUser();
-    return user ? `https://images.evetech.net/characters/${user.characterId}/portrait?size=128` : null;
+    return user ? portrait(user.characterId, SIZE_LARGE) : null;
   });
 
   constructor() {
@@ -71,7 +74,7 @@ export class AuthService {
         this.currentUser.set(null);
         this.router.navigate(['/home']);
       },
-      error: (err) => console.error('Logout fehlgeschlagen', err)
+      error: () => this.toastService.error('Abmelden fehlgeschlagen.')
     });
   }
 }

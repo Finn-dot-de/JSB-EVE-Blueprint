@@ -32,7 +32,7 @@
 
 .confirm-icon {
   font-size: 3rem;
-  color: #ff3366; /* Ein warnendes Rot */
+  color: var(--danger-color); /* Ein warnendes Rot */
   opacity: 0.9;
 }
 
@@ -49,7 +49,7 @@
 /* Button-Styling (angelehnt an deine anderen Buttons) */
 .btn-primary {
   background-color: var(--accent-color);
-  color: #fff;
+  color: var(--accent-contrast);
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
@@ -58,7 +58,7 @@
   transition: background-color 0.2s;
 
   &.btn-danger {
-    background-color: #ff3366;
+    background-color: var(--danger-color);
     &:hover { background-color: #e62050; }
   }
 }
@@ -72,7 +72,7 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  &:hover { background-color: rgba(255, 255, 255, 0.05); }
+  &:hover { background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); }
 }
 
 @keyframes popIn {

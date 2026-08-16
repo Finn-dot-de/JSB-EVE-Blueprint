@@ -1,7 +1,8 @@
 package com.eve.own.auth.backend.domain.discord.controller;
 
-import com.eve.own.auth.backend.domain.auth.entity.SystemRole;
-import com.eve.own.auth.backend.domain.auth.repository.SystemRoleRepository;
+import com.eve.own.auth.backend.common.AccessRules;
+import com.eve.own.auth.backend.common.CurrentUser;
+import com.eve.own.auth.backend.domain.auth.service.RoleCatalogService;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.discord.entity.DiscordConnection;
@@ -9,18 +10,30 @@ import com.eve.own.auth.backend.domain.discord.entity.DiscordRoleMapping;
 import com.eve.own.auth.backend.domain.discord.repository.DiscordConnectionRepository;
 import com.eve.own.auth.backend.domain.discord.repository.DiscordRoleMappingRepository;
 import com.eve.own.auth.backend.domain.discord.service.DiscordBotService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/discord")
 public class DiscordAuthController {
@@ -33,7 +46,7 @@ public class DiscordAuthController {
     private final DiscordConnectionRepository connectionRepo;
     private final CharacterRepository characterRepo;
     private final DiscordRoleMappingRepository mappingRepo;
-    private final SystemRoleRepository systemRoleRepo; // NEU
+    private final RoleCatalogService roleCatalogService;
 
     public DiscordAuthController(@Value("${discord.client-id}") String clientId,
                                  @Value("${app.base.url}") String baseUrl,
@@ -42,7 +55,7 @@ public class DiscordAuthController {
                                  DiscordConnectionRepository connectionRepo,
                                  CharacterRepository characterRepo,
                                  DiscordRoleMappingRepository mappingRepo,
-                                 SystemRoleRepository systemRoleRepo) {
+                                 RoleCatalogService roleCatalogService) {
         this.clientId = clientId;
         this.redirectUri = baseUrl.endsWith("/") ? baseUrl + "api/discord/callback" : baseUrl + "/api/discord/callback";
         this.frontendUrl = frontendUrl;
@@ -51,10 +64,8 @@ public class DiscordAuthController {
         this.connectionRepo = connectionRepo;
         this.characterRepo = characterRepo;
         this.mappingRepo = mappingRepo;
-        this.systemRoleRepo = systemRoleRepo;
+        this.roleCatalogService = roleCatalogService;
     }
-
-    // ... Deine bestehenden Endpunkte (/login, /callback, /status) bleiben hier exakt gleich ...
 
     @GetMapping("/login")
     public ResponseEntity<Void> redirectToDiscord() {
@@ -71,10 +82,9 @@ public class DiscordAuthController {
     @GetMapping("/callback")
     public ResponseEntity<Void> discordCallback(@RequestParam("code") String code) {
         try {
-            Long charId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            Long charId = CurrentUser.characterId();
             var tokenResp = discordBotService.exchangeCode(code, redirectUri);
             var userResp = discordBotService.getDiscordUserProfile(tokenResp.access_token());
-
             DiscordConnection conn = connectionRepo.findById(charId).orElse(new DiscordConnection());
             conn.setCharacterId(charId);
             conn.setDiscordUserId(userResp.id());
@@ -84,73 +94,99 @@ public class DiscordAuthController {
             connectionRepo.save(conn);
 
             Character c = characterRepo.findById(charId).orElseThrow();
+
+            Character mainChar = c.getMainCharacterId() != null
+                    ? characterRepo.findById(c.getMainCharacterId()).orElse(c)
+                    : c;
+            String expectedNickname = mainChar.getName();
+
             List<String> expectedRoles = c.getRoles().stream()
                     .map(mappingRepo::findById)
-                    .filter(java.util.Optional::isPresent)
+                    .filter(Optional::isPresent)
                     .map(m -> m.get().getDiscordRoleId())
                     .toList();
 
             try {
-                discordBotService.addMemberToServer(userResp.id(), tokenResp.access_token(), expectedRoles);
+                discordBotService.addMemberToServer(userResp.id(), tokenResp.access_token(), expectedRoles, expectedNickname);
             } catch (Exception e) {
-                discordBotService.syncMemberRoles(userResp.id(), expectedRoles);
+                log.warn("Konnte User {} nicht zum Server hinzufügen: {}", userResp.username(), e.getMessage());
+                try {
+                    discordBotService.syncMemberData(userResp.id(), expectedRoles, expectedNickname);
+                } catch (Exception ex) {
+                    log.error("Konnte Daten für User {} nicht synchronisieren: {}", userResp.username(), ex.getMessage());
+                }
             }
 
             return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(frontendUrl + "/services?discord=success")).build();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Genereller Fehler beim Discord-Callback", e);
             return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(frontendUrl + "/services?discord=error")).build();
         }
     }
 
     @GetMapping("/status")
-    public ResponseEntity<java.util.Map<String, Boolean>> getConnectionStatus() {
-        Long charId = (Long) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+    public ResponseEntity<Map<String, Boolean>> getConnectionStatus() {
+        Long charId = CurrentUser.characterId();
         boolean isConnected = connectionRepo.existsById(charId);
-        return ResponseEntity.ok(java.util.Map.of("connected", isConnected));
+        return ResponseEntity.ok(Map.of("connected", isConnected));
     }
 
     // ========================================================
-    // NEU: Admin Endpunkte für das Mapping
+    // Admin Endpunkte für das Mapping
     // ========================================================
-    @PreAuthorize("hasAnyRole('ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_IT_ADMIN', 'ROLE_A38')")
+
+    /**
+     * Alle Auth-Rollen samt der bereits hinterlegten Discord-Rollen-ID.
+     *
+     * <p>Welche Rollen es gibt, beantwortet der {@link RoleCatalogService}. Diese
+     * Methode hat die Liste frueher selbst zusammengesucht - dieselbe Arbeit, die
+     * auch die Rollenverwaltung leistet, nur mit einem eigenen Satz Sonderfaelle.
+     * Beide Seiten zeigen jetzt zwangslaeufig dieselben Rollen.</p>
+     */
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
     @GetMapping("/mappings")
-    public ResponseEntity<List<java.util.Map<String, String>>> getAllRolesWithMappings() {
-        List<SystemRole> allRoles = systemRoleRepo.findAll();
-        List<DiscordRoleMapping> mappings = mappingRepo.findAll();
-        List<java.util.Map<String, String>> result = new java.util.ArrayList<>();
+    public ResponseEntity<List<Map<String, String>>> getAllRolesWithMappings() {
+        // Ein leerer Text statt null: Map.of vertraegt keine null-Werte.
+        Map<String, String> discordIdsByRole = mappingRepo.findAll().stream()
+                .collect(Collectors.toMap(
+                        DiscordRoleMapping::getAuthRole,
+                        mapping -> Optional.ofNullable(mapping.getDiscordRoleId()).orElse(""),
+                        (first, second) -> first));
 
-        // Standard-Rollen hinzufügen (da diese oft nicht in der SystemRole DB stehen)
-        List<String> defaultRoles = java.util.List.of("ROLE_USER", "ROLE_MEMBER");
-        for (String dr : defaultRoles) {
-            String discordId = mappings.stream().filter(m -> m.getAuthRole().equals(dr)).map(DiscordRoleMapping::getDiscordRoleId).findFirst().orElse("");
-            result.add(java.util.Map.of("authRole", dr, "discordRoleId", discordId, "description", "Basis-Recht für eingeloggte Piloten"));
-        }
+        List<Map<String, String>> result = roleCatalogService.catalog().stream()
+                .map(role -> Map.of(
+                        "authRole", role.name(),
+                        "discordRoleId", discordIdsByRole.getOrDefault(role.name(), ""),
+                        "description", role.description()))
+                .sorted(Comparator.comparing(entry -> entry.get("authRole")))
+                .toList();
 
-        for (SystemRole role : allRoles) {
-            String discordId = mappings.stream()
-                    .filter(m -> m.getAuthRole().equals(role.getRoleName()))
-                    .map(DiscordRoleMapping::getDiscordRoleId)
-                    .findFirst()
-                    .orElse("");
-            result.add(java.util.Map.of(
-                    "authRole", role.getRoleName(),
-                    "discordRoleId", discordId,
-                    "description", role.getDescription() != null ? role.getDescription() : ""
-            ));
-        }
         return ResponseEntity.ok(result);
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_IT_ADMIN', 'ROLE_A38')")
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
     @PostMapping("/mappings")
     public ResponseEntity<Void> saveMapping(@RequestBody DiscordRoleMapping dto) {
-        // Wenn das Feld leer ist, löschen wir das Mapping aus der Datenbank
         if (dto.getDiscordRoleId() == null || dto.getDiscordRoleId().isBlank()) {
             mappingRepo.deleteById(dto.getAuthRole());
         } else {
             mappingRepo.save(dto);
         }
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/disconnect")
+    public ResponseEntity<Void> disconnectDiscord() {
+        Long charId = CurrentUser.characterId();
+        connectionRepo.findById(charId).ifPresent(conn -> {
+            try {
+                discordBotService.syncMemberData(conn.getDiscordUserId(), new ArrayList<>(), null);
+            } catch (Exception e) {
+                log.warn("Konnte Rollen beim Trennen für User {} nicht entfernen: {}", conn.getDiscordUserId(), e.getMessage());
+            }
+            connectionRepo.delete(conn);
+        });
+
         return ResponseEntity.ok().build();
     }
 }

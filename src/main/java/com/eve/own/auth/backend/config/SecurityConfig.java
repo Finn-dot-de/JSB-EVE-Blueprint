@@ -37,7 +37,9 @@ public class SecurityConfig {
             ROLE_IT_ADMIN > ROLE_CEO
             ROLE_CEO > ROLE_DIRECTOR
             ROLE_DIRECTOR > ROLE_MANAGER
-            ROLE_MANAGER > ROLE_SENIOR_MEMBER
+            ROLE_MANAGER > ROLE_69
+            ROLE_69 > ROLE_1337
+            ROLE_1337 > ROLE_SENIOR_MEMBER
             ROLE_SENIOR_MEMBER > ROLE_MEMBER
             ROLE_MEMBER > ROLE_JUNIOR_MEMBER
             ROLE_JUNIOR_MEMBER > ROLE_USER

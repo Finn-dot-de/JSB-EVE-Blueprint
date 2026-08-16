@@ -62,3 +62,6 @@ build/
 ## DB
 /pg_data
 
+/npm/data/database.sqlite
+/npm/data/keys.json
+/.claude

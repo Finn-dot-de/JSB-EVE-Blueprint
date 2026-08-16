@@ -16,6 +16,11 @@
       }
 
       <main class="main-content">
+        <!-- Wer abgemeldet ist, sucht nicht danach - er muss darueber
+             stolpern. Deshalb im Rahmen und nicht auf einer Unterseite. -->
+        @if (authService.currentUser()) {
+          <app-token-health-banner></app-token-health-banner>
+        }
         <router-outlet></router-outlet>
       </main>
 

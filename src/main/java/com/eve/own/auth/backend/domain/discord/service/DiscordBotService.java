@@ -2,6 +2,7 @@ package com.eve.own.auth.backend.domain.discord.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -9,7 +10,9 @@ import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
+@Slf4j
 @Service
 public class DiscordBotService {
     private final RestClient botClient;
@@ -61,6 +64,39 @@ public class DiscordBotService {
                 .body(DiscordUserResponse.class);
     }
 
+    // 3. User auf den Server einladen (JETZT MIT NICKNAME)
+    public void addMemberToServer(String discordUserId, String userAccessToken, List<String> discordRoleIds, String nickname) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("access_token", userAccessToken);
+        body.put("roles", discordRoleIds);
+        if (nickname != null && !nickname.isBlank()) {
+            body.put("nick", nickname.length() > 32 ? nickname.substring(0, 32) : nickname);
+        }
+
+        botClient.put()
+                .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    // 4. Rollen und Nickname synchronisieren
+    public void syncMemberData(String discordUserId, List<String> discordRoleIds, String nickname) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("roles", discordRoleIds);
+        if (nickname != null && !nickname.isBlank()) {
+            body.put("nick", nickname.length() > 32 ? nickname.substring(0, 32) : nickname);
+        }
+
+        botClient.patch()
+                .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
     // 3. User auf den Server einladen
     public void addMemberToServer(String discordUserId, String userAccessToken, List<String> discordRoleIds) {
         Map<String, Object> body = Map.of(
@@ -86,5 +122,49 @@ public class DiscordBotService {
                 .body(body)
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    /** Der Kanal einer Direktnachricht - Discord legt ihn bei Bedarf an. */
+    private record DmChannel(String id) {}
+
+    /**
+     * Schickt einem Nutzer eine Direktnachricht.
+     *
+     * <p>Zwei Schritte, weil Discord es so verlangt: erst einen DM-Kanal
+     * oeffnen, dann hineinschreiben. Der erste Aufruf ist billig und
+     * idempotent - Discord liefert bei einem bestehenden Kanal denselben
+     * zurueck.</p>
+     *
+     * <p>Scheitert es, wird es geloggt und nicht geworfen. Ein Nutzer kann
+     * Direktnachrichten von Servermitgliedern abgeschaltet haben; das ist sein
+     * gutes Recht und darf keinen Zeitplan abbrechen, der noch andere
+     * benachrichtigen will.</p>
+     *
+     * @return ob die Nachricht abgesetzt wurde
+     */
+    public boolean sendDirectMessage(String discordUserId, String content) {
+        if (discordUserId == null || discordUserId.isBlank() || content == null) {
+            return false;
+        }
+        try {
+            DmChannel kanal = botClient.post()
+                    .uri("/users/@me/channels")
+                    .body(java.util.Map.of("recipient_id", discordUserId))
+                    .retrieve()
+                    .body(DmChannel.class);
+            if (kanal == null || kanal.id() == null) {
+                return false;
+            }
+            botClient.post()
+                    .uri("/channels/{id}/messages", kanal.id())
+                    .body(java.util.Map.of("content", content))
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("Direktnachricht an Discord-Nutzer {} nicht zustellbar: {}",
+                    discordUserId, e.getMessage());
+            return false;
+        }
     }
 }

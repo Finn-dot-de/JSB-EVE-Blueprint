@@ -1,10 +1,7 @@
 package com.eve.own.auth.backend.domain.auth.service;
 
-import com.eve.own.auth.backend.domain.auth.entity.SystemRole;
-import com.eve.own.auth.backend.domain.auth.entity.TitleRoleMapping;
-import com.eve.own.auth.backend.domain.auth.repository.SystemRoleRepository;
-import com.eve.own.auth.backend.domain.auth.repository.TitleRoleMappingRepository;
 import com.eve.own.auth.backend.domain.auth.security.AesEncryptionService;
+import com.eve.own.auth.backend.domain.auth.security.EveSsoClient;
 import com.eve.own.auth.backend.domain.character.entity.Alliance;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.entity.Corporation;
@@ -13,262 +10,210 @@ import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.character.repository.CorporationRepository;
 import com.eve.own.auth.backend.esi.EsiService;
 import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestClient;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-
-import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.List;
-import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
+/**
+ * Der Anmeldevorgang und die Pflege der EVE-Token.
+ *
+ * <p>Zwei Aufgaben, die zusammengehoeren: beim Login entstehen die Token, und
+ * jeder spaetere ESI-Aufruf braucht ein gueltiges. Die Rollenvergabe liegt
+ * bewusst nicht hier, sondern im {@link CharacterRoleService} - sie wird auch
+ * vom Hintergrund-Sync gebraucht.</p>
+ */
 @Service
+@Slf4j
 public class AuthService {
 
-    private final RestClient restClient;
+    /**
+     * Sicherheitsabstand vor dem Ablauf: ein Token, das in weniger als einer
+     * Minute verfaellt, wird vorsorglich erneuert. Sonst koennte es zwischen
+     * Pruefung und Aufruf ungueltig werden.
+     */
+    private static final Duration EXPIRY_HEADROOM = Duration.ofSeconds(60);
+
+    private final EveSsoClient ssoClient;
     private final EsiService esiService;
     private final CharacterRepository characterRepo;
     private final CorporationRepository corpRepo;
     private final AllianceRepository allianceRepo;
-    private final ObjectMapper objectMapper;
     private final AesEncryptionService encryptionService;
-    private final TitleRoleMappingRepository titleRepo;
-    private final SystemRoleRepository systemRoleRepo;
+    private final CharacterRoleService roleService;
+    private final TokenHealthService tokenHealth;
 
-    @Value("${eve.sso.client-id}")
-    private String clientId;
-
-    @Value("${eve.sso.client-secret}")
-    private String clientSecret;
-
-    @Value("${eve.sso.allowed-corp-id}")
-    private Long allowedCorpId;
-
-    public AuthService(RestClient.Builder builder, EsiService esiService,
-                       CharacterRepository characterRepo, CorporationRepository corpRepo,
-                       AllianceRepository allianceRepo, ObjectMapper objectMapper,
+    public AuthService(EveSsoClient ssoClient,
+                       EsiService esiService,
+                       CharacterRepository characterRepo,
+                       CorporationRepository corpRepo,
+                       AllianceRepository allianceRepo,
                        AesEncryptionService encryptionService,
-                       TitleRoleMappingRepository titleRepo,
-                       SystemRoleRepository systemRoleRepo) {
-        this.restClient = builder.baseUrl("https://login.eveonline.com/v2/oauth/token").build();
+                       CharacterRoleService roleService,
+                       TokenHealthService tokenHealth) {
+        this.ssoClient = ssoClient;
         this.esiService = esiService;
         this.characterRepo = characterRepo;
         this.corpRepo = corpRepo;
         this.allianceRepo = allianceRepo;
-        this.objectMapper = objectMapper;
         this.encryptionService = encryptionService;
-        this.titleRepo = titleRepo;
-        this.systemRoleRepo = systemRoleRepo;
+        this.roleService = roleService;
+        this.tokenHealth = tokenHealth;
     }
 
-    // =================================================================================
-    // HAUPT-ABLAUF FÜR DEN LOGIN
-    // =================================================================================
-    public Character processEveLogin(String code, Long loggedInMainId) throws Exception {
-        // 1. Token generieren
-        TokenResponse tokenResponse = exchangeCodeForToken(code);
+    /**
+     * Der vollstaendige Login-Ablauf nach der Rueckleitung von CCP.
+     *
+     * @param loggedInMainId Main-Account des bereits angemeldeten Nutzers, wenn
+     *     dieser gerade einen weiteren Charakter verknuepft; sonst {@code null}
+     */
+    public Character processEveLogin(String code, Long loggedInMainId) {
+        EveSsoClient.TokenResponse tokens = ssoClient.exchangeCode(code);
+        EveSsoClient.EveIdentity identity = ssoClient.readIdentity(tokens.access_token());
 
-        // 2. JWT entschlüsseln
-        EveJwtPayload payload = decodeEveJwt(tokenResponse.access_token());
+        Corporation corporation = syncCorporationAndAlliance(identity.characterId());
+        Character character = saveOrUpdate(identity, corporation, tokens, loggedInMainId);
 
-        // 3. Corporation & Alliance aktualisieren
-        Corporation corp = syncCorporationAndAlliance(payload.characterId(), loggedInMainId);
-
-        // 4. Charakter anlegen / updaten
-        Character character = saveOrUpdateCharacter(payload, corp, tokenResponse, loggedInMainId);
-
-        // 5. Rollen kalkulieren & speichern
-        return syncCharacterRoles(character, tokenResponse.access_token());
+        return roleService.applyRoles(character, tokens.access_token());
     }
 
-    // =================================================================================
-    // HELFER-METHODEN FÜR SAUBERE STRUKTUR
-    // =================================================================================
-
-    private TokenResponse exchangeCodeForToken(String code) {
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("grant_type", "authorization_code");
-        body.add("code", code);
-
-        return restClient.post()
-                .header(HttpHeaders.AUTHORIZATION, "Basic " + Base64.getEncoder().encodeToString((clientId + ":" + clientSecret).getBytes()))
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(body)
-                .retrieve()
-                .body(TokenResponse.class);
-    }
-
-    private EveJwtPayload decodeEveJwt(String accessToken) throws Exception {
-        String[] jwtParts = accessToken.split("\\.");
-        String payloadJson = new String(Base64.getUrlDecoder().decode(jwtParts[1]), StandardCharsets.UTF_8);
-        JsonNode payloadNode = objectMapper.readTree(payloadJson);
-
-        Long characterId = Long.parseLong(payloadNode.get("sub").asString().split(":")[2]);
-        String characterName = payloadNode.get("name").asString();
-
-        return new EveJwtPayload(characterId, characterName);
-    }
-
-    private Corporation syncCorporationAndAlliance(Long characterId, Long loggedInMainId) {
-        var esiChar = esiService.getCharacter(characterId, null).data();
-
-        // Sicherheits-Check
-        if (loggedInMainId == null && !esiChar.corporation_id().equals(allowedCorpId)) {
-            throw new SecurityException("Zugriff verweigert...");
-        }
-
-        var esiCorp = esiService.getCorporation(esiChar.corporation_id(), null).data();
-
-        Alliance alliance = null;
-        if (esiCorp.alliance_id() != null) {
-            var esiAlliance = esiService.getAlliance(esiCorp.alliance_id(), null).data();
-            alliance = new Alliance();
-            alliance.setId(esiCorp.alliance_id());
-            alliance.setName(esiAlliance.name());
-            alliance.setTicker(esiAlliance.ticker());
-            allianceRepo.save(alliance);
-        }
-
-        Corporation corp = new Corporation();
-        corp.setId(esiChar.corporation_id());
-        corp.setName(esiCorp.name());
-        corp.setTicker(esiCorp.ticker());
-        corp.setAlliance(alliance);
-        return corpRepo.save(corp);
-    }
-
-    private Character saveOrUpdateCharacter(EveJwtPayload payload, Corporation corp, TokenResponse tokenResponse, Long loggedInMainId) {
-        Character character = characterRepo.findById(payload.characterId()).orElse(new Character());
-        character.setId(payload.characterId());
-        character.setName(payload.characterName());
-        character.setCorporation(corp);
-
-        // Verschlüsselung
-        character.setAccessToken(encryptionService.encrypt(tokenResponse.access_token()));
-        character.setRefreshToken(encryptionService.encrypt(tokenResponse.refresh_token()));
-        character.setTokenExpiry(Instant.now().plusSeconds(tokenResponse.expires_in()));
-
-        // Main/Alt Zuordnung
-        if (loggedInMainId != null) {
-            character.setMainCharacterId(loggedInMainId);
-        } else if (character.getMainCharacterId() == null) {
-            character.setMainCharacterId(payload.characterId());
-        }
-
-        return characterRepo.save(character);
-    }
-
-    private Character syncCharacterRoles(Character character, String accessToken) {
-        java.util.Set<String> calculatedRoles = new java.util.HashSet<>();
-        calculatedRoles.add("ROLE_USER");
-
-        if (character.getCorporation().getId().equals(allowedCorpId)) {
-            calculatedRoles.add("ROLE_MEMBER");
-        }
-
-        // --- SPEZIAL-ROLLEN RETTEN ---
-        List<String> specialRolesInDb = systemRoleRepo.findByIsSpecialTrue().stream()
-                .map(SystemRole::getRoleName)
-                .toList();
-
-        java.util.Set<String> retainedSpecialRoles = character.getRoles().stream()
-                .filter(specialRolesInDb::contains)
-                .collect(Collectors.toSet());
-
-        // --- TITEL AUTO-DISCOVERY ÜBER ESI ---
-        try {
-            var titlesResp = esiService.getCharacterTitles(character.getId(), accessToken, null);
-            if (titlesResp.data() != null && titlesResp.data().length > 0) {
-
-                List<TitleRoleMapping> existingMappings = titleRepo.findByCorporationId(character.getCorporation().getId());
-
-                for (var esiTitle : titlesResp.data()) {
-                    String cleanName = esiTitle.name().replaceAll("<[^>]*>", "");
-
-                    var existingOpt = existingMappings.stream()
-                            .filter(m -> m.getTitleId().equals(esiTitle.title_id()))
-                            .findFirst();
-
-                    if (existingOpt.isEmpty()) {
-                        String autoRole = "ROLE_" + cleanName.toUpperCase().replaceAll("[^A-Z0-9]+", "_");
-
-                        TitleRoleMapping newMapping = new TitleRoleMapping();
-                        newMapping.setCorporationId(character.getCorporation().getId());
-                        newMapping.setTitleId(esiTitle.title_id());
-                        newMapping.setTitleName(cleanName);
-                        newMapping.setRoleName(autoRole);
-
-                        titleRepo.save(newMapping);
-                        existingMappings.add(newMapping);
-
-                        calculatedRoles.add(autoRole);
-                    } else {
-                        TitleRoleMapping existing = existingOpt.get();
-                        if (!cleanName.equals(existing.getTitleName())) {
-                            existing.setTitleName(cleanName);
-                            titleRepo.save(existing);
-                        }
-                        if (existing.getRoleName() != null && !existing.getRoleName().isBlank()) {
-                            calculatedRoles.add(existing.getRoleName());
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("Konnte Titel beim Login für " + character.getName() + " nicht laden: " + e.getMessage());
-        }
-
-        // --- SPEZIAL-ROLLEN WIEDER HINZUFÜGEN ---
-        calculatedRoles.addAll(retainedSpecialRoles);
-        character.setRoles(calculatedRoles);
-
-        return characterRepo.save(character);
-    }
-
-    // =================================================================================
-    // TOKEN REFRESH & RECORDS
-    // =================================================================================
-
-    record TokenResponse(String access_token, String refresh_token, Integer expires_in) {}
-    record EveJwtPayload(Long characterId, String characterName) {}
-
-    @Transactional
+    /**
+     * Ein gueltiges Access-Token fuer ESI-Aufrufe.
+     *
+     * <p>Erneuert bei Bedarf ueber den Refresh-Token und schreibt das Ergebnis
+     * zurueck, damit parallele Aufrufer nicht erneut erneuern muessen.</p>
+     */
+    /**
+     * Bewusst eine <b>eigene</b> Transaktion.
+     *
+     * <p>Ohne {@code REQUIRES_NEW} lief diese Methode in der Transaktion des
+     * Aufrufers mit - und riss sie mit sich, sobald ein Refresh-Token tot war.
+     * Der Ablauf war heimtueckisch: {@code ssoClient.refresh} wirft bei
+     * {@code invalid_grant}, Spring markiert die gemeinsame Transaktion als
+     * rollback-only, der Aufrufer faengt die Ausnahme und macht weiter - und
+     * erst beim Commit fliegt eine {@code UnexpectedRollbackException}. Alles
+     * dazwischen ist verloren, obwohl es funktioniert hat.</p>
+     *
+     * <p>Gemessen in Produktion: drei Charaktere mit abgelaufenem Refresh-Token
+     * legten damit den kompletten Industriejob-Abgleich fuer 225 Charaktere
+     * lahm, bei jedem Lauf, alle zehn Minuten.</p>
+     *
+     * <p>Der zweite Grund ist ebenso wichtig: ein <em>erfolgreich</em>
+     * erneuerter Token wird jetzt sofort festgeschrieben. EVE dreht bei jeder
+     * Erneuerung auch den Refresh-Token weiter; ginge der Schreibvorgang durch
+     * ein spaeteres Rollback des Aufrufers verloren, waere die Kette gerissen
+     * und der Charakter beim naechsten Mal ausgesperrt.</p>
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public String getValidAccessToken(Character character) {
-        if (character.getTokenExpiry().isAfter(Instant.now().plusSeconds(60))) {
+        if (character.getTokenExpiry() != null
+                && character.getTokenExpiry().isAfter(Instant.now().plus(EXPIRY_HEADROOM))) {
             return encryptionService.decrypt(character.getAccessToken());
         }
 
-        String plainRefreshToken = encryptionService.decrypt(character.getRefreshToken());
-        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-        body.add("grant_type", "refresh_token");
-        body.add("refresh_token", plainRefreshToken);
-
-        TokenResponse tokenResponse = restClient.post()
-                .header(HttpHeaders.AUTHORIZATION, "Basic " + Base64.getEncoder().encodeToString((clientId + ":" + clientSecret).getBytes()))
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(body)
-                .retrieve()
-                .body(TokenResponse.class);
-
-        if (tokenResponse == null || tokenResponse.access_token() == null) {
-            throw new RuntimeException("Konnte EVE Token für Charakter " + character.getId() + " nicht erneuern!");
+        EveSsoClient.TokenResponse tokens;
+        try {
+            tokens = ssoClient.refresh(encryptionService.decrypt(character.getRefreshToken()));
+        } catch (RuntimeException e) {
+            // Der Vermerk wird in einer eigenen Transaktion geschrieben - diese
+            // hier rollt gleich zurueck, und mit ihr ginge er sonst unter.
+            tokenHealth.markInvalid(character.getId(), e.getMessage());
+            throw e;
+        }
+        if (tokens == null || tokens.access_token() == null) {
+            tokenHealth.markInvalid(character.getId(), "EVE lieferte keinen Token zurück.");
+            throw new IllegalStateException(
+                    "EVE-Token fuer Charakter " + character.getId() + " liess sich nicht erneuern.");
         }
 
-        character.setAccessToken(encryptionService.encrypt(tokenResponse.access_token()));
-        if (tokenResponse.refresh_token() != null) {
-            character.setRefreshToken(encryptionService.encrypt(tokenResponse.refresh_token()));
-        }
-        character.setTokenExpiry(Instant.now().plusSeconds(tokenResponse.expires_in()));
+        storeTokens(character, tokens);
         characterRepo.save(character);
+        // Hat es geklappt, ist ein alter Vermerk hinfaellig.
+        tokenHealth.markValid(character.getId());
+        return tokens.access_token();
+    }
 
-        return tokenResponse.access_token();
+    /**
+     * Legt Corporation und - sofern vorhanden - Allianz des Charakters an bzw. aktualisiert sie.
+     *
+     * <p>Beim Login sind diese Daten Pflicht: ohne sie laesst sich kein Account
+     * anlegen, weil die Corp-Zugehoerigkeit ueber saemtliche Rechte entscheidet.</p>
+     */
+    private Corporation syncCorporationAndAlliance(Long characterId) {
+        var esiCharacter = esiService.getCharacter(characterId).data();
+        if (esiCharacter == null) {
+            throw new IllegalStateException("ESI lieferte keine Charakterdaten fuer " + characterId);
+        }
+
+        Long corporationId = esiCharacter.corporation_id();
+        var esiCorporation = esiService.getCorporation(corporationId).data();
+        if (esiCorporation == null) {
+            throw new IllegalStateException("ESI lieferte keine Corp-Daten fuer " + corporationId);
+        }
+
+        Corporation corporation = new Corporation();
+        corporation.setId(corporationId);
+        corporation.setName(esiCorporation.name());
+        corporation.setTicker(esiCorporation.ticker());
+        corporation.setAlliance(syncAlliance(esiCorporation.alliance_id()));
+        return corpRepo.save(corporation);
+    }
+
+    private Alliance syncAlliance(Long allianceId) {
+        if (allianceId == null) {
+            return null;
+        }
+        var esiAlliance = esiService.getAlliance(allianceId).data();
+        if (esiAlliance == null) {
+            log.warn("Allianz {} nicht abrufbar, Corporation wird ohne Allianz gespeichert.", allianceId);
+            return null;
+        }
+        Alliance alliance = new Alliance();
+        alliance.setId(allianceId);
+        alliance.setName(esiAlliance.name());
+        alliance.setTicker(esiAlliance.ticker());
+        return allianceRepo.save(alliance);
+    }
+
+    private Character saveOrUpdate(EveSsoClient.EveIdentity identity,
+                                   Corporation corporation,
+                                   EveSsoClient.TokenResponse tokens,
+                                   Long loggedInMainId) {
+        Character character = characterRepo.findById(identity.characterId()).orElseGet(Character::new);
+        character.setId(identity.characterId());
+        character.setName(identity.characterName());
+        character.setCorporation(corporation);
+        storeTokens(character, tokens);
+
+        if (loggedInMainId != null) {
+            // Der Charakter wird einem bestehenden Account als Alt zugeordnet.
+            character.setMainCharacterId(loggedInMainId);
+        } else if (character.getMainCharacterId() == null) {
+            // Erster Login ohne bestehende Sitzung: der Charakter ist sein eigener Main.
+            character.setMainCharacterId(identity.characterId());
+        }
+
+        return characterRepo.save(character);
+    }
+
+    /** Token verschluesselt ablegen - sie liegen dauerhaft in der Datenbank. */
+    /**
+     * Schreibt frische Tokens - und nimmt dabei die Abmelde-Marke zurueck.
+     *
+     * <p>Hier und nicht erst nach einem erfolgreichen Refresh: dieselbe Methode
+     * bedient auch die Anmeldung, und genau die ist der Moment, in dem der
+     * Spieler das Problem geloest hat. Wer nur den Refresh-Pfad entwarnt,
+     * laesst die Marke nach einer Neuanmeldung stehen.</p>
+     */
+    private void storeTokens(Character character, EveSsoClient.TokenResponse tokens) {
+        character.setTokenInvalidSince(null);
+        character.setTokenInvalidReason(null);
+        character.setTokenInvalidNotifiedAt(null);
+        character.setAccessToken(encryptionService.encrypt(tokens.access_token()));
+        if (tokens.refresh_token() != null) {
+            // Beim Erneuern liefert CCP nicht immer einen neuen Refresh-Token.
+            character.setRefreshToken(encryptionService.encrypt(tokens.refresh_token()));
+        }
+        character.setTokenExpiry(Instant.now().plusSeconds(tokens.expires_in()));
     }
 }

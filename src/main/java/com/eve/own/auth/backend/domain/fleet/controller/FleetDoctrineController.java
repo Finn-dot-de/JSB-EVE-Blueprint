@@ -1,86 +1,62 @@
 package com.eve.own.auth.backend.domain.fleet.controller;
 
-import com.eve.own.auth.backend.domain.character.entity.Character;
-import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
-import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
+import com.eve.own.auth.backend.common.AccessRules;
+import com.eve.own.auth.backend.common.CurrentUser;
 import com.eve.own.auth.backend.domain.fleet.entity.FleetDoctrine;
-import com.eve.own.auth.backend.domain.fleet.repository.FleetDoctrineRepository;
+import com.eve.own.auth.backend.domain.fleet.service.FleetDoctrineService;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Instant;
-import java.util.List;
-import java.util.Objects;
-
+/** Die Endpunkte zur Pflege der Doktrin-Fittings. */
 @RestController
 @RequestMapping("/api/doctrines")
 public class FleetDoctrineController {
 
-    private final FleetDoctrineRepository doctrineRepo;
-    private final CharacterRepository characterRepo;
-    private final InvTypeRepository invTypeRepo;
+    private final FleetDoctrineService doctrineService;
 
-    public FleetDoctrineController(FleetDoctrineRepository doctrineRepo, CharacterRepository characterRepo, InvTypeRepository invTypeRepo) {
-        this.doctrineRepo = doctrineRepo;
-        this.characterRepo = characterRepo;
-        this.invTypeRepo = invTypeRepo;
+    public FleetDoctrineController(FleetDoctrineService doctrineService) {
+        this.doctrineService = doctrineService;
     }
 
-    // Jeder eingeloggte User darf die Fittings sehen
-    @GetMapping
-    public ResponseEntity<List<FleetDoctrine>> getAllDoctrines() {
-        return ResponseEntity.ok(doctrineRepo.findAll());
-    }
-
-    // Nur FCs und Directors dürfen Fittings erstellen
     public record CreateDoctrineDto(String doctrineName, String shipType, String name, String eftString) {}
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38', 'ROLE_IT_ADMIN')")
-    @PostMapping
-    public ResponseEntity<?> createDoctrine(@RequestBody CreateDoctrineDto dto) {
-        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
-        assert charId != null;
-        Character creator = characterRepo.findById(charId).orElseThrow();
-
-        FleetDoctrine doc = new FleetDoctrine();
-        doc.setDoctrineName(dto.doctrineName() != null && !dto.doctrineName().isBlank() ? dto.doctrineName() : "Ungruppiert");
-        doc.setShipType(dto.shipType());
-        doc.setName(dto.name());
-        doc.setEftString(dto.eftString());
-        doc.setCreatedBy(creator.getName());
-        doc.setCreatedAt(Instant.now());
-
-        invTypeRepo.findByTypeNameIgnoreCase(dto.shipType()).ifPresent(invType -> {
-            doc.setShipTypeId(invType.getTypeId());
-        });
-
-        return ResponseEntity.ok(doctrineRepo.save(doc));
+    /** Fittings darf jedes angemeldete Mitglied sehen. */
+    @GetMapping
+    public ResponseEntity<List<FleetDoctrine>> getAllDoctrines() {
+        return ResponseEntity.ok(doctrineService.findAll());
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38', 'ROLE_IT_ADMIN')")
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_IT)
+    @PostMapping
+    public ResponseEntity<FleetDoctrine> createDoctrine(@RequestBody CreateDoctrineDto dto) {
+        return ResponseEntity.ok(doctrineService.create(CurrentUser.characterId(), toCommand(dto)));
+    }
+
+    @PreAuthorize(AccessRules.FLEET_STAFF)
+    @PutMapping("/{id}")
+    public ResponseEntity<FleetDoctrine> updateDoctrine(@PathVariable Long id,
+                                                        @RequestBody CreateDoctrineDto dto) {
+        return ResponseEntity.ok(doctrineService.update(id, toCommand(dto)));
+    }
+
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_IT)
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteDoctrine(@PathVariable Long id) {
-        doctrineRepo.deleteById(id);
+    public ResponseEntity<Void> deleteDoctrine(@PathVariable Long id) {
+        doctrineService.delete(id);
         return ResponseEntity.ok().build();
     }
 
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_FC', 'ROLE_A38')")
-    @PutMapping("/{id}")
-    public ResponseEntity<?> updateDoctrine(@PathVariable Long id, @RequestBody CreateDoctrineDto dto) {
-        FleetDoctrine doc = doctrineRepo.findById(id).orElseThrow();
-
-        doc.setDoctrineName(dto.doctrineName() != null && !dto.doctrineName().isBlank() ? dto.doctrineName() : "Ungruppiert");
-        doc.setShipType(dto.shipType());
-        doc.setName(dto.name());
-        doc.setEftString(dto.eftString());
-
-        // SDE erneut abfragen, falls sich der Schiffstyp geändert hat
-        invTypeRepo.findByTypeNameIgnoreCase(dto.shipType()).ifPresent(invType -> {
-            doc.setShipTypeId(invType.getTypeId());
-        });
-
-        return ResponseEntity.ok(doctrineRepo.save(doc));
+    private static FleetDoctrineService.DoctrineCommand toCommand(CreateDoctrineDto dto) {
+        return new FleetDoctrineService.DoctrineCommand(
+                dto.doctrineName(), dto.shipType(), dto.name(), dto.eftString());
     }
 }

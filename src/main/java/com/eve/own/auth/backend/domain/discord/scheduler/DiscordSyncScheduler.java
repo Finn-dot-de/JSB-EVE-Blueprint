@@ -9,8 +9,10 @@ import com.eve.own.auth.backend.domain.discord.service.DiscordBotService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -29,8 +31,7 @@ public class DiscordSyncScheduler {
         this.discordBotService = discordBotService;
     }
 
-    // Läuft z.B. alle 30 Minuten
-    @Scheduled(fixedRate = 1800000)
+    @Scheduled(fixedRate = 1_800_000)
     public void syncDiscordRoles() {
         log.info("Starte Discord Role Sync...");
         List<DiscordConnection> connections = connectionRepo.findAll();
@@ -40,18 +41,34 @@ public class DiscordSyncScheduler {
                 Character character = characterRepo.findById(conn.getCharacterId()).orElse(null);
                 if (character == null) continue;
 
-                // Alle Discord-Rollen für diesen User ermitteln
+                Character mainChar = character.getMainCharacterId() != null
+                        ? characterRepo.findById(character.getMainCharacterId()).orElse(character)
+                        : character;
+                String expectedNickname = mainChar.getName();
+
                 List<String> expectedDiscordRoles = character.getRoles().stream()
-                        .map(authRole -> mappingRepo.findById(authRole))
-                        .filter(java.util.Optional::isPresent)
+                        .map(mappingRepo::findById)
+                        .filter(Optional::isPresent)
                         .map(mapping -> mapping.get().getDiscordRoleId())
                         .toList();
 
-                // Update über den Bot an Discord schicken
-                discordBotService.syncMemberRoles(conn.getDiscordUserId(), expectedDiscordRoles);
+                discordBotService.syncMemberData(conn.getDiscordUserId(), expectedDiscordRoles, expectedNickname);
 
+                Thread.sleep(200);
+
+            } catch (HttpClientErrorException.TooManyRequests e) {
+                log.warn("Rate Limit erreicht bei User {}. Pausiere für 5 Sekunden...", conn.getDiscordUserId());
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            } catch (HttpClientErrorException.Forbidden e) {
+                log.info("403 Forbidden bei User {}: Server-Owner oder Bot-Rolle zu niedrig.", conn.getDiscordUserId());
+            } catch (HttpClientErrorException.NotFound e) {
+                log.info("404 Not Found: User {} hat den Discord-Server verlassen.", conn.getDiscordUserId());
             } catch (Exception e) {
-                log.error("Fehler beim Sync für Discord User {}: {}", conn.getDiscordUserId(), e.getMessage());
+                log.error("Unerwarteter Fehler beim Sync für Discord User {}: {}", conn.getDiscordUserId(), e.getMessage());
             }
         }
         log.info("Discord Role Sync abgeschlossen.");

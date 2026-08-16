@@ -3,158 +3,593 @@
     <span>Fleet Management</span>
   </div>
 
-  <!-- TOP BAR: Erstellen Button für FCs -->
-  @if (isFleetCommander) {
-    <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
-      <button class="btn-primary" (click)="showCreateModal.set(true)">
-        <i class="fa-solid fa-plus"></i> Neue Flotte starten
+  <div class="tabs" style="margin-bottom: 1.5rem;">
+    <button class="tab-btn" [class.active]="activeTab() === 'FLEETS'" (click)="setTab('FLEETS')">
+      <i class="fa-solid fa-satellite-dish"></i> Aktive Flotten
+    </button>
+    @if (canSeeReadiness) {
+      <button class="tab-btn" [class.active]="activeTab() === 'DOCTRINES'" (click)="setTab('DOCTRINES')">
+        <i class="fa-solid fa-book"></i> Gespeicherte Doktrinen
       </button>
-    </div>
-  }
+      <button class="tab-btn" [class.active]="activeTab() === 'BOARD'" (click)="setTab('BOARD')">
+        <i class="fa-solid fa-user-check"></i> Readiness Board
+      </button>
+      <button class="tab-btn" [class.active]="activeTab() === 'SANDBOX'" (click)="setTab('SANDBOX')">
+        <i class="fa-solid fa-flask"></i> Sandbox
+      </button>
+    }
+  </div>
 
-  <!-- MODAL: Das Formular (nur sichtbar wenn showCreateModal = true) -->
-  @if (showCreateModal()) {
-    <div class="modal-overlay">
-      <div class="surface-panel create-form modal-content">
-        <h3 style="margin-top: 0;">Neue Flotte erfassen</h3>
-
-        <div class="form-group"><label>Flotten Name / Ziel</label><input type="text" [(ngModel)]="fleetName"></div>
-        <div class="form-group"><label>Doctrine</label><input type="text" [(ngModel)]="doctrine"></div>
-
-        <div class="form-group">
-          <label>Tracking Typ</label>
-          <select [(ngModel)]="trackingType" class="form-select" style="background-color: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.75rem; border-radius: 6px;">
-            <option value="LIVE">Live Tracking (ESI)</option>
-            <option value="LINK">Link Click (Manuell)</option>
-          </select>
-        </div>
-
-        @if (trackingType === 'LINK') {
-          <div class="form-group"><label>Link Gültigkeit (Minuten)</label><input type="number" [(ngModel)]="expiryMinutes"></div>
-        }
-
-        <div style="display: flex; gap: 10px; margin-top: 1rem;">
-          <button class="btn-secondary" style="flex: 1;" (click)="showCreateModal.set(false)">Abbrechen</button>
-          <button class="btn-primary" style="flex: 1;" (click)="createFleet()" [disabled]="isCreating() || !fleetName">
-            @if (isCreating()) { <i class="fa-solid fa-spinner fa-spin"></i> }
-            @else { FAT Erstellen }
-          </button>
-        </div>
+  <!-- ======================== FLOTTEN ANSICHT ======================== -->
+  @if (activeTab() === 'FLEETS') {
+    @if (isFleetCommander) {
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+        <button class="btn-primary" (click)="showCreateModal.set(true)">
+          <i class="fa-solid fa-plus"></i> Neue Flotte starten
+        </button>
       </div>
-    </div>
-  }
+    }
 
-  <!-- TABELLEN BEREICH -->
-  @if (recentFleets().length > 0) {
-    <div class="surface-panel" style="display: flex; gap: 20px;">
-
-      <!-- LINKE SEITE: Tabelle -->
-      <div style="flex: 1;">
-        <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary);">
-          <thead>
-          <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
-            <th style="padding: 10px;">FC</th>
-            <th style="padding: 10px;">Flotte</th>
-            <th style="padding: 10px;">Typ</th>
-            <th style="padding: 10px;">Start</th>
-            <th style="padding: 10px;">Aktionen</th>
-          </tr>
-          </thead>
-          <tbody>
-            @for (fleet of recentFleets(); track fleet.id) {
-              <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background-color 0.2s;" [style.background-color]="selectedFleetId() === fleet.id ? 'rgba(37, 99, 235, 0.1)' : 'transparent'">
-                <td style="padding: 10px;">{{ fleet.fcCharacterName }}</td>
-                <td style="padding: 10px;">{{ fleet.fleetName }}</td>
-                <td style="padding: 10px;">
-                  @if (fleet.trackingType === 'LIVE') {
-                    <span style="color: #00dfa2; font-size: 0.85rem; font-weight: 600;"><i class="fa-solid fa-satellite-dish"></i> LIVE</span>
-                  } @else {
-                    <span style="color: var(--accent-color); font-size: 0.85rem; font-weight: 600;"><i class="fa-solid fa-link"></i> LINK</span>
-                  }
-                </td>
-                <td style="padding: 10px;">{{ fleet.startTime | date:'HH:mm' }}</td>
-                <td style="padding: 10px; display: flex; gap: 8px;">
-                  <!-- Details Button -->
-                  <button class="btn-icon" (click)="selectFleet(fleet.id)" title="Details ansehen" style="background-color: rgba(255,255,255,0.05); padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color);">
-                    <i class="fa-solid fa-eye"></i>
-                  </button>
-
-                  <!-- X Button (Beenden) - Nur für den jeweiligen FC sichtbar, wenn Flotte noch aktiv -->
-                  @if (!fleet.endTime && fleet.fcCharacterId === authService.currentUser()?.characterId) {
-                    <button class="btn-icon btn-danger-hover" (click)="closeFleet(fleet.id)" title="FAT Beenden / ESI Tracking stoppen" style="background-color: rgba(255, 51, 102, 0.1); color: #ff3366; padding: 5px 10px; border-radius: 4px; border: 1px solid rgba(255, 51, 102, 0.3);">
-                      <i class="fa-solid fa-xmark"></i>
-                    </button>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-
-      <!-- RECHTE SEITE: Details zur ausgewählten Flotte -->
-      @if (selectedFleetObj(); as selected) {
-        <div style="flex: 0 0 350px; border-left: 1px solid var(--border-color); padding-left: 20px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h3 style="margin: 0; color: var(--text-primary);">Erfasste Piloten ({{ attendanceList().length }})</h3>
-            @if (!selected.endTime) {
-              <span style="color: #00dfa2; font-size: 0.85rem;"><i class="fa-solid fa-circle-dot fa-fade"></i> Aktiv</span>
-            } @else {
-              <span style="color: #ff3366; font-size: 0.85rem;"><i class="fa-solid fa-ban"></i> Beendet</span>
-            }
+    @if (showCreateModal()) {
+      <div class="modal-overlay">
+        <div class="surface-panel create-form modal-content">
+          <h3 style="margin-top: 0;">Neue Flotte erfassen</h3>
+          <div class="form-group"><label>Flotten Name / Ziel</label><input type="text" [(ngModel)]="fleetName"></div>
+          <div class="form-group"><label>Doctrine</label><input type="text" [(ngModel)]="doctrineInput"></div>
+          <div class="form-group">
+            <label>Tracking Typ</label>
+            <select [(ngModel)]="trackingType" class="form-select"
+                    style="background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.75rem; border-radius: 6px;">
+              <option value="LIVE">Live Tracking (ESI)</option>
+              <option value="LINK">Link Click (Manuell)</option>
+            </select>
           </div>
-
-          <!-- Manueller ESI Sync in den Details (nur für FC der aktiven Live-Flotte) -->
-          @if (!selected.endTime && selected.trackingType === 'LIVE' && selected.fcCharacterId === authService.currentUser()?.characterId) {
-            <button class="btn-secondary" style="width: 100%; margin-bottom: 1rem; border-color: #00dfa2; color: #00dfa2;" (click)="syncEsi(selected.id)" [disabled]="isSyncing()">
-              @if (isSyncing()) { <i class="fa-solid fa-spinner fa-spin"></i> }
-              @else { <i class="fa-solid fa-cloud-arrow-down"></i> Manueller ESI Sync }
+          @if (trackingType === 'LINK') {
+            <div class="form-group"><label>Link Gültigkeit (Minuten)</label><input type="number"
+                                                                                   [(ngModel)]="expiryMinutes"></div>
+          }
+          <div style="display: flex; gap: 10px; margin-top: 1rem;">
+            <button class="btn-secondary" style="flex: 1;" (click)="showCreateModal.set(false)">Abbrechen</button>
+            <button class="btn-primary" style="flex: 1; justify-content: center;" (click)="createFleet()"
+                    [disabled]="isCreating() || !fleetName">
+              @if (isCreating()) {
+                <i class="fa-solid fa-spinner fa-spin"></i>
+              } @else {
+                FAT Erstellen
+              }
             </button>
-          }
+          </div>
+        </div>
+      </div>
+    }
 
-          <!-- PAP Link anzeigen (nur für FC, wenn LINK-FAT) -->
-          @if (selected.trackingType === 'LINK' && selected.fcCharacterId === authService.currentUser()?.characterId) {
-            <div class="link-box" style="margin-bottom: 1.5rem; background-color: rgba(37, 99, 235, 0.1); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <span style="color: var(--accent-color); font-size: 0.8rem; text-transform: uppercase; display: block; margin-bottom: 4px;">
-                  PAP Link (Ablauf: {{ selected.linkExpiryTime | date:'HH:mm' }})
-                </span>
-                <code style="font-size: 0.75rem; word-break: break-all;">{{ getJoinUrlFor(selected.trackingCode) }}</code>
-              </div>
-              <button class="btn-icon" (click)="copyLinkToClipboard(selected.trackingCode)" title="Kopieren" style="margin-left: 10px;">
-                <i class="fa-solid fa-copy"></i>
-              </button>
-            </div>
-          }
-
-          <div style="max-height: 500px; overflow-y: auto;">
-            @for (member of attendanceList(); track member.id) {
-              <div style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                <img [src]="'https://images.evetech.net/characters/' + member.characterId + '/portrait?size=32'" style="border-radius: 4px; width: 32px;">
-                <div style="flex: 1;">
-                  <div style="font-size: 0.9rem; color: var(--text-primary);">{{ member.characterName }}</div>
-                  <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                    @if (member.shipTypeId) {
-                      {{ member.shipName || 'Unbekanntes Schiff' }}
+    @if (recentFleets().length > 0) {
+      <div class="surface-panel" style="display: flex; gap: 20px;">
+        <div style="flex: 1;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; color: var(--text-primary);">
+            <thead>
+            <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
+              <th style="padding: 10px;">FC</th>
+              <th style="padding: 10px;">Flotte</th>
+              <th style="padding: 10px;">Typ</th>
+              <th style="padding: 10px;">Start</th>
+              <th style="padding: 10px;">Aktionen</th>
+            </tr>
+            </thead>
+            <tbody>
+              @for (fleet of recentFleets(); track fleet.id) {
+                <tr style="border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent); transition: background-color 0.2s;"
+                    [style.background-color]="selectedFleetId() === fleet.id ? 'color-mix(in srgb, var(--accent-color) 10%, transparent)' : 'transparent'">
+                  <td style="padding: 10px;">{{ fleet.fcCharacterName }}</td>
+                  <td style="padding: 10px;">{{ fleet.fleetName }}</td>
+                  <td style="padding: 10px;">
+                    @if (fleet.trackingType === 'LIVE') {
+                      <span style="color: #00dfa2; font-size: 0.85rem; font-weight: 600;"><i
+                        class="fa-solid fa-satellite-dish"></i> LIVE</span>
                     } @else {
-                      <i>Über Link beigetreten</i>
+                      <span style="color: var(--accent-neutral); font-size: 0.85rem; font-weight: 600;"><i
+                        class="fa-solid fa-link"></i> LINK</span>
                     }
+                  </td>
+                  <td style="padding: 10px;">{{ fleet.startTime | date:'HH:mm' }}</td>
+                  <td style="padding: 10px; display: flex; gap: 8px;">
+                    <button class="btn-icon" (click)="selectFleet(fleet.id)" title="Details ansehen"
+                            style="background-color: color-mix(in srgb, var(--text-primary) 5%, transparent); padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <i class="fa-solid fa-eye"></i>
+                    </button>
+                    @if (!fleet.endTime && fleet.fcCharacterId === authService.currentUser()?.characterId) {
+                      <button class="btn-icon btn-danger-hover" (click)="closeFleet(fleet.id)"
+                              title="FAT Beenden / ESI Tracking stoppen"
+                              style="background-color: rgba(255, 51, 102, 0.1); color: #ff3366; padding: 5px 10px; border-radius: 4px; border: 1px solid rgba(255, 51, 102, 0.3);">
+                        <i class="fa-solid fa-xmark"></i>
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (selectedFleetObj(); as selected) {
+          <div style="flex: 0 0 350px; border-left: 1px solid var(--border-color); padding-left: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 style="margin: 0; color: var(--text-primary);">Erfasste Piloten ({{ attendanceList().length }})</h3>
+              @if (!selected.endTime) {
+                <span style="color: #00dfa2; font-size: 0.85rem;"><i
+                  class="fa-solid fa-circle-dot fa-fade"></i> Aktiv</span>
+              } @else {
+                <span style="color: #ff3366; font-size: 0.85rem;"><i class="fa-solid fa-ban"></i> Beendet</span>
+              }
+            </div>
+
+            @if (!selected.endTime && selected.trackingType === 'LIVE' && selected.fcCharacterId === authService.currentUser()?.characterId) {
+              <button class="btn-secondary"
+                      style="width: 100%; margin-bottom: 1rem; border-color: #00dfa2; color: #00dfa2;"
+                      (click)="syncEsi(selected.id)" [disabled]="isSyncing()">
+                @if (isSyncing()) {
+                  <i class="fa-solid fa-spinner fa-spin"></i>
+                } @else {
+                  <i class="fa-solid fa-cloud-arrow-down"></i> Manueller ESI Sync
+                }
+              </button>
+            }
+
+            @if (selected.trackingType === 'LINK' && selected.fcCharacterId === authService.currentUser()?.characterId) {
+              <div class="link-box"
+                   style="margin-bottom: 1.5rem; background-color: color-mix(in srgb, var(--accent-color) 10%, transparent); padding: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span
+                    style="color: var(--accent-color); font-size: 0.8rem; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                    PAP Link (Ablauf: {{ selected.linkExpiryTime | date:'HH:mm' }})
+                  </span>
+                  <code
+                    style="font-size: 0.75rem; word-break: break-all;">{{ getJoinUrlFor(selected.trackingCode) }}</code>
+                </div>
+                <button class="btn-icon" (click)="copyLinkToClipboard(selected.trackingCode)" title="Kopieren"
+                        style="margin-left: 10px;">
+                  <i class="fa-solid fa-copy"></i>
+                </button>
+              </div>
+            }
+
+            <div style="max-height: 500px; overflow-y: auto;">
+              @for (member of attendanceList(); track member.id) {
+                <div
+                  style="display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);">
+                  <img [src]="portrait(member.characterId, 32)"
+                       style="border-radius: 4px; width: 32px;">
+                  <div style="flex: 1;">
+                    <div style="font-size: 0.9rem; color: var(--text-primary);">{{ member.characterName }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                      @if (member.shipTypeId) {
+                        {{ member.shipName || 'Unbekanntes Schiff' }}
+                      } @else {
+                        <i>Über Link beigetreten</i>
+                      }
+                    </div>
+                  </div>
+                  <div style="font-size: 0.75rem; color: var(--text-secondary);">{{ member.joinTime | date:'HH:mm' }}
                   </div>
                 </div>
-                <div style="font-size: 0.75rem; color: var(--text-secondary);">{{ member.joinTime | date:'HH:mm' }}</div>
-              </div>
-            }
-            @if (attendanceList().length === 0) {
-              <div style="text-align: center; padding: 20px; color: var(--text-secondary);">Noch keine Piloten erfasst.</div>
-            }
+              }
+              @if (attendanceList().length === 0) {
+                <div style="text-align: center; padding: 20px; color: var(--text-secondary);">Noch keine Piloten
+                  erfasst.
+                </div>
+              }
+            </div>
           </div>
+        }
+      </div>
+    } @else {
+      <div style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+        <i class="fa-solid fa-bed fa-3x" style="margin-bottom: 1rem; opacity: 0.5;"></i>
+        <p>In diesem Monat gab es noch keine Flottenaktivität.</p>
+      </div>
+    }
+  }
+
+  <!-- ======================== GESPEICHERTE DOKTRINEN ======================== -->
+  @if (activeTab() === 'DOCTRINES' && canSeeReadiness) {
+    <app-doctrines />
+  }
+
+  <!-- ======================== BOARD ======================== -->
+  @if (activeTab() === 'BOARD' && canSeeReadiness) {
+    <ng-container [ngTemplateOutlet]="doctrineToolbar"
+                  [ngTemplateOutletContext]="{ hint: 'Das ultimative Readiness Board: Kombiniert die Account-weiten Daten aus Hangar & Skills.' }"></ng-container>
+
+    @if (!selectedDoctrine) {
+      <ng-container [ngTemplateOutlet]="noDoctrineSelected"></ng-container>
+    } @else if (loadingBoard()) {
+      <ng-container [ngTemplateOutlet]="spinner"></ng-container>
+    } @else if (board(); as data) {
+      @if (data.fits.length === 0) {
+        <ng-container [ngTemplateOutlet]="emptyDoctrine"></ng-container>
+      } @else {
+        <div class="kpi-grid" style="margin-bottom: 1.5rem;">
+          <div class="kpi-card accent">
+            <div class="kpi-label">Accounts insgesamt</div>
+            <div class="kpi-value">{{ data.accountsTotal }}</div>
+            <div class="kpi-sub">Mains inkl. ihrer Alts</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Geprüfte Fittings</div>
+            <div class="kpi-value">{{ data.fitsChecked }}</div>
+            <div class="kpi-sub">aus der Doktrin "{{ data.doctrineName }}"</div>
+          </div>
+        </div>
+
+        @for (fit of data.fits; track fitKey(fit)) {
+          <ng-container [ngTemplateOutlet]="readinessFitPanel"
+                        [ngTemplateOutletContext]="{ $implicit: fit, forceOpen: false }"></ng-container>
+        }
+      }
+    }
+  }
+
+  <!-- ======================== SANDBOX ======================== -->
+  @if (activeTab() === 'SANDBOX' && canSeeReadiness) {
+    <div class="surface-panel sandbox-input-panel">
+      <div class="panel-heading">
+        <i class="fa-solid fa-flask"></i>
+        <div>
+          <h3>EFT Sandbox &mdash; "What-If"</h3>
+          <p>Fitting einfügen und sofort auswerten. Es wird <strong>nichts</strong> gespeichert.</p>
+        </div>
+      </div>
+
+      <textarea
+        [ngModel]="sandboxInput()"
+        (ngModelChange)="sandboxInput.set($event)"
+        rows="10"
+        spellcheck="false"
+        placeholder="[Cerberus, Quick Check]&#10;Damage Control II&#10;Ballistic Control System II&#10;&#10;Large Shield Extender II&#10;&#10;Heavy Assault Missile Launcher II, Scourge Rage Heavy Assault Missile&#10;&#10;Medium Core Defense Field Extender II&#10;&#10;Hobgoblin II x5"
+        class="eft-textarea"></textarea>
+
+      <div class="sandbox-actions">
+        <button class="btn-secondary" (click)="clearSandbox()" [disabled]="!sandboxInput()">
+          <i class="fa-solid fa-eraser"></i> Leeren
+        </button>
+        <button class="btn-primary" (click)="runSandbox()" [disabled]="loadingSandbox() || !sandboxInput().trim()">
+          @if (loadingSandbox()) {
+            <i class="fa-solid fa-spinner fa-spin"></i> Werte aus...
+          } @else {
+            <i class="fa-solid fa-bolt"></i> Fitting prüfen
+          }
+        </button>
+      </div>
+
+      @if (sandboxError(); as error) {
+        <div class="inline-error">
+          <i class="fa-solid fa-triangle-exclamation"></i> {{ error }}
         </div>
       }
     </div>
-  } @else {
-    <div style="text-align: center; padding: 3rem; color: var(--text-secondary);">
-      <i class="fa-solid fa-bed fa-3x" style="margin-bottom: 1rem; opacity: 0.5;"></i>
-      <p>In diesem Monat gab es noch keine Flottenaktivität.</p>
-    </div>
+
+    @if (sandboxResult(); as result) {
+      <!-- Geparstes Fitting -->
+      <div class="surface-panel fit-panel">
+        <div class="fit-header">
+          <div class="fit-render">
+            <img [src]="result.fit.renderUrl" (error)="onImgError($event)" [alt]="result.fit.shipTypeName">
+          </div>
+          <div class="fit-title">
+            <h2>{{ result.fit.fitName || 'Unbenanntes Fitting' }}</h2>
+            <span class="hull-tag">{{ result.fit.shipTypeName }}</span>
+            <div class="fit-meta">{{ result.fit.moduleCount }} Module &amp; Ladung erkannt</div>
+          </div>
+          <button class="btn-secondary copy-fit" (click)="copyFitToClipboard(sandboxInput())">
+            <i class="fa-solid fa-file-import"></i> Ingame kopieren
+          </button>
+        </div>
+
+        @if (result.fit.unresolved.length > 0) {
+          <div class="inline-warning">
+            <i class="fa-solid fa-circle-question"></i>
+            Nicht erkannt (Tippfehler oder zu neu für die SDE):
+            <strong>{{ result.fit.unresolved.join(', ') }}</strong>
+          </div>
+        }
+
+        <div class="slot-grid">
+          @for (group of result.fit.groups; track group.name) {
+            <div class="slot-group">
+              <div class="slot-group-title">
+                <i [class]="group.icon"></i> {{ group.name }}
+                <span class="slot-count">{{ group.moduleCount }}</span>
+              </div>
+              <ul>
+                @for (mod of group.modules; track mod.typeId) {
+                  <li>
+                    <img [src]="mod.iconUrl" (error)="onImgError($event)" [alt]="mod.typeName" loading="lazy">
+                    <span class="mod-name">
+                      {{ mod.typeName }}
+                      @if (mod.chargeName) {
+                        <span class="mod-charge">+ {{ mod.chargeName }}</span>
+                      }
+                    </span>
+                    @if (mod.quantity > 1) {
+                      <span class="mod-qty">&times; {{ mod.quantity }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Sofort-Auswertung fuer genau dieses Fitting, Rumpf und Module -->
+      <div class="sandbox-filter">
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" placeholder="Pilot oder Account filtern..."
+                 [ngModel]="memberFilter()" (ngModelChange)="memberFilter.set($event)">
+        </div>
+      </div>
+
+      <ng-container [ngTemplateOutlet]="readinessFitPanel"
+                    [ngTemplateOutletContext]="{ $implicit: result.board, forceOpen: true }"></ng-container>
+    }
   }
 </div>
+
+<!-- =========================================================
+     WIEDERVERWENDBARE TEMPLATES
+     ========================================================= -->
+
+<!-- Doktrin-Auswahl + Pilotenfilter -->
+<ng-template #doctrineToolbar let-hint="hint">
+  <div class="surface-panel toolbar">
+    <div class="form-group toolbar-select">
+      <label>Doktrin</label>
+      <select [(ngModel)]="selectedDoctrine" (ngModelChange)="onDoctrineChange()">
+        <option [ngValue]="null">-- Bitte wählen --</option>
+        @for (d of doctrineNames(); track d) {
+          <option [ngValue]="d">{{ d }}</option>
+        }
+      </select>
+    </div>
+    <div class="search-box">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input type="text" placeholder="Pilot oder Account filtern..."
+             [ngModel]="memberFilter()" (ngModelChange)="memberFilter.set($event)">
+    </div>
+    <p class="toolbar-hint">{{ hint }}</p>
+  </div>
+</ng-template>
+
+<ng-template #spinner>
+  <div style="display: flex; justify-content: center; padding: 4rem;">
+    <i class="fa-solid fa-spinner fa-spin fa-3x" style="color: var(--accent-color);"></i>
+  </div>
+</ng-template>
+
+<ng-template #noDoctrineSelected>
+  <div class="empty-state">
+    <i class="fa-solid fa-hand-pointer fa-3x"></i>
+    <p>Keine Doktrin ausgewählt.</p>
+    <span>Wähle oben eine Doktrin, um die Auswertung zu starten.</span>
+  </div>
+</ng-template>
+
+<ng-template #emptyDoctrine>
+  <div class="empty-state">
+    <i class="fa-solid fa-inbox fa-3x"></i>
+    <p>Für diese Doktrin sind keine Schiffshüllen hinterlegt.</p>
+    <span>Fittings lassen sich im Tab "Gespeicherte Doktrinen" anlegen.</span>
+  </div>
+</ng-template>
+
+
+<!-- ---------- DIE KOMBINIERTE MATRIX (Hangar + Skills je Fit) ---------- -->
+<ng-template #readinessFitPanel let-fit let-forceOpen="forceOpen">
+  <div class="surface-panel readiness-panel">
+    <button class="hull-header" (click)="toggleFit(fitKey(fit))" [disabled]="forceOpen">
+      <img class="hull-icon" [src]="fit.iconUrl" (error)="onImgError($event)" [alt]="fit.typeName" loading="lazy">
+      <div class="hull-title">
+        <div class="hull-name">
+          {{ fit.fitName || fit.typeName }}
+          @if (fit.fitName) { <span class="hull-tag">{{ fit.typeName }}</span> }
+        </div>
+        <div class="hull-sub">
+          <i class="fa-solid fa-graduation-cap"></i>
+          Benötigt {{ fit.requiredSkills.length }} Skills
+          @if (fit.moduleCount > 0) {
+            <span class="sub-detail">({{ fit.hullSkillsRequired }} für den Rumpf, Rest für die Module)</span>
+          }
+          &middot;
+          <i class="fa-solid fa-microchip" style="margin-left: 8px"></i> {{ fit.moduleCount }} Module &middot;
+          <i class="fa-solid fa-warehouse" style="margin-left: 8px"></i> {{ fit.hullsTotal }} in der Corp
+          @if (fit.planNames.length > 0) {
+            &middot;
+            <i class="fa-solid fa-graduation-cap" style="margin-left: 8px"></i>
+            {{ fit.planNames.join(', ') }}
+            <span class="sub-detail">(Pflicht)</span>
+          }
+        </div>
+      </div>
+      <div class="hull-coverage">
+        <div class="coverage-numbers">
+          <strong [class]="coverageClass(fit.coverage)">{{ fit.accountsReady }}</strong>
+          <span>/ {{ fit.accountsTotal }} Accounts Ready</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" [class]="coverageClass(fit.coverage)"
+               [style.width]="coverageWidth(fit.coverage)"></div>
+        </div>
+      </div>
+      <span class="coverage-pct" [class]="coverageClass(fit.coverage)">{{ percent(fit.coverage) }}</span>
+      @if (!forceOpen) {
+        <i class="fa-solid fa-chevron-down chevron" [class.open]="isFitExpanded(fitKey(fit))"></i>
+      }
+    </button>
+
+    @if (forceOpen || isFitExpanded(fitKey(fit))) {
+      @if (fit.unresolved.length > 0) {
+        <div class="inline-warning">
+          <i class="fa-solid fa-circle-question"></i>
+          Ungeprüft geblieben:
+          <strong>{{ fit.unresolved.join(', ') }}</strong>
+        </div>
+      }
+
+      <!-- Die benötigten Skills oben als Header anzeigen -->
+      <div class="required-skills">
+        <span class="required-label">Benötigt:</span>
+        @for (s of fit.requiredSkills; track s.skillTypeId) {
+          <span class="skill-pill">{{ s.skillName }} <b>{{ s.level }}</b></span>
+        }
+      </div>
+
+      @if (fit.planSkills.length > 0) {
+        <!-- Ebenfalls Pflicht, nur aus anderer Quelle: getrennt gezeigt, damit
+             erkennbar bleibt, was aus dem Fitting und was aus dem Plan kommt. -->
+        <div class="required-skills">
+          <span class="required-label">Skillplan:</span>
+          @for (s of fit.planSkills; track s.skillTypeId) {
+            <span class="skill-pill">{{ s.skillName }} <b>{{ s.level }}</b></span>
+          }
+        </div>
+      }
+
+      <div class="split-lists">
+        <!-- LINKE SPALTE: BEREIT -->
+        <div class="list-column ready">
+          <div class="column-head">
+            <i class="fa-solid fa-circle-check"></i> Einsatzbereit
+            <span class="count">{{ fit.ready.length }}</span>
+          </div>
+          @for (acc of filterAccounts(fit.ready); track acc.mainId) {
+            <ng-container [ngTemplateOutlet]="accountRow"
+                          [ngTemplateOutletContext]="{ acc: acc, fitKey: fitKey(fit) }"></ng-container>
+          }
+          @if (filterAccounts(fit.ready).length === 0) {
+            <div class="column-empty">Niemand gefunden.</div>
+          }
+        </div>
+
+        <!-- RECHTE SPALTE: NICHT BEREIT -->
+        <div class="list-column missing">
+          <div class="column-head">
+            <i class="fa-solid fa-circle-xmark"></i> Nicht bereit
+            <span class="count">{{ fit.notReady.length }}</span>
+          </div>
+          @for (acc of filterAccounts(fit.notReady); track acc.mainId) {
+            <ng-container [ngTemplateOutlet]="accountRow"
+                          [ngTemplateOutletContext]="{ acc: acc, fitKey: fitKey(fit) }"></ng-container>
+          }
+          @if (filterAccounts(fit.notReady).length === 0) {
+            <div class="column-empty">Niemand gefunden.</div>
+          }
+        </div>
+      </div>
+    }
+  </div>
+</ng-template>
+
+<!-- Ein einzelner Account im Board (Kombiniert Hangar & Skills) -->
+<ng-template #accountRow let-acc="acc" let-fitKey="fitKey">
+  <div class="account-row" [class.open]="isAccountExpanded(fitKey, acc.mainId)">
+    <button class="account-head" (click)="toggleAccount(fitKey, acc.mainId)">
+      <img class="portrait" [src]="acc.portraitUrl" (error)="onPortraitError($event)" [alt]="acc.mainName" loading="lazy">
+      <div class="account-meta">
+        <div class="account-name">{{ acc.mainName }}</div>
+        <div class="account-sub">{{ acc.corporationName || 'Unbekannte Corp' }}</div>
+      </div>
+
+      <div class="status-badges">
+        <!-- HANGAR BADGE -->
+        @if (acc.hasShip) {
+          <span class="qty-badge ready"><i class="fa-solid fa-warehouse"></i> {{ acc.owned }}&times;</span>
+        } @else {
+          <span class="qty-badge missing" title="Nicht im Hangar"><i class="fa-solid fa-warehouse"></i> Fehlt</span>
+        }
+
+        <!-- SKILL BADGE -->
+        @if (!acc.skillDataAvailable) {
+          <span class="qty-badge unknown" title="Keine Skilldaten"><i class="fa-solid fa-graduation-cap"></i> ?</span>
+        } @else if (acc.hasSkills) {
+          <span class="qty-badge ready" title="Kann geflogen werden"><i class="fa-solid fa-graduation-cap"></i> OK</span>
+        } @else {
+          <span class="qty-badge missing" title="Fehlende Skills"><i class="fa-solid fa-graduation-cap"></i> {{ acc.bestSkillsMet }}/{{ acc.skillsRequired }}</span>
+        }
+
+        <!-- Ohne diesen Hinweis stünden hier zwei grüne Abzeichen an einem
+             Account, der trotzdem in der Spalte "Nicht bereit" steht. -->
+        @if (acc.hasShip && acc.hasSkills && !acc.isReady) {
+          <span class="qty-badge missing"
+                title="Das Schiff liegt bei einem Charakter, die Skills hat ein anderer">
+            <i class="fa-solid fa-user-slash"></i> Getrennt
+          </span>
+        }
+      </div>
+
+      <i class="fa-solid fa-chevron-down chevron"></i>
+    </button>
+
+    @if (isAccountExpanded(fitKey, acc.mainId)) {
+      <div class="char-list">
+        @for (c of acc.characters; track c.characterId) {
+          <div class="char-row skill" [class.has]="c.owned > 0 && c.canFly">
+            <img class="portrait sm" [src]="c.portraitUrl" (error)="onPortraitError($event)" [alt]="c.characterName" loading="lazy">
+            <div class="char-body">
+              <span class="char-name">
+                {{ c.characterName }}
+                @if (c.main) { <span class="tag tag-main">MAIN</span> }
+              </span>
+              <div class="char-status-row">
+                <span [class]="c.owned > 0 ? 'text-ready' : 'text-missing'">
+                  <i class="fa-solid fa-warehouse"></i> {{ c.owned > 0 ? c.owned + 'x im Hangar' : 'Nicht im Hangar' }}
+                </span>
+                <span style="margin: 0 8px; color: var(--border-color)">|</span>
+                <span [class]="c.canFly ? 'text-ready' : (!c.skillDataAvailable ? 'text-unknown' : 'text-missing')">
+                  <i class="fa-solid fa-graduation-cap"></i>
+                  @if (!c.skillDataAvailable) { Keine Skilldaten }
+                  @else if (c.canFly) { Fliegt das komplette Fit }
+                  @else if (c.canFlyHull) {
+                    <!-- Wichtiger Unterschied: das Schiff geht, nur Module fehlen -
+                         das ist eine Frage von Tagen, kein Neuanfang. -->
+                    Rumpf ok &ndash; {{ c.missingSkills.length }} Modul-Skills fehlen
+                  }
+                  @else { {{ c.skillsMet }}/{{ c.skillsRequired }} Skills (Fehlt: {{ c.missingSkills.length }}) }
+                </span>
+              </div>
+              @if (!c.canFly && c.missingSkills.length > 0) {
+                <div class="missing-skills">
+                  @for (m of c.missingSkills; track m.skillTypeId) {
+                    <span class="skill-pill missing" [title]="'Aktuell Level ' + m.currentLevel">
+                      {{ m.skillName }} <b>{{ m.currentLevel }}/{{ m.requiredLevel }}</b>
+                    </span>
+                  }
+                </div>
+              }
+
+              @if (hasMissingSkills(c)) {
+                <button class="btn-secondary copy-skills" (click)="copyMissingSkills(c)"
+                        title="Als Skillplan zum Einfügen in EVE">
+                  <i class="fa-solid fa-copy"></i> Fehlende Skills kopieren
+                </button>
+              }
+
+              <!-- Getrennt gezeigt, damit die Herkunft erkennbar bleibt -
+                   fuer das Urteil zaehlen beide Listen gleich. -->
+              @if (c.missingPlanSkills.length > 0) {
+                <div class="missing-skills">
+                  <span class="plan-gap-label">Aus dem Skillplan:</span>
+                  @for (m of c.missingPlanSkills; track m.skillTypeId) {
+                    <span class="skill-pill missing" [title]="'Aktuell Level ' + m.currentLevel">
+                      {{ m.skillName }} <b>{{ m.currentLevel }}/{{ m.requiredLevel }}</b>
+                    </span>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</ng-template>

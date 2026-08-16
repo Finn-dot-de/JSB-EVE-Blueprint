@@ -1,5 +1,8 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/auth/auth.guard';
+import { authGuard, roleGuard } from './core/auth/auth.guard';
+
+/** Wer die Rechteverwaltung öffnen darf - dieselbe Grenze wie im Server. */
+const LEADERSHIP_OR_IT = ['ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN'];
 
 export const routes: Routes = [
   { path: '', redirectTo: 'home', pathMatch: 'full' },
@@ -14,7 +17,7 @@ export const routes: Routes = [
   },
   {
     path: 'groups/rights',
-    canActivate: [authGuard],
+    canActivate: [roleGuard(LEADERSHIP_OR_IT)],
     loadComponent: () => import('./core/components/roles/roles.component').then(m => m.RolesComponent)
   },
   {
@@ -48,8 +51,35 @@ export const routes: Routes = [
     loadComponent: () => import('./core/components/discord-admin/discord-admin.component').then(m => m.DiscordAdminComponent)
   },
   {
+    // Bestimmt, was alle im Menü sehen - deshalb hinter demselben Wächter
+    // wie die Rechteverwaltung.
+    path: 'admin/navigation',
+    canActivate: [roleGuard(LEADERSHIP_OR_IT)],
+    loadComponent: () => import('./core/components/navigation-admin/navigation-admin.component').then(m => m.NavigationAdminComponent)
+  },
+  {
     path: 'fleet/doctrines',
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/doctrines/doctrines.component').then(m => m.DoctrinesComponent)
+  },
+  {
+    path: 'corp/mining',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/mining-tax/mining-tax.component').then(m => m.MiningTaxComponent)
+  },
+  {
+    path: 'corp/assets',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/asset-audit/asset-audit.component').then(m => m.AssetAuditComponent)
+  },
+  {
+    path: 'my/assets',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/my-assets/my-assets.component').then(m => m.MyAssetsComponent)
+  },
+  {
+    path: 'industry',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/industry/industry.component').then(m => m.IndustryComponent)
   },
 ];

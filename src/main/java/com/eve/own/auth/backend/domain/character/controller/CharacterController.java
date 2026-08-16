@@ -1,152 +1,88 @@
 package com.eve.own.auth.backend.domain.character.controller;
 
-import com.eve.own.auth.backend.domain.auth.service.AuthService;
-import com.eve.own.auth.backend.domain.character.entity.Character;
-import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
-import com.eve.own.auth.backend.esi.EsiService;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
+import com.eve.own.auth.backend.common.AccessRules;
+import com.eve.own.auth.backend.common.CurrentUser;
+import com.eve.own.auth.backend.domain.character.dto.CharacterDtos;
+import com.eve.own.auth.backend.domain.character.service.AccountService;
+import com.eve.own.auth.backend.domain.character.service.CorporationStatsService;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-
+/** Die Endpunkte rund um Charaktere, Accounts und Corp-Mitgliedschaft. */
 @RestController
 @RequestMapping("/api/characters")
 public class CharacterController {
 
-    private final CharacterRepository characterRepo;
-    private final EsiService esiService;
-    private final AuthService authService;
-    private final Long mainCorpId;
-    private final String altCorpIdsStr;
+    private final AccountService accountService;
+    private final CorporationStatsService corporationStatsService;
+    private final com.eve.own.auth.backend.domain.auth.service.TokenHealthService tokenHealth;
+    private final com.eve.own.auth.backend.domain.assets.service.MyAssetService assetService;
 
-    // Variablen  ber den Konstruktor injizieren
-    public CharacterController(CharacterRepository characterRepo,
-                               EsiService esiService,
-                               AuthService authService,
-                               @Value("${eve.sso.allowed-corp-id}") Long mainCorpId,
-                               @Value("${eve.alt-corp-ids:}") String altCorpIdsStr) {
-        this.characterRepo = characterRepo;
-        this.esiService = esiService;
-        this.authService = authService;
-        this.mainCorpId = mainCorpId;
-        this.altCorpIdsStr = altCorpIdsStr;
+    public CharacterController(AccountService accountService,
+                               CorporationStatsService corporationStatsService,
+                               com.eve.own.auth.backend.domain.auth.service.TokenHealthService tokenHealth,
+                               com.eve.own.auth.backend.domain.assets.service.MyAssetService assetService) {
+        this.accountService = accountService;
+        this.corporationStatsService = corporationStatsService;
+        this.tokenHealth = tokenHealth;
+        this.assetService = assetService;
     }
 
-    public record AltDto(Long id, String name, String portraitUrl, boolean isMain) {}
-
-    public record CorpStatsDto(Long corpId, String corpName, int totalEsiMembers, int registeredMains, int registeredAlts, int totalRegisteredChars) {}
-
-    @GetMapping("/alts")
-    public ResponseEntity<List<AltDto>> getMyCharacters() {
-        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
-        assert charId != null;
-        Character reqChar = characterRepo.findById(charId).orElseThrow();
-        Long mainId = reqChar.getMainCharacterId() != null ? reqChar.getMainCharacterId() : reqChar.getId();
-
-        List<AltDto> alts = characterRepo.findByMainCharacterId(mainId).stream()
-                .map(c -> new AltDto(
-                        c.getId(),
-                        c.getName(),
-                        String.format("https://images.evetech.net/characters/%d/portrait?size=64", c.getId()),
-                        c.getId().equals(mainId)
-                )).toList();
-
-        return ResponseEntity.ok(alts);
-    }
-
-    @PreAuthorize("hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN')")
-    @GetMapping("/corp-stats")
-    public ResponseEntity<?> getCorporationStats() {
-        Long charId = (Long) Objects.requireNonNull(SecurityContextHolder.getContext().getAuthentication()).getPrincipal();
-        assert charId != null;
-        Character reqChar = characterRepo.findById(charId).orElseThrow();
-
-        // 1. Liste aller zu prüfenden Corps aufbauen
-        List<Long> corpIdsToTrack = new ArrayList<>();
-        corpIdsToTrack.add(mainCorpId);
-        if (altCorpIdsStr != null && !altCorpIdsStr.isBlank()) {
-            Arrays.stream(altCorpIdsStr.split(","))
-                    .map(String::trim)
-                    .map(Long::valueOf)
-                    .forEach(corpIdsToTrack::add);
-        }
-
+    /**
+     * Welche eigenen Charaktere sich neu anmelden muessen.
+     *
+     * <p>Nur die des eigenen Kontos - fremde Anmeldeprobleme gehen niemanden
+     * etwas an. Ohne diesen Endpunkt lebte die Information nur im Serverlog,
+     * und der Spieler erfuhr erst dann davon, dass sein Charakter draussen ist,
+     * wenn dessen Daten unbemerkt veralteten.</p>
+     */
+    @GetMapping("/token-health")
+    public List<CharacterDtos.TokenHealthDto> tokenHealth() {
+        java.util.Set<Long> eigene;
         try {
-            String token = authService.getValidAccessToken(reqChar);
-            List<CorpStatsDto> resultList = new ArrayList<>();
-
-            for (Long cId : corpIdsToTrack) {
-                int totalEsiMembers = 0;
-                String corpName = "Unknown Corp (" + cId + ")";
-
-                // 2a. ZUERST die Charaktere aus der DB laden
-                List<Character> corpCharsInDb = characterRepo.findByCorporationId(cId);
-
-                try {
-                    // Den öffentlichen Corp-Namen kann jeder abfragen
-                    var corpInfo = esiService.getCorporationInfo(cId);
-                    if (corpInfo != null && corpInfo.name() != null) {
-                        corpName = corpInfo.name();
-                    }
-
-                    // 2b. Den richtigen ESI-Türöffner (Token) für diese Corp finden!
-                    // ESI verlangt für die Memberliste meistens einen Director. Wir suchen bevorzugt danach.
-                    Character tokenProvider = corpCharsInDb.stream()
-                            .filter(c -> c.getRoles().contains("ROLE_DIRECTOR") || c.getRoles().contains("ROLE_CEO"))
-                            .findFirst()
-                            .orElse(corpCharsInDb.stream().findFirst().orElse(null));
-
-                    // Wenn wir jemanden aus dieser Corp haben, fragen wir mit SEINEM Token bei ESI an
-                    if (tokenProvider != null) {
-                        String specificCorpToken = authService.getValidAccessToken(tokenProvider);
-                        var esiMembers = esiService.getCorporationMembers(cId, specificCorpToken).data();
-                        if (esiMembers != null) {
-                            totalEsiMembers = esiMembers.length;
-                        }
-                    } else {
-                        System.err.println("Wir haben noch niemanden aus Corp " + cId + " im Auth, der die Memberliste lesen darf.");
-                    }
-
-                } catch (Exception e) {
-                    System.err.println("ESI Daten für Corp " + cId + " konnten nicht geladen werden: " + e.getMessage());
-                }
-
-                // 2c. Mathematik für die Statistik: Mains gibt es NUR in der Hauptcorp!
-                long registeredMains = 0;
-                int totalRegisteredChars = corpCharsInDb.size();
-                int registeredAlts = 0;
-
-                if (cId.equals(mainCorpId)) {
-                    // Hauptcorp: Wir zählen die einzigartigen Mains wie gewohnt
-                    registeredMains = corpCharsInDb.stream()
-                            .map(c -> c.getMainCharacterId() != null ? c.getMainCharacterId() : c.getId())
-                            .distinct()
-                            .count();
-                    registeredAlts = totalRegisteredChars - (int) registeredMains;
-                } else {
-                    // Alt-Corps: Hier gibt es keine Mains, jeder erfasste Charakter ist ein Alt!
-                    registeredMains = 0;
-                    registeredAlts = totalRegisteredChars;
-                }
-
-                // 2d. Fertige Statistik für diese Corp zur Liste hinzufügen
-                resultList.add(new CorpStatsDto(cId, corpName, totalEsiMembers, (int) registeredMains, registeredAlts, totalRegisteredChars));
-            }
-
-            return ResponseEntity.ok(resultList);
-
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(java.util.Map.of("message", "Fehler beim Laden der ESI Corp-Daten."));
+            eigene = assetService.ownCharacterIds(
+                    assetService.resolveMainId(CurrentUser.characterId()));
+        } catch (IllegalStateException e) {
+            return List.of();
         }
+        return tokenHealth.invalidTokens().stream()
+                .filter(c -> eigene.contains(c.getId()))
+                .map(c -> new CharacterDtos.TokenHealthDto(
+                        c.getId(), c.getName(),
+                        c.getTokenInvalidSince() == null ? null : c.getTokenInvalidSince().toString(),
+                        c.getTokenInvalidReason()))
+                .toList();
+    }
+
+    /** Die eigenen Charaktere, Main und Alts. */
+    @GetMapping("/alts")
+    public ResponseEntity<List<CharacterDtos.CharacterRefDto>> getMyCharacters() {
+        return ResponseEntity.ok(accountService.charactersOfAccount(CurrentUser.characterId()));
+    }
+
+    /** Registrierte und nicht registrierte Mitglieder je betreuter Corporation. */
+    @PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
+    @GetMapping("/corp-stats")
+    public ResponseEntity<List<CharacterDtos.CorpStatsDto>> getCorporationStats() {
+        return ResponseEntity.ok(corporationStatsService.statsForAllCorporations());
+    }
+
+    /** Bestimmt einen anderen eigenen Charakter zum Main. */
+    @PostMapping("/set-main/{newMainId}")
+    public ResponseEntity<Void> setMainCharacter(@PathVariable Long newMainId) {
+        accountService.changeMainCharacter(CurrentUser.characterId(), newMainId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
+    @GetMapping("/admin/accounts")
+    public ResponseEntity<List<CharacterDtos.AdminAccountDto>> getAllAccounts() {
+        return ResponseEntity.ok(accountService.allAccounts());
     }
 }

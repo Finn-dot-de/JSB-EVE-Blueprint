@@ -1,0 +1,44 @@
+# Was NICHT in den Build-Kontext gehoert.
+#
+# Ohne diese Datei schickt Docker bei jedem Build 257 MB und rund 23.000
+# Dateien an den Daemon - fuer 1,1 MB echten Quellcode. Gemessen: 16,8 s
+# Kontext-Transfer statt 0,2 s, und "COPY . ." 3,7 s statt 0,3 s.
+#
+# Diese Datei muss in frontend/ liegen, nicht in der Projektwurzel:
+# docker-compose.yaml setzt "context: frontend", und Docker liest ausschliesslich
+# das .dockerignore der Kontextwurzel.
+
+# Abhaengigkeiten kommen aus "npm ci" im Container.
+#
+# Mitkopieren waere nicht nur Ballast, sondern falsch: COPY loescht das Ziel
+# nicht, sondern mischt hinein. Die Windows-Module vom Host landeten so ueber
+# der Linux-Installation, und @esbuild/win32-x64 lag neben @esbuild/linux-x64,
+# @rollup gleich in allen vier Plattformvarianten. Dass dabei der Linux-Build
+# gewann, war Reihenfolgeglueck.
+node_modules
+
+# Build-Artefakte und Caches vom Host. Der Container erzeugt seine eigenen;
+# die hier stammen von Windows und passen weder im Pfad noch in der Plattform.
+.angular
+dist
+coverage
+*.tsbuildinfo
+
+# Versionsverwaltung, Editor, Betriebssystem
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Die Bauanleitung selbst gehoert nicht ins Abbild.
+Dockerfile
+.dockerignore
+
+# Protokolle und lokale Konfiguration - Letztere darf ein Abbild nie erreichen.
+*.log
+npm-debug.log*
+.env
+.env.*

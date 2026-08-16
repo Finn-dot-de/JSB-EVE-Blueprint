@@ -1,6 +1,9 @@
 package com.eve.own.auth.backend.domain.character.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 import java.time.Instant;
@@ -21,8 +24,7 @@ public class CharacterStats {
     @Column(name = "rat_kills")
     private Long ratKills;
 
-    private String walletEtag;
-    private String skillsEtag;
+    // ETags liegen jetzt zentral in esi_etags, nicht mehr an der Fachentitaet.
 
     private Instant lastUpdated;
 }

@@ -1,12 +1,21 @@
-// Variablen für ein konsistentes Theme
-$bg-color: #1a1b26;
-$border-color: #2e3146;
-$text-primary: #a9b1d6;
-$text-secondary: #717c9e;
-$danger-color: #f7768e;
-$danger-hover: #db506a;
-$eve-green: #00dfa2;
-$hover-bg: rgba(255, 255, 255, 0.05);
+@use '../../shared/tokens' as tokens;
+
+// Die Leiste hatte eine eigene, fest verdrahtete Dunkel-Palette. Damit hätte
+// sie dem Umschalter im Zahnrad nicht folgen können - ausgerechnet das
+// Element, in dem er sitzt. Jetzt läuft alles über die CSS-Variablen aus
+// styles.scss und wechselt mit.
+//
+// Für halbtransparente Flächen steht color-mix statt rgba(): SCSS-Funktionen
+// können mit einer CSS-Variable nicht rechnen, deren Wert erst im Browser
+// feststeht.
+$bg-color: var(--bg-surface);
+$border-color: var(--border-color);
+$text-primary: var(--text-primary);
+$text-secondary: var(--text-secondary);
+$danger-color: var(--danger-color);
+$danger-hover: color-mix(in srgb, var(--danger-color) 80%, black);
+$eve-green: tokens.$success;
+$hover-bg: color-mix(in srgb, var(--text-primary) 7%, transparent);
 
 .navbar {
   display: flex;
@@ -31,7 +40,7 @@ $hover-bg: rgba(255, 255, 255, 0.05);
     }
 
     .brand-icon {
-      color: #3b82f6;
+      color: var(--accent-color);
       font-size: 1.4rem;
     }
   }
@@ -70,7 +79,7 @@ $hover-bg: rgba(255, 255, 255, 0.05);
     width: 38px;
     height: 38px;
     border-radius: 50%; // Macht das Bild schön rund
-    border: 2px solid #565f89;
+    border: 2px solid var(--border-color);
     object-fit: cover;
   }
 
@@ -115,7 +124,7 @@ $hover-bg: rgba(255, 255, 255, 0.05);
   color: $text-secondary;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: var(--bg-color);
 }
 
 .dropdown-item {
@@ -192,4 +201,56 @@ $hover-bg: rgba(255, 255, 255, 0.05);
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* =========================================
+   ZAHNRAD: DARSTELLUNG UMSTELLEN
+   ========================================= */
+.settings-container {
+  position: relative; // Damit das Menü exakt darunter hängt
+  margin-right: 0.75rem;
+}
+
+.settings-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: $text-secondary;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+
+  &:hover,
+  &.open {
+    color: $text-primary;
+    background-color: $hover-bg;
+    border-color: $border-color;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+  }
+}
+
+.settings-menu { width: 200px; }
+
+.theme-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  // Der Haken sitzt rechts, der Rest bleibt linksbündig.
+  .theme-check {
+    margin-left: auto;
+    color: var(--accent-color);
+    font-size: 0.8rem;
+  }
+
+  &.active { color: $text-primary; }
 }

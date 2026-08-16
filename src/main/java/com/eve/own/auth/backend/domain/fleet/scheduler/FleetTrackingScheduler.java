@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Slf4j
@@ -58,7 +57,7 @@ public class FleetTrackingScheduler {
                         fleetRepo.save(event);
                         log.info("Auto-Tracker: LINK FAT '{}' ist abgelaufen und wurde beendet.", event.getFleetName());
                     }
-                    continue; // Bei Link-FATs gibt es kein ESI-Tracking
+                    continue;
                 }
 
                 // ========================================================

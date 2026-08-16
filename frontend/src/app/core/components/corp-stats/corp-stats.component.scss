@@ -32,7 +32,7 @@
 .pie-percent {
   font-size: 2.5rem;
   font-weight: 700;
-  color: #00dfa2; // EVE Grün
+  color: var(--success-color); // EVE Grün
   line-height: 1;
 }
 
@@ -49,7 +49,243 @@
   align-items: center;
   gap: 15px;
   padding: 10px 15px;
-  background-color: rgba(0,0,0,0.1);
+  background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 8px;
+}
+
+/* Klickbare Kachel & Animation */
+.corp-card {
+  transition: all 0.3s ease;
+  overflow: hidden;
+  &.is-expanded { border-color: var(--accent-color); }
+}
+
+.clickable-header {
+  cursor: pointer;
+  padding-bottom: 0.5rem;
+  &:hover .expand-icon { color: var(--accent-color); }
+}
+
+.expand-icon {
+  font-size: 1.5rem;
+  color: var(--text-secondary);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  &.rotated { transform: rotate(180deg); color: var(--accent-color); }
+}
+
+/* Aufklapp-Bereich & Suche */
+.expanded-section {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px dashed var(--border-color);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 2rem;
+  transition: border-color 0.2s;
+
+  i { color: var(--text-secondary); margin-right: 12px; }
+  input {
+    background: transparent; border: none; color: var(--text-primary);
+    outline: none; width: 100%; font-size: 1rem;
+  }
+  &:focus-within { border-color: var(--accent-color); }
+}
+
+/* 2-Spalten-Layout (Geauthed vs Nicht Geauthed) */
+.lists-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.list-column {
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.column-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
+
+  &.success { color: var(--success-color); }
+  &.danger { color: var(--danger-color); }
+
+  .count-badge {
+    margin-left: auto;
+    background-color: color-mix(in srgb, var(--text-primary) 10%, transparent);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    &.danger { background-color: rgba(255,51,102,0.2); color: var(--danger-color); }
+  }
+}
+
+.scroll-area {
+  max-height: 450px;
+  overflow-y: auto;
+  padding-right: 5px;
+  /* Scrollbar Customizing */
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb { background-color: var(--border-color); border-radius: 4px; }
+}
+
+.empty-state { text-align: center; color: var(--text-secondary); padding: 2rem 0; font-style: italic; }
+
+/* Charakter Kärtchen */
+.member-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+
+  &.unauthed {
+    border-left: 3px solid var(--danger-color);
+    background-color: rgba(255,51,102,0.02);
+  }
+
+  .main-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    img { width: 36px; height: 36px; border-radius: 4px; }
+    .pilot-name { font-weight: 500; font-size: 1rem; color: var(--text-primary); }
+    .main-badge { margin-left: auto; font-size: 0.65rem; background: rgba(37,99,235,0.2); color: var(--accent-color); padding: 2px 6px; border-radius: 4px; }
+  }
+
+  .alts-list {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid color-mix(in srgb, var(--text-primary) 5%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .alt-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-left: 8px;
+
+      .chain-icon { color: var(--text-secondary); font-size: 0.7rem; opacity: 0.5; }
+      img { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #4a4e59; }
+      span { font-size: 0.85rem; color: var(--text-secondary); }
+    }
+  }
+}
+
+/* =========================================
+   TABS
+   ========================================= */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+
+  &:hover { color: var(--text-primary); }
+
+  &.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+  }
+}
+
+/* =========================================
+   ACCOUNTS VIEW
+   ========================================= */
+.accounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.account-card {
+  padding: 1.25rem;
+
+  .main-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    img { width: 42px; height: 42px; border-radius: 4px; border: 1px solid var(--border-color); }
+  }
+
+  .char-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    .pilot-name { font-weight: 600; font-size: 1.05rem; color: var(--text-primary); }
+    .corp-name { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; i { opacity: 0.7; margin-right: 3px; } }
+  }
+
+  .main-badge {
+    margin-left: auto;
+    font-size: 0.65rem;
+    background: rgba(37,99,235,0.2);
+    color: var(--accent-color);
+    padding: 2px 6px;
+    border-radius: 4px;
+    align-self: flex-start;
+  }
+
+  .alts-list {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(128, 128, 128, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    .alt-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-left: 5px;
+
+      .chain-icon { color: var(--text-secondary); font-size: 0.75rem; opacity: 0.5; }
+      img { width: 32px; height: 32px; border-radius: 50%; border: 1px solid #4a4e59; }
+
+      .char-info {
+        .pilot-name { font-weight: 500; font-size: 0.95rem; }
+        .corp-name { font-size: 0.7rem; }
+      }
+    }
+  }
 }

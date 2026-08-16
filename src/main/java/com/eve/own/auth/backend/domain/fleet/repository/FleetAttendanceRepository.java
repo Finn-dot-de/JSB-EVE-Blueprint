@@ -4,7 +4,7 @@ import com.eve.own.auth.backend.domain.fleet.entity.FleetAttendance;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import java.util.List;
-import java.util.Optional; // NEU
+import java.util.Optional;
 
 @Repository
 public interface FleetAttendanceRepository extends JpaRepository<FleetAttendance, Long> {

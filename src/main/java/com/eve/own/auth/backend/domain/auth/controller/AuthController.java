@@ -1,39 +1,65 @@
 package com.eve.own.auth.backend.domain.auth.controller;
 
+import com.eve.own.auth.backend.common.CurrentUser;
+import com.eve.own.auth.backend.common.EveImageUrls;
 import com.eve.own.auth.backend.domain.auth.dto.UserProfileDto;
+import com.eve.own.auth.backend.domain.auth.security.SessionCookie;
 import com.eve.own.auth.backend.domain.auth.service.AuthService;
 import com.eve.own.auth.backend.domain.auth.service.JwtService;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-
+/**
+ * Anmeldung ueber EVE Single Sign-on.
+ *
+ * <p>Der uebliche OAuth-Dreisprung: Weiterleitung zu CCP, Ruecksprung mit einem
+ * Code, Tausch des Codes gegen Token. Am Ende steht ein eigenes Token im
+ * Sitzungs-Cookie - die EVE-Token selbst verlassen den Server nie.</p>
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final String EVE_AUTHORIZE_URL = "https://login.eveonline.com/v2/oauth/authorize";
+
+    /**
+     * Der {@code state}-Parameter des OAuth-Ablaufs.
+     *
+     * <p>Ein fester Wert schuetzt nicht gegen CSRF - dafuer muesste er je Anfrage
+     * neu gezogen und beim Ruecksprung geprueft werden. CCP verlangt den Parameter
+     * aber, deshalb steht hier vorerst eine Konstante.</p>
+     */
+    private static final String OAUTH_STATE = "blueprint_secret_state";
+
+    private static final String CALLBACK_PATH = "api/auth/callback";
+
+    /** Ziel nach dem Verknuepfen eines weiteren Charakters. */
+    private static final String CHARLINK_PATH = "charlink";
+
     private final AuthService authService;
     private final JwtService jwtService;
+    private final CharacterRepository characterRepo;
     private final String clientId;
     private final String callbackUrl;
     private final String encodedScopes;
     private final String frontendUrl;
-    private final CharacterRepository characterRepo;
-
-    public record UserDto(Long characterId) {}
 
     public AuthController(AuthService authService,
                           JwtService jwtService,
@@ -44,139 +70,107 @@ public class AuthController {
                           @Value("${app.frontend.url}") String frontendUrl) {
         this.authService = authService;
         this.jwtService = jwtService;
+        this.characterRepo = characterRepo;
         this.clientId = clientId;
         this.frontendUrl = frontendUrl;
-        this.characterRepo = characterRepo;
-
-        this.callbackUrl = baseUrl.endsWith("/")
-                ? baseUrl + "api/auth/callback"
-                : baseUrl + "/api/auth/callback";
-
+        this.callbackUrl = withoutTrailingSlash(baseUrl) + "/" + CALLBACK_PATH;
         this.encodedScopes = URLEncoder.encode(scopes, StandardCharsets.UTF_8);
     }
 
     @GetMapping("/login")
     public ResponseEntity<Void> redirectToEveLogin() {
-        String eveLoginUrl = "https://login.eveonline.com/v2/oauth/authorize" +
-                "?response_type=code" +
-                "&redirect_uri=" + callbackUrl +
-                "&client_id=" + clientId +
-                "&scope=" + encodedScopes +
-                "&state=blueprint_secret_state";
+        String eveLoginUrl = EVE_AUTHORIZE_URL
+                + "?response_type=code"
+                + "&redirect_uri=" + callbackUrl
+                + "&client_id=" + clientId
+                + "&scope=" + encodedScopes
+                + "&state=" + OAUTH_STATE;
 
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(eveLoginUrl))
-                .build();
+        return redirectTo(eveLoginUrl);
     }
 
+    /**
+     * Ruecksprung von CCP.
+     *
+     * <p>Besteht bereits eine Sitzung, wird der Charakter als Alt an den
+     * angemeldeten Account gehaengt - daran haengt die Charakter-Verknuepfung.</p>
+     *
+     * <p>Antwortet immer mit einer Weiterleitung ins Frontend, im Fehlerfall mit
+     * einem {@code error}-Parameter: der Nutzer landet hier im Browser und saehe
+     * eine JSON-Fehlermeldung nie.</p>
+     */
     @GetMapping("/callback")
-    public ResponseEntity<Void> eveCallback(@RequestParam("code") String code,
-                                            @RequestParam("state") String state) {
+    public ResponseEntity<Void> eveCallback(@RequestParam("code") String code) {
+        Long loggedInMainId = CurrentUser.find().orElse(null);
         try {
-            // 1. User identifizieren
-            Long loggedInMainId = null;
-            var auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
-                loggedInMainId = (Long) auth.getPrincipal();
-            }
+            Character character = authService.processEveLogin(code, loggedInMainId);
+            ResponseCookie sessionCookie = SessionCookie.create(issueToken(character));
 
-            // 2. Charakter verarbeiten
-            var character = authService.processEveLogin(code, loggedInMainId);
-
-            // 3. Falls der Charakter selbst der Main ist, nehmen wir seine Rollen, sonst laden wir den Main
-            Character mainChar = characterRepo.findById(character.getMainCharacterId()).orElse(character);
-            java.util.Set<String> rolesToUse = mainChar.getRoles();
-
-            // 4. Token mit den Rollen des Main-Charakters generieren
-            Long jwtTargetId = character.getMainCharacterId();
-            String token = jwtService.generateToken(jwtTargetId, "Main-Token", rolesToUse);
-
-            ResponseCookie jwtCookie = ResponseCookie.from("toky", token)
-                    .httpOnly(true)
-                    .secure(false)
-                    .path("/")
-                    .maxAge(24 * 60 * 60)
-                    .sameSite("Lax")
-                    .build();
-
-            // --- NEU: Dynamische Weiterleitung ---
-            String targetUrl;
-            if (loggedInMainId != null) {
-                // User war schon eingeloggt -> Er hat gerade einen Alt hinzugefügt
-                targetUrl = frontendUrl.endsWith("/") ? frontendUrl + "charlink" : frontendUrl + "/charlink";
-            } else {
-                // User war nicht eingeloggt -> Frischer Haupt-Login
-                targetUrl = frontendUrl; // (Oder frontendUrl + "/dashboard", je nachdem, wo er starten soll)
-            }
+            // Nach dem Verknuepfen zurueck auf die Charakter-Uebersicht, beim
+            // ersten Login auf die Startseite.
+            String target = loggedInMainId != null
+                    ? withoutTrailingSlash(frontendUrl) + "/" + CHARLINK_PATH
+                    : frontendUrl;
 
             return ResponseEntity.status(HttpStatus.FOUND)
-                    .header(HttpHeaders.SET_COOKIE, jwtCookie.toString())
-                    .location(URI.create(targetUrl)) // Hier nutzen wir jetzt die Ziel-URL
+                    .header(HttpHeaders.SET_COOKIE, sessionCookie.toString())
+                    .location(URI.create(target))
                     .build();
 
         } catch (SecurityException e) {
-            // 3. Sauber loggen als WARNUNG (Jemand aus einer fremden Corp hat es versucht)
             log.warn("Login abgelehnt: {}", e.getMessage());
-            String errorUrl = frontendUrl.endsWith("/")
-                    ? frontendUrl + "?error=wrong_corp"
-                    : frontendUrl + "/?error=wrong_corp";
-
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .location(URI.create(errorUrl))
-                    .build();
+            return redirectTo(errorUrl("wrong_corp"));
         } catch (Exception e) {
-            // 4. Sauber loggen als FEHLER (inklusive Stacktrace für das Debugging)
-            log.error("Unerwarteter Fehler beim EVE SSO Callback", e);
-            String errorUrl = frontendUrl.endsWith("/")
-                    ? frontendUrl + "?error=login_failed"
-                    : frontendUrl + "/?error=login_failed";
-
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .location(URI.create(errorUrl))
-                    .build();
+            log.error("Unerwarteter Fehler beim EVE-SSO-Ruecksprung", e);
+            return redirectTo(errorUrl("login_failed"));
         }
     }
 
+    /**
+     * Stellt das Sitzungs-Token mit den Rollen des Main-Charakters aus.
+     *
+     * <p>Rechte haengen am Account, nicht am einzelnen Charakter: wer sich mit
+     * einem Alt anmeldet, soll dieselbe Anwendung sehen wie mit seinem Main.</p>
+     */
+    private String issueToken(Character character) {
+        Long accountId = character.getAccountId();
+        Character main = characterRepo.findById(accountId).orElse(character);
+        return jwtService.generateToken(accountId, "Main-Token", main.getRoles());
+    }
+
+    /** Das Profil des angemeldeten Nutzers, sonst 401. */
     @GetMapping("/me")
     public ResponseEntity<UserProfileDto> getCurrentUser(HttpServletResponse response) {
-        var authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
+        Optional<Character> character = CurrentUser.find().flatMap(characterRepo::findById);
+
+        if (character.isEmpty()) {
+            // Auch der Fall "gueltiges Token, aber der Charakter existiert nicht
+            // mehr" landet hier. Dann muss das Cookie weg, sonst laeuft der
+            // Browser bis zu dessen Ablauf gegen dieselbe Wand.
+            response.addCookie(SessionCookie.expired());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        Long characterId = (Long) authentication.getPrincipal();
-        assert characterId != null;
-
-        var characterOpt = characterRepo.findById(characterId);
-
-        if (characterOpt.isEmpty()) {
-            Cookie cookie = new Cookie("toky", null);
-            cookie.setPath("/");
-            cookie.setHttpOnly(true);
-            cookie.setMaxAge(0);
-            response.addCookie(cookie);
-
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        Character character = characterOpt.get();
-
+        Character user = character.get();
         return ResponseEntity.ok(new UserProfileDto(
-                characterId,
-                character.getName(),
-                String.format("https://images.evetech.net/characters/%d/portrait?size=64", characterId),
-                character.getRoles()
-        ));
+                user.getId(), user.getName(), EveImageUrls.portrait(user.getId()), user.getRoles()));
     }
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletResponse response) {
-        Cookie cookie = new Cookie("toky", null);
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
-
+        response.addCookie(SessionCookie.expired());
         return ResponseEntity.ok().build();
+    }
+
+    private String errorUrl(String reason) {
+        return withoutTrailingSlash(frontendUrl) + "/?error=" + reason;
+    }
+
+    private static ResponseEntity<Void> redirectTo(String url) {
+        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(url)).build();
+    }
+
+    private static String withoutTrailingSlash(String url) {
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 }

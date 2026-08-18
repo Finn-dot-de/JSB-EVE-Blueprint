@@ -31,7 +31,10 @@ describe('Routen', () => {
    * Beide bestimmen, was andere sehen und dürfen - die eine über die Rollen,
    * die andere über das Menü.
    */
-  const ROLE_GUARDED_PATHS = ['groups/rights', 'admin/navigation'];
+  // 'admin/discord' gehört dazu: Dort lassen sich Discord-Rollen-IDs ändern.
+  // Vorher hing die Route nur am Anmelde-Wächter - der Menüpunkt war unsichtbar,
+  // die Seite über die Adresszeile aber für jeden Angemeldeten offen.
+  const ROLE_GUARDED_PATHS = ['groups/rights', 'admin/navigation', 'admin/discord'];
 
   it('leitet die Wurzel auf die Startseite um', () => {
     const root = routes.find((route: Route) => route.path === '');

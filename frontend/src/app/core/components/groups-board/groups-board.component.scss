@@ -1,0 +1,509 @@
+/* =========================================================
+   Gruppen (SIGs) - Tabellen fuer die Liste und die Anfragen.
+
+   Keine der hier benutzten Klassen ausser .surface-panel ist global:
+   Tabelle, Rahmen und Reiter stammen aus asset-audit, Rollen-Etikett,
+   Dialog und Knoepfe aus navigation-admin, .btn-danger-outline aus
+   services. Sie stehen deshalb woertlich mit in dieser Datei - ein Import
+   quer durch die Komponenten gibt es in diesem Projekt nicht.
+   ========================================================= */
+
+// Halbtransparente Toene ueber color-mix statt rgba(): SCSS-Farbfunktionen
+// koennen mit einer CSS-Variable nicht rechnen, deren Wert erst im Browser feststeht.
+$surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
+
+.roles-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-bottom: 3rem;
+}
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 1.5rem 0 0.5rem 0;
+
+  &::before, &::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+  }
+  &::before { margin-right: 1.5rem; }
+  &::after { margin-left: 1.5rem; }
+}
+
+.section-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.section-divider + .section-hint { margin-top: -1.5rem; }
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* ================= Reiter ================= */
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+
+  &:hover { color: var(--text-primary); }
+  &.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+  }
+}
+
+// Die Zahl offener Anfragen gehoert an den Reiter: sonst muesste man ihn
+// erst oeffnen, um zu sehen, dass dort etwas wartet.
+.tab-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background-color: color-mix(in srgb, var(--accent-color) 20%, var(--bg-surface));
+  color: var(--accent-color);
+}
+
+/* ================= Tabellen ================= */
+
+// Die Tabelle stoesst an die Panel-Kante; der Innenabstand kaeme sonst
+// zum Zellenabstand hinzu und die Kopfzeile saesse eingerueckt.
+.table-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.eve-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-primary);
+
+  th {
+    text-align: left;
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+    font-size: 0.9rem;
+  }
+
+  tr:hover td { background-color: rgba(128, 128, 128, 0.06); }
+
+  // Die eigene Mitgliedschaft faerbt die ganze Zeile - sonst muesste man
+  // Zeile fuer Zeile den Knopf rechts lesen. Steht hinter tr:hover, weil
+  // beide Regeln gleich stark sind und die Faerbung beim Zeigen bleiben soll.
+  tr.is-member td {
+    background-color: color-mix(in srgb, var(--success-color) 12%, transparent);
+  }
+
+  tr.is-member:hover td {
+    background-color: color-mix(in srgb, var(--success-color) 18%, transparent);
+  }
+}
+
+.item-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+// Die Zweitzeile unter dem Namen: die Mitgliederzahl ist eine Nebenangabe
+// und darf den Namen nicht ueberstimmen.
+.item-group {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+// Wer die Leitungsrolle traegt, sieht es an der eigenen Zeile.
+.lead-marker {
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--highlight-color);
+}
+
+.cell-description {
+  color: var(--text-secondary);
+  max-width: 34rem;
+}
+
+// Keine Beschreibung ist der Normalfall und kein Fehler: ein Strich, der
+// die Zelle besetzt haelt, ohne sich wie eine Meldung zu lesen.
+.cell-empty {
+  opacity: 0.45;
+}
+
+// Wortgleich zu navigation-admin: dort steht dasselbe Etikett fuer eine Rolle.
+.role-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background-color: color-mix(in srgb, var(--highlight-color) 18%, var(--bg-surface));
+  color: color-mix(in srgb, var(--highlight-color) 40%, var(--text-primary));
+
+  &.open {
+    background-color: color-mix(in srgb, var(--text-secondary) 16%, var(--bg-surface));
+    color: color-mix(in srgb, var(--text-secondary) 65%, var(--text-primary));
+  }
+}
+
+// Mehrere Leitungsrollen stehen gleichrangig nebeneinander. Der Umbruch ist
+// noetig, weil eine Gruppe drei Rollen tragen kann und die Spalte sonst die
+// Tabelle auseinanderzieht.
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.portrait {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+/* ================= Knoepfe ================= */
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+
+  &.right { justify-content: flex-end; }
+}
+
+.btn-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background-color: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &:hover { color: var(--text-primary); }
+
+  &.btn-edit:hover {
+    color: var(--accent-neutral);
+    border-color: color-mix(in srgb, var(--accent-neutral) 40%, transparent);
+  }
+
+  // Annehmen und Ablehnen stehen nebeneinander und unterscheiden sich sonst
+  // nur durch das Symbol - Gruen und Rot erst beim Zeigen, damit die Zeile
+  // im Ruhezustand nicht wie eine Ampel wirkt.
+  &.btn-approve:hover {
+    color: var(--success-color);
+    border-color: color-mix(in srgb, var(--success-color) 45%, transparent);
+  }
+
+  &.btn-danger:hover {
+    color: var(--danger-color);
+    border-color: color-mix(in srgb, var(--danger-color) 45%, transparent);
+  }
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-danger-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid transparent;
+  padding: 0.55rem 1.1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: var(--accent-contrast);
+  &:hover:not(:disabled) { background-color: var(--accent-hover); }
+}
+
+.btn-secondary {
+  background-color: transparent;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+  &:hover:not(:disabled) { color: var(--text-primary); }
+}
+
+// Umriss statt Flaeche - wie in services: "Verlassen" steht in jeder Zeile
+// einer Mitgliedschaft, eine volle rote Flaeche waere dort Daueralarm.
+.btn-danger-outline {
+  background-color: transparent;
+  border-color: color-mix(in srgb, var(--danger-color) 35%, transparent);
+  color: var(--danger-color);
+
+  &:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--danger-color) 12%, transparent);
+    border-color: color-mix(in srgb, var(--danger-color) 55%, transparent);
+  }
+}
+
+/* ================= Dialog ================= */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 1.5rem;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 620px;
+  box-sizing: border-box;
+  margin: auto;
+}
+
+.modal-title {
+  margin: 0 0 1.25rem 0;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.form-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 200px;
+  max-width: 280px;
+
+  > span {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+  }
+
+  input,
+  select {
+    // Kein globaler box-sizing-Reset im Projekt - ohne diese Zeile liefe das
+    // Feld um Innenabstand und Rahmen aus seinem Kaestchen heraus.
+    box-sizing: border-box;
+    width: 100%;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.55rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.92rem;
+
+    &:focus-visible {
+      border-color: var(--accent-color);
+      outline: 2px solid var(--accent-color);
+      outline-offset: 1px;
+    }
+  }
+}
+
+.field-wide { flex: 2 1 320px; max-width: 100%; }
+
+/* ================= Mehrfachauswahl der Leitungsrollen ================= */
+
+// Kein <label> um den ganzen Block: der Block enthaelt selbst Beschriftungen,
+// und ein Klick auf die Ueberschrift wuerde sonst das erste Kaestchen umlegen.
+.field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1.25rem;
+}
+
+// Gleiche Optik wie die Beschriftung eines Feldes im Raster darueber - der
+// Block ist keine andere Art von Eingabe, nur eine breitere.
+.field-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+// Fester Deckel mit Rollbalken: der Rollenkatalog waechst mit jedem Ingame-Titel,
+// und ein Modal, dessen Knoepfe unter den Bildschirmrand rutschen, ist unbedienbar.
+.role-choice-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 13rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-color);
+}
+
+.role-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+
+  &:not(:last-child) { border-bottom: 1px solid rgba(128, 128, 128, 0.12); }
+  &:hover { background-color: rgba(128, 128, 128, 0.08); }
+
+  input { accent-color: var(--accent-color); cursor: pointer; }
+
+  // Der Rahmen sitzt an der Zeile und nicht am Kaestchen: mit der Tastatur
+  // springt der Fokus von Zeile zu Zeile, und ein 13px breiter Ring waere
+  // in einer langen Liste nicht zu finden.
+  &:has(input:focus-visible) {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+  }
+}
+
+.role-choice-name {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+}
+
+// Wie viele angehakt sind, steht als Text da: in einer gerollten Liste sieht
+// man die Haken der oberen Zeilen sonst nicht mehr.
+.role-choice-summary {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+// Der Satz zur Mitglieds-Rolle. Gedaempft, solange nur wiederverwendet wird -
+// und in Akzentfarbe, sobald beim Speichern wirklich eine Rolle entsteht.
+.role-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+
+  code {
+    background-color: $surface-tint;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  &.is-new {
+    color: color-mix(in srgb, var(--accent-color) 55%, var(--text-primary));
+    i { color: var(--accent-color); }
+  }
+}
+
+.field-hint {
+  margin: 1rem 0 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.6;
+
+  code {
+    background-color: $surface-tint;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* ================= Zustaende ================= */
+
+.empty-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+
+  i { color: var(--accent-color); }
+}
+
+.loading-container {
+  display: flex;
+  justify-content: center;
+  padding: 4rem;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

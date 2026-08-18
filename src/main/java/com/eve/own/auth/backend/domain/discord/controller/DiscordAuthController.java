@@ -180,7 +180,17 @@ public class DiscordAuthController {
         Long charId = CurrentUser.characterId();
         connectionRepo.findById(charId).ifPresent(conn -> {
             try {
-                discordBotService.syncMemberData(conn.getDiscordUserId(), new ArrayList<>(), null);
+                // Nur abnehmen, was dieses Auth vergeben hat. Frueher stand
+                // hier ein leeres "roles"-Feld - bei Discord ein Vollersatz,
+                // der dem Mitglied JEDE Rolle nahm, auch handvergebene. Und
+                // ausloesen konnte das jeder Angemeldete fuer sich selbst.
+                List<String> verwalteteRollen = mappingRepo.findAll().stream()
+                        .map(m -> m.getDiscordRoleId())
+                        .filter(id -> id != null && !id.isBlank())
+                        .distinct()
+                        .toList();
+                discordBotService.syncManagedRoles(conn.getDiscordUserId(),
+                        verwalteteRollen, List.of(), null);
             } catch (Exception e) {
                 log.warn("Konnte Rollen beim Trennen für User {} nicht entfernen: {}", conn.getDiscordUserId(), e.getMessage());
             }

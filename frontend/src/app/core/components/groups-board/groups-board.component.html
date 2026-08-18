@@ -1,0 +1,360 @@
+<div class="roles-container">
+
+  <div class="section-divider">
+    <span>Gruppen</span>
+  </div>
+
+  <p class="section-hint">
+    Special Interest Groups der Corporation.
+  </p>
+
+  <div class="tabs">
+    <button class="tab-btn" [class.active]="activeTab() === 'GROUPS'" (click)="setTab('GROUPS')">
+      <i class="fa-solid fa-users"></i> Gruppen
+    </button>
+    @if (canManage()) {
+      <button class="tab-btn" [class.active]="activeTab() === 'MANAGE'" (click)="setTab('MANAGE')">
+        <i class="fa-solid fa-inbox"></i> Verwaltung
+        @if (pendingCount() > 0) {
+          <span class="tab-badge">{{ pendingCount() }}</span>
+        }
+      </button>
+    }
+  </div>
+
+  <!-- ========================================================
+       REITER: GRUPPEN
+       ======================================================== -->
+  @if (activeTab() === 'GROUPS') {
+    @if (loading()) {
+      <div class="loading-container"><div class="loading-spinner"></div></div>
+    } @else if (groups().length === 0) {
+      <div class="empty-hint">
+        <i class="fa-solid fa-circle-info"></i>
+        Noch keine Gruppe angelegt.
+      </div>
+    } @else {
+      <div class="surface-panel table-panel">
+        <table class="eve-table">
+          <thead>
+          <tr>
+            <th>Name</th>
+            <th>Beschreibung</th>
+            <th>Leitung</th>
+            <th style="text-align: right;">Aktion</th>
+          </tr>
+          </thead>
+          <tbody>
+            <!-- Die eigene Zugehoerigkeit faerbt die ganze Zeile: der Knopf allein
+                 verlangt, jede Zeile einzeln zu lesen. -->
+            @for (group of groups(); track group.id) {
+              <tr [class.is-member]="rowState(group) === 'MEMBER'">
+                <td>
+                  <div class="item-name">
+                    {{ group.name }}
+                    @if (group.isLeader) {
+                      <i class="fa-solid fa-user-shield lead-marker"
+                         title="Du trägst eine der Leitungsrollen dieser Gruppe"></i>
+                    }
+                  </div>
+                  <div class="item-group"
+                       [title]="'Charaktere mit der Rolle ' + group.roleName + ' - offene Anfragen zählen hier nicht mit'">
+                    {{ memberLabel(group) }}
+                  </div>
+                </td>
+
+                <!-- Eine Gruppe ohne Beschreibung ist normal, kein Fehler: ein
+                     gedaempfter Strich statt eines Satzes in Fehlerlautstaerke. -->
+                <td class="cell-description">
+                  @if (group.description) {
+                    {{ group.description }}
+                  } @else {
+                    <span class="cell-empty">&mdash;</span>
+                  }
+                </td>
+
+                <!-- Ein Etikett je zustaendiger Rolle: schon EINE davon genuegt
+                     zum Entscheiden, deshalb stehen sie gleichrangig
+                     nebeneinander und nicht als Aufzaehlung in einem Etikett. -->
+                <td>
+                  <div class="badge-list">
+                    @for (label of leaderLabels(group); track label) {
+                      <span class="role-badge" [class.open]="group.leaderRoleNames.length === 0"
+                            [title]="group.leaderRoleNames.length > 0
+                              ? 'Wer eine dieser Rollen trägt, entscheidet über die Anfragen dieser Gruppe'
+                              : 'Ohne Leitungsrolle entscheiden nur ROLE_DIRECTOR, ROLE_CEO und ROLE_IT_ADMIN'">
+                        {{ label }}
+                      </span>
+                    }
+                  </div>
+                </td>
+
+                <!-- Genau ein Knopf, und seine Beschriftung nennt den Zustand.
+                     Die Verwaltungssymbole stehen bewusst NICHT daneben - ein
+                     Fehlklick auf "Loeschen" ist hier zu teuer; sie sitzen im
+                     Reiter "Verwaltung". -->
+                <td style="text-align: right;">
+                  @switch (rowState(group)) {
+                    @case ('MEMBER') {
+                      <button class="btn-danger-outline" (click)="leave(group)"
+                              title="Die Gruppenrolle abgeben - Wiedereintritt nur über einen neuen Antrag">
+                        <i class="fa-solid fa-right-from-bracket"></i> Verlassen
+                      </button>
+                    }
+                    @case ('PENDING') {
+                      <button class="btn-secondary" disabled>
+                        <i class="fa-solid fa-hourglass-half"></i> Anfrage ausstehend
+                      </button>
+                    }
+                    @default {
+                      <button class="btn-primary" (click)="apply(group)">
+                        <i class="fa-solid fa-right-to-bracket"></i> Beitreten
+                      </button>
+                    }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  <!-- ========================================================
+       REITER: VERWALTUNG
+       ======================================================== -->
+  @if (activeTab() === 'MANAGE' && canManage()) {
+
+    <p class="section-hint">
+      @if (isAdmin) {
+        Alle offenen Anfragen der Corporation.
+      } @else {
+        Die offenen Anfragen der Gruppen, in denen du eine der Leitungsrollen trägst.
+      }
+    </p>
+
+    @if (loading()) {
+      <div class="loading-container"><div class="loading-spinner"></div></div>
+    } @else if (requests().length === 0) {
+      <div class="empty-hint">
+        <i class="fa-solid fa-circle-info"></i>
+        Keine offenen Anfragen.
+      </div>
+    } @else {
+      <div class="surface-panel table-panel">
+        <table class="eve-table">
+          <thead>
+          <tr>
+            <th>Charakter</th>
+            <th>Gruppe</th>
+            <th>Angefragt am</th>
+            <th style="text-align: right;">Entscheidung</th>
+          </tr>
+          </thead>
+          <tbody>
+            @for (request of requests(); track request.requestId) {
+              <tr>
+                <td>
+                  <div class="item-cell">
+                    <img class="portrait" [src]="request.portraitUrl"
+                         (error)="onPortraitError($event)" [alt]="request.characterName" loading="lazy">
+                    <div class="item-name">{{ request.characterName }}</div>
+                  </div>
+                </td>
+                <td>{{ request.groupName }}</td>
+                <td style="color: var(--text-secondary);">
+                  {{ request.requestedAt | date:'dd.MM.yyyy HH:mm' }}
+                </td>
+                <td style="text-align: right;">
+                  <div class="row-actions right">
+                    <button class="btn-icon btn-approve" (click)="approve(request)" title="Annehmen">
+                      <i class="fa-solid fa-check"></i>
+                    </button>
+                    <button class="btn-icon btn-danger" (click)="reject(request)" title="Ablehnen">
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- Anlegen, Bearbeiten und Loeschen wohnen hier und nicht in der
+         Gruppenliste: dort haetten sie neben dem Beitreten-Knopf gestanden. -->
+    @if (isAdmin) {
+      <div class="section-divider">
+        <span>Gruppen pflegen</span>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn-primary" (click)="newGroup()">
+          <i class="fa-solid fa-plus"></i> Gruppe anlegen
+        </button>
+      </div>
+
+      @if (groups().length === 0) {
+        <div class="empty-hint">
+          <i class="fa-solid fa-circle-info"></i>
+          Noch keine Gruppe angelegt.
+        </div>
+      } @else {
+        <div class="surface-panel table-panel">
+          <table class="eve-table">
+            <thead>
+            <tr>
+              <th>Name</th>
+              <th>Gruppenrolle</th>
+              <th>Leitung</th>
+              <th style="text-align: right;">Verwaltung</th>
+            </tr>
+            </thead>
+            <tbody>
+              @for (group of groups(); track group.id) {
+                <tr>
+                  <td>
+                    <div class="item-name">{{ group.name }}</div>
+                    <div class="item-group">{{ memberLabel(group) }}</div>
+                  </td>
+                  <td><span class="role-badge">{{ group.roleName }}</span></td>
+                  <td>
+                    <div class="badge-list">
+                      @for (label of leaderLabels(group); track label) {
+                        <span class="role-badge" [class.open]="group.leaderRoleNames.length === 0">
+                          {{ label }}
+                        </span>
+                      }
+                    </div>
+                  </td>
+                  <td style="text-align: right;">
+                    <div class="row-actions right">
+                      <button class="btn-icon btn-edit" (click)="editGroup(group)" title="Gruppe bearbeiten">
+                        <i class="fa-solid fa-pen"></i>
+                      </button>
+                      <button class="btn-icon btn-danger" (click)="deleteGroup(group)" title="Gruppe löschen">
+                        <i class="fa-solid fa-trash-can"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  }
+</div>
+
+<!-- ========================================================
+     MODAL: Gruppe anlegen und bearbeiten
+     ======================================================== -->
+@if (editingGroup(); as group) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="surface-panel modal-content" (click)="$event.stopPropagation()">
+      <h3 class="modal-title">{{ group.id ? 'Gruppe bearbeiten' : 'Neue Gruppe' }}</h3>
+
+      <div class="form-grid">
+        <label class="field">
+          <span>Name</span>
+          <input type="text" [ngModel]="group.name" (ngModelChange)="updateGroupName($event)"
+                 placeholder="z.B. Wurmloch-SIG" autocomplete="off">
+        </label>
+
+        <label class="field field-wide">
+          <span>Beschreibung</span>
+          <input type="text" [ngModel]="group.description"
+                 (ngModelChange)="updateGroup({ description: $event })"
+                 placeholder="Wofür die Gruppe da ist" autocomplete="off">
+        </label>
+
+        <!-- Freies Feld statt Auswahlliste: die Rolle muss es noch nicht geben,
+             sie entsteht beim Speichern. Der Katalog haengt als Vorschlagsliste
+             daran, damit eine vorhandene Rolle weiterhin per Klick zu treffen
+             ist, ohne ihn zur einzigen Moeglichkeit zu machen. -->
+        <label class="field field-wide">
+          <span>Mitglieds-Rolle</span>
+          <input type="text" list="group-role-catalog" [ngModel]="group.roleName"
+                 (ngModelChange)="updateGroupRoleName($event)"
+                 placeholder="entsteht aus dem Namen" autocomplete="off">
+          <datalist id="group-role-catalog">
+            @for (role of roles(); track role.name) {
+              <option [value]="role.name"></option>
+            }
+          </datalist>
+        </label>
+      </div>
+
+      <!-- Der eine Satz, der sagt, dass hier etwas ENTSTEHT und nicht nur
+           ausgewaehlt wird - sonst faellt es erst im Rollenkatalog auf. -->
+      @if (effectiveRoleName()) {
+        <p class="role-notice" [class.is-new]="createsRole()">
+          @if (createsRole()) {
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            Die Rolle <code>{{ effectiveRoleName() }}</code> gibt es noch nicht - sie wird beim
+            Speichern angelegt und bleibt bei jedem Abgleich erhalten.
+          } @else {
+            <i class="fa-solid fa-circle-check"></i>
+            Die vorhandene Rolle <code>{{ effectiveRoleName() }}</code> wird wiederverwendet; ihre
+            Beschreibung im Rollenkatalog bleibt unverändert.
+          }
+        </p>
+      }
+
+      <!-- Kaestchen statt <select multiple>: dort verliert ein Fehlklick ohne
+           Strg die ganze bisherige Auswahl, und wie viele Rollen ausgewaehlt
+           sind, sieht man erst beim Scrollen. Muster: die Skillplan-Zuordnung
+           in doctrines. -->
+      <div class="field-block">
+        <span class="field-label">Wer entscheidet über Anfragen</span>
+
+        @if (leaderRoleChoices().length === 0) {
+          <div class="empty-hint">
+            <i class="fa-solid fa-circle-info"></i>
+            Kein Rollenkatalog geladen - über die Anfragen entscheiden dann nur die Admins.
+          </div>
+        } @else {
+          <div class="role-choice-list">
+            @for (roleName of leaderRoleChoices(); track roleName) {
+              <label class="role-choice">
+                <input type="checkbox" [checked]="isLeaderRole(roleName)"
+                       (change)="toggleLeaderRole(roleName)">
+                <span class="role-choice-name">{{ roleName }}</span>
+              </label>
+            }
+          </div>
+        }
+
+        <span class="role-choice-summary">
+          @if (group.leaderRoleNames.length === 0) {
+            Nichts angehakt: nur die Admins entscheiden.
+          } @else {
+            {{ group.leaderRoleNames.length }} von {{ leaderRoleChoices().length }} Rollen -
+            eine davon genügt zum Entscheiden.
+          }
+        </span>
+      </div>
+
+      <p class="field-hint">
+        Die Mitglieds-Rolle macht die Mitgliedschaft aus: bei einer Annahme wandert sie in das
+        Rollen-Set des Charakters, der Discord-Abgleich vergibt sie danach von selbst.
+        Zuständig sind ebenfalls Rollen, keine Personen - so hängt eine Entscheidung nicht an
+        einem einzelnen Charakter. Angehakt werden dürfen mehrere; wer <em>eine</em> davon trägt,
+        darf entscheiden. Ohne jede entscheiden nur <code>ROLE_DIRECTOR</code>,
+        <code>ROLE_CEO</code> und <code>ROLE_IT_ADMIN</code> - die stehen deshalb gar nicht erst
+        zur Wahl.
+      </p>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" (click)="closeModal()">Abbrechen</button>
+        <button class="btn-primary" (click)="saveGroup()"
+                [disabled]="saving() || !group.name.trim()">
+          <i class="fa-solid fa-floppy-disk"></i> Speichern
+        </button>
+      </div>
+    </div>
+  </div>
+}

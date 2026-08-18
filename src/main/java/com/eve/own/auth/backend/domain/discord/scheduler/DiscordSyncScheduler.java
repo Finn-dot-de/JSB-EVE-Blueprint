@@ -36,6 +36,14 @@ public class DiscordSyncScheduler {
         log.info("Starte Discord Role Sync...");
         List<DiscordConnection> connections = connectionRepo.findAll();
 
+        // Alles, wofuer es ein Mapping gibt - die Menge, die dieses Auth
+        // ueberhaupt anfassen darf. Einmal je Lauf, nicht je Mitglied.
+        List<String> verwalteteRollen = mappingRepo.findAll().stream()
+                .map(m -> m.getDiscordRoleId())
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+
         for (DiscordConnection conn : connections) {
             try {
                 Character character = characterRepo.findById(conn.getCharacterId()).orElse(null);
@@ -52,7 +60,12 @@ public class DiscordSyncScheduler {
                         .map(mapping -> mapping.get().getDiscordRoleId())
                         .toList();
 
-                discordBotService.syncMemberData(conn.getDiscordUserId(), expectedDiscordRoles, expectedNickname);
+                // Nur die verwalteten Rollen anfassen. Frueher ging hier die
+                // Soll-Liste als vollstaendiges "roles"-Feld raus - bei Discord
+                // ein Vollersatz, also zugleich der Befehl, jede handvergebene
+                // Rolle zu entfernen.
+                discordBotService.syncManagedRoles(conn.getDiscordUserId(),
+                        verwalteteRollen, expectedDiscordRoles, expectedNickname);
 
                 Thread.sleep(200);
 

@@ -8,9 +8,13 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -95,6 +99,60 @@ public class DiscordBotService {
                 .body(body)
                 .retrieve()
                 .toBodilessEntity();
+    }
+
+    /**
+     * Setzt nur die Rollen, die dieses Auth verwaltet - und laesst alle anderen in Ruhe.
+     *
+     * <p>Ersetzt {@link #syncMemberData}, weil dessen Feld {@code roles} bei
+     * Discord ein <b>Vollersatz</b> ist, kein Zuwachs. Der alte Weg schickte die
+     * Liste der gemappten Auth-Rollen und damit zugleich den Befehl, alles andere
+     * zu entfernen: Farbrollen, Pingrollen, alles von Hand Vergebene. Bei einem
+     * Konto mit fuenf Auth-Rollen und einem einzigen Mapping ging jede halbe
+     * Stunde der Rest verloren.</p>
+     *
+     * <p>Dass es niemandem auffiel, war Zufall: die einzige verknuepfte Person war
+     * der IT-Admin, dessen Rolle ueber der Bot-Rolle steht - dort scheitert der
+     * Aufruf mit 403, bevor er Schaden anrichtet. Bei normalen Mitgliedern greift
+     * dieser Schutz nicht.</p>
+     *
+     * <p>Deshalb einzeln statt am Stueck: je verwalteter Rolle ein PUT oder ein
+     * DELETE. Was das Auth nicht verwaltet, wird nicht angefasst - es kann gar
+     * nicht mehr verloren gehen.</p>
+     *
+     * @param verwalteteRollen alle Discord-Rollen, fuer die es ein Mapping gibt.
+     *                         Nur diese werden angefasst.
+     * @param sollRollen       die Teilmenge davon, die das Mitglied haben soll
+     */
+    public void syncManagedRoles(String discordUserId,
+                                 Collection<String> verwalteteRollen,
+                                 Collection<String> sollRollen,
+                                 String nickname) {
+        Set<String> soll = new HashSet<>(sollRollen);
+        for (String rolle : new LinkedHashSet<>(verwalteteRollen)) {
+            if (soll.contains(rolle)) {
+                botClient.put()
+                        .uri("/guilds/{guildId}/members/{userId}/roles/{roleId}",
+                                guildId, discordUserId, rolle)
+                        .retrieve()
+                        .toBodilessEntity();
+            } else {
+                botClient.delete()
+                        .uri("/guilds/{guildId}/members/{userId}/roles/{roleId}",
+                                guildId, discordUserId, rolle)
+                        .retrieve()
+                        .toBodilessEntity();
+            }
+        }
+        if (nickname != null && !nickname.isBlank()) {
+            botClient.patch()
+                    .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("nick",
+                            nickname.length() > 32 ? nickname.substring(0, 32) : nickname))
+                    .retrieve()
+                    .toBodilessEntity();
+        }
     }
 
     // 3. User auf den Server einladen

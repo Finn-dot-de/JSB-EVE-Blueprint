@@ -47,12 +47,10 @@ export const routes: Routes = [
   },
   {
     path: 'admin/discord',
-    canActivate: [authGuard],
+    canActivate: [roleGuard(LEADERSHIP_OR_IT)],
     loadComponent: () => import('./core/components/discord-admin/discord-admin.component').then(m => m.DiscordAdminComponent)
   },
   {
-    // Bestimmt, was alle im Menü sehen - deshalb hinter demselben Wächter
-    // wie die Rechteverwaltung.
     path: 'admin/navigation',
     canActivate: [roleGuard(LEADERSHIP_OR_IT)],
     loadComponent: () => import('./core/components/navigation-admin/navigation-admin.component').then(m => m.NavigationAdminComponent)
@@ -81,5 +79,10 @@ export const routes: Routes = [
     path: 'industry',
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/industry/industry.component').then(m => m.IndustryComponent)
+  },
+  {
+    path: 'groups/manage',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/groups-board/groups-board.component').then(m => m.GroupsBoardComponent)
   },
 ];

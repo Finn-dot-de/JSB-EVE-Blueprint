@@ -2,12 +2,14 @@ package com.eve.own.auth.backend.domain.discord.service;
 
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -76,6 +78,28 @@ class DiscordBotServiceRollenTest {
 
         bot.syncManagedRoles(USER, List.of(VERWALTET_JA), List.of(), null);
 
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("laesst eine gesperrte Rolle die uebrigen nicht mitreissen")
+    void eineGesperrteRolleStopptDenRestNicht() {
+        // Discord vergibt nur Rollen, die unter der eigenen des Bots stehen.
+        // Steht EINE darueber, darf sie nicht den ganzen Abgleich beenden -
+        // genau das tat der alte Sammelaufruf: ein 403, und der Nutzer bekam
+        // gar keine seiner Rollen.
+        DiscordBotService bot = dienst();
+        server.expect(requestTo(BASIS + "/roles/" + VERWALTET_JA))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN));
+        server.expect(requestTo(BASIS + "/roles/" + VERWALTET_NEIN))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withSuccess());
+
+        bot.syncManagedRoles(USER, List.of(VERWALTET_JA, VERWALTET_NEIN),
+                List.of(VERWALTET_JA), null);
+
+        // Beide Aufrufe sind erfolgt, obwohl der erste abgelehnt wurde.
         server.verify();
     }
 

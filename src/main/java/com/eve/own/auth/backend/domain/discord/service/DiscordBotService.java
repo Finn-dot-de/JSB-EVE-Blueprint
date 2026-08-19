@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Collection;
@@ -130,18 +131,39 @@ public class DiscordBotService {
                                  String nickname) {
         Set<String> soll = new HashSet<>(sollRollen);
         for (String rolle : new LinkedHashSet<>(verwalteteRollen)) {
-            if (soll.contains(rolle)) {
-                botClient.put()
-                        .uri("/guilds/{guildId}/members/{userId}/roles/{roleId}",
-                                guildId, discordUserId, rolle)
-                        .retrieve()
-                        .toBodilessEntity();
-            } else {
-                botClient.delete()
-                        .uri("/guilds/{guildId}/members/{userId}/roles/{roleId}",
-                                guildId, discordUserId, rolle)
-                        .retrieve()
-                        .toBodilessEntity();
+            boolean gewuenscht = soll.contains(rolle);
+            try {
+                if (gewuenscht) {
+                    botClient.put()
+                            .uri("/guilds/{guildId}/members/{userId}/roles/{roleId}",
+                                    guildId, discordUserId, rolle)
+                            .retrieve()
+                            .toBodilessEntity();
+                } else {
+                    botClient.delete()
+                            .uri("/guilds/{guildId}/members/{userId}/roles/{roleId}",
+                                    guildId, discordUserId, rolle)
+                            .retrieve()
+                            .toBodilessEntity();
+                }
+            } catch (HttpClientErrorException.Forbidden e) {
+                // WARN, nicht INFO: Ein Abgleich, der bei jedem Lauf scheitert
+                // und nichts bewirkt, ist kein Nebenschauplatz. Auf INFO ging
+                // die Meldung im Rauschen unter - gemerkt wurde es an der
+                // Wirkung, nicht am Log.
+                //
+                // Und die Rolle wird BENANNT. Discord vergibt nur Rollen, die
+                // unter der eigenen des Bots stehen; ohne die Nummer weiss
+                // niemand, unter welche er gezogen werden muss. Frueher ging
+                // der ganze Aufruf gemeinsam unter, die Nummer war gar nicht
+                // zu haben.
+                log.warn("Discord verweigert Rolle {} bei Nutzer {} ({}). "
+                        + "Entweder steht die Bot-Rolle darunter - dann in den "
+                        + "Servereinstellungen hoeher ziehen - oder der Nutzer "
+                        + "ist Server-Owner; an dem kann kein Bot etwas aendern.",
+                        rolle, discordUserId, gewuenscht ? "vergeben" : "entziehen");
+                // Weitermachen: Eine gesperrte Rolle darf die uebrigen nicht
+                // mitreissen. Genau das tat der alte Sammelaufruf.
             }
         }
         if (nickname != null && !nickname.isBlank()) {

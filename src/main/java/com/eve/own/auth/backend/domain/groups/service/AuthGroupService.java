@@ -29,8 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Die Gruppen (SIGs): Beitrittsanfragen, Austritte, Entscheidungen und die
- * Pflege der Gruppen selbst.
+ * Die Gruppen (SIGs): Beitrittsanfragen, Austritte, Rauswuerfe, Entscheidungen
+ * und die Pflege der Gruppen selbst.
  *
  * <p>Eine Gruppe ist genau eine Rolle. Aufnehmen heisst deshalb: den Rollennamen
  * an das {@code roles}-Set des Charakters haengen und speichern, Austreten: ihn
@@ -52,6 +52,37 @@ public class AuthGroupService {
 
     private static final String DECISION_APPROVE = "approve";
     private static final String DECISION_REJECT = "reject";
+
+    /**
+     * Der Sichtkreis: wer erfahren darf, WER in einer Gruppe ist.
+     *
+     * <p>Eine einzige benannte Menge, und das ist der Zweck: eine weitere Rolle
+     * kommt mit genau einer Zeile hinzu und wirkt sofort auf alle drei Stellen -
+     * auf die Mitgliederliste, auf {@code memberCount} und auf
+     * {@code canViewMembers}. Getrennte Abfragen haetten die Erweiterung an
+     * mehreren Stellen gebraucht, und eine davon bliebe beim naechsten Mal
+     * stehen.</p>
+     *
+     * <p>Dieselben vier Namen wie in
+     * {@link com.eve.own.auth.backend.common.AccessRules#FLEET_STAFF_OR_LEADERSHIP},
+     * mit dem der Endpunkt am {@code AuthGroupController} markiert ist - wer dort
+     * etwas aendert, aendert es hier mit. {@code ROLE_A38} steht als Zeichenkette
+     * da und nicht als Konstante aus {@link SystemRoles}: die Rolle entsteht aus
+     * einem Ingame-Titel, und {@link SystemRoles} fuehrt ausschliesslich die
+     * Rollen, die die Anwendung selbst vergibt.</p>
+     *
+     * <p>Eine weitere Rolle war im Gespraech ("69"); sie steht weder im
+     * Rollenkatalog noch traegt sie jemand, und geraten wird hier nichts.
+     * Sobald es sie gibt, gehoert sie in diese Aufzaehlung - eine Zeile, sonst
+     * nichts.</p>
+     *
+     * <p>Ausdruecklich NICHT der Kreis, der entfernen darf. Dort gilt weiterhin
+     * die Leitung genau dieser Gruppe oder {@link #isAdmin}: ein A38 sieht, wer
+     * in der Gruppe ist, wirft aber niemanden hinaus. Die beiden Kreise
+     * ueberschneiden sich nur zufaellig und duerfen nie zu einem werden.</p>
+     */
+    private static final Set<String> MEMBER_VIEWER_ROLES = Set.of(
+            SystemRoles.DIRECTOR, SystemRoles.CEO, SystemRoles.IT_ADMIN, "ROLE_A38");
 
     /** Beschreibung fuer eine Rolle, die erst durch ihre Gruppe entsteht. */
     private static final String ROLE_DESCRIPTION_PREFIX = "Mitgliedschaft in der Gruppe ";
@@ -79,7 +110,19 @@ public class AuthGroupService {
      * Alle Gruppen, je Gruppe angereichert um den Stand des Aufrufers.
      *
      * <p>Die Liste ist absichtlich fuer jeden Angemeldeten sichtbar: eine SIG,
-     * von der niemand weiss, bekommt auch keine Anfragen.</p>
+     * von der niemand weiss, bekommt auch keine Anfragen. Sichtbar ist damit
+     * aber nur, DASS es die Gruppe gibt - nicht, wer in ihr ist.</p>
+     *
+     * <p>{@code memberCount} bleibt deshalb ausserhalb von
+     * {@link #MEMBER_VIEWER_ROLES} leer. Nebenwirkung mit Gewinn: fuer den
+     * gewoehnlichen Nutzer entfaellt damit auch das Laden saemtlicher Charaktere,
+     * das die Zaehlung braucht.</p>
+     *
+     * <p>{@code canViewMembers} sagt demselben Datensatz ausdruecklich, was die
+     * fehlende Zahl bisher nur nebenbei verriet. Die Oberflaeche fragt das Feld
+     * und schliesst nicht mehr aus einer fehlenden Auskunft auf ein Recht -
+     * eine Ableitung, die niemand aufschreibt und die deshalb still falsch
+     * wird, sobald Zahl und Liste einmal verschiedenen Kreisen folgen.</p>
      */
     @Transactional(readOnly = true)
     public List<AuthGroupDtos.GroupDto> groupsFor(Long characterId) {
@@ -91,12 +134,22 @@ public class AuthGroupService {
                         .stream()
                         .map(AuthGroupRequest::getGroupId)
                         .collect(Collectors.toSet());
-        Map<String, Long> memberCounts = memberCounts(groups.stream()
-                .map(AuthGroup::getRoleName)
-                .collect(Collectors.toSet()));
+
+        // EINE Auswertung fuer alles, was am Sichtkreis haengt: das Kennzeichen
+        // im Datensatz, die Mitgliederzahl und die Frage, ob die Zaehlung
+        // ueberhaupt laufen muss. Zweimal gefragt koennten die drei
+        // auseinanderlaufen - und der Datensatz behauptete dann ein Recht, das
+        // der Endpunkt fuer die Liste verweigert.
+        boolean canViewMembers = mayViewMembers(viewer);
+        Map<String, Long> memberCounts = canViewMembers
+                ? memberCounts(groups.stream()
+                        .map(AuthGroup::getRoleName)
+                        .collect(Collectors.toSet()))
+                : Map.of();
 
         return groups.stream()
-                .map(group -> toGroupDto(group, viewer, pendingGroupIds, memberCounts))
+                .map(group ->
+                        toGroupDto(group, viewer, pendingGroupIds, memberCounts, canViewMembers))
                 .toList();
     }
 
@@ -148,8 +201,9 @@ public class AuthGroupService {
      * Doppelantrag-Riegel sieht nur offene Anfragen und steht dem nicht im Weg.</p>
      *
      * <p>Nur fuer den eigenen Charakter: es gibt keinen Parameter, mit dem sich
-     * ein Fremder hinauswerfen liesse. Wer jemanden entfernen will, tut das im
-     * Rollenkatalog - dort ist es sichtbar eine Verwaltungshandlung.</p>
+     * ein Fremder hinauswerfen liesse. Wer jemanden anderen entfernen will,
+     * braucht {@link #removeMember(Long, Long, Long)} - und dafuer die
+     * Zustaendigkeit fuer diese Gruppe.</p>
      *
      * @throws IllegalArgumentException wenn die Gruppe unbekannt ist oder der
      *     Charakter ihre Rolle gar nicht traegt
@@ -157,18 +211,117 @@ public class AuthGroupService {
     @Transactional
     public void leave(Long characterId, Long groupId) {
         AuthGroup group = requireGroup(groupId);
-        Character member = requireCharacter(characterId);
+        takeGroupRole(group, requireCharacter(characterId), "Du bist");
+    }
 
-        // Der Aufruf ohne Mitgliedschaft ist kein Austritt, sondern ein
-        // Missverstaendnis - stillschweigend "erledigt" zu antworten, verdeckte
-        // eine veraltete Anzeige oder einen falsch verdrahteten Knopf.
-        if (!member.hasRole(group.getRoleName())) {
-            throw new IllegalArgumentException(
-                    "Du bist kein Mitglied von \"" + group.getName() + "\".");
+    /**
+     * Die Mitglieder einer Gruppe: die Charaktere, die ihre Rolle tragen.
+     *
+     * <p>Nur fuer {@link #MEMBER_VIEWER_ROLES}. Der Betrachter geht deshalb als
+     * Parameter herein: bis hierher hatte die Methode keinen, und das war die
+     * ausdrueckliche Aussage "wer die Gruppe sieht, sieht auch ihre Mitglieder".
+     * Diese Aussage gilt nicht mehr. Wer beitreten und austreten will, braucht
+     * die Namen der anderen nicht.</p>
+     *
+     * <p>Die Pruefung sitzt hier und nicht nur am Controller: die Annotation
+     * dort haengt an einem Einstiegspunkt und faellt bei einem Umbau lautlos
+     * weg. Und sie steht VOR dem Zusammenbauen der Liste, damit gar nicht erst
+     * gelesen wird, was der Aufrufer nicht sehen darf.</p>
+     *
+     * <p>Ein Unberechtigter bekommt eine Ausnahme und keine leere Liste. Eine
+     * leere Liste waere eine Falschaussage - sie behauptete "niemand ist drin"
+     * und liesse sich von "Gruppe existiert, ist aber leer" nicht
+     * unterscheiden.</p>
+     *
+     * <p>Sortiert nach Namen, damit die Liste bei jedem Laden gleich aussieht -
+     * die Reihenfolge aus der Datenbank ist keine.</p>
+     *
+     * @throws AccessDeniedException wenn der Betrachter nicht zum Sichtkreis gehoert
+     * @throws IllegalArgumentException wenn Gruppe oder Betrachter unbekannt sind
+     */
+    @Transactional(readOnly = true)
+    public List<AuthGroupDtos.GroupMemberDto> membersOf(Long viewerId, Long groupId) {
+        // Erst der Sichtkreis, dann die Gruppe - dieselbe Reihenfolge wie beim
+        // Entfernen. Andernfalls beantwortete der Endpunkt auch einem
+        // Unberechtigten, welche Gruppen-Ids es gibt: "unbekannt" gegen
+        // "verboten" ist ein Unterschied, den man reihum abfragen kann.
+        requireMemberViewer(viewerId);
+        AuthGroup group = requireGroup(groupId);
+        return membersWithRole(group.getRoleName()).stream()
+                .map(member -> new AuthGroupDtos.GroupMemberDto(
+                        member.getId(),
+                        member.getName(),
+                        EveImageUrls.portrait(member.getId())))
+                .toList();
+    }
+
+    /**
+     * Wirft ein Mitglied aus der Gruppe: nimmt einem <b>fremden</b> Charakter die
+     * Gruppenrolle ab.
+     *
+     * <p>Der einzige Einstiegspunkt dieses Features, der eine fremde
+     * Charakter-ID entgegennimmt. Alle uebrigen nehmen den Charakter aus dem
+     * Sicherheitskontext und koennen deshalb gar nichts anderes anfassen als den
+     * Aufrufer selbst; hier entscheidet allein die Pruefung unten, wessen Rollen
+     * geschrieben werden. Sie sitzt deswegen hier und nicht am Controller - eine
+     * Annotation gehoert zu einem Einstiegspunkt, diese Regel zur Sache.</p>
+     *
+     * <p>Entfernt wird ausschliesslich {@code group.roleName}. Ein Charakter
+     * traegt daneben Corp-, Titel- und Fuehrungsrollen; das ganze Rollen-Set zu
+     * leeren wuerde ihn aus der halben Anwendung aussperren, und der
+     * Discord-Sync raeumte still hinterher.</p>
+     *
+     * @throws AccessDeniedException wenn der Aufrufer fuer diese Gruppe nicht
+     *     zustaendig ist oder als Leitung einen Admin entfernen will
+     * @throws IllegalArgumentException wenn Gruppe oder Charakter unbekannt sind
+     *     oder der Charakter die Rolle gar nicht traegt
+     */
+    @Transactional
+    public void removeMember(Long actorId, Long groupId, Long characterId) {
+        AuthGroup group = requireGroup(groupId);
+        Character actor = requireCharacter(actorId);
+
+        // Derselbe Kreis, der ueber die Anfragen dieser Gruppe entscheidet:
+        // aufnehmen und entfernen sind dieselbe Befugnis von zwei Seiten. Ohne
+        // die Pruefung an dieser Stelle koennte jeder Angemeldete den Endpunkt
+        // mit einer fremden Charakter-Id aufrufen und reihum jede Mitgliedschaft
+        // der Corporation abraeumen - der Discord-Sync zoege still nach, und der
+        // Betroffene stuende ohne Erklaerung vor verschlossenen Kanaelen.
+        boolean actorIsAdmin = isAdmin(actor);
+        if (!isLeaderOf(group, actor) && !actorIsAdmin) {
+            throw new AccessDeniedException(
+                    "Aus dieser Gruppe entfernen nur ihre Leitung und die Fuehrung.");
         }
 
-        member.getRoles().remove(group.getRoleName());
-        characterRepo.save(member);
+        Character member = requireCharacter(characterId);
+
+        // ENTSCHIEDEN: Eine Leitung entfernt keinen globalen Admin, nur die
+        // Fuehrung selbst darf das. Die Frage ist, welcher Schadensfall der
+        // kleinere ist - und die Antwort faellt eindeutig aus, weil die eine
+        // Richtung einen Ausweg hat und die andere nicht.
+        // Verboten kostet nichts: ein Admin, der aus einer Gruppe heraus will,
+        // klickt "Austreten" (leave) und ist draussen - ohne jemanden zu fragen.
+        // Und soll er hinaus, ohne es zu wollen, tut es ein zweiter Admin.
+        // Erlaubt dagegen kostet: eine Leitungsrolle haengt oft an einem
+        // Ingame-Titel und wechselt mit ihm den Traeger. Ein einzelner
+        // veraergerter oder uebernommener FC koennte damit genau die Personen
+        // aus seiner SIG schneiden, die ihn beaufsichtigen sollen - Gruppe fuer
+        // Gruppe, jedes Mal nur eine Rolle, jedes Mal unauffaellig, und der
+        // Discord-Sync entzieht die Kanaele lautlos hinterher.
+        // Ein Recht ohne Nutzen gegen ein Recht mit Missbrauchsweg: es faellt weg.
+        if (!actorIsAdmin && isAdmin(member)) {
+            throw new AccessDeniedException(
+                    "Mitglieder der Fuehrung entfernt nur die Fuehrung selbst.");
+        }
+
+        takeGroupRole(group, member, member.getName() + " ist");
+
+        // Am Charakter steht hinterher nur, dass eine Rolle fehlt - nie, wer sie
+        // ihm genommen hat. Ohne diese Zeile ist die Frage "warum bin ich aus
+        // der SIG geflogen?" nicht mehr zu beantworten.
+        log.info("{} ({}) hat {} ({}) aus der Gruppe \"{}\" entfernt - Rolle {} abgenommen.",
+                actor.getName(), actorId, member.getName(), characterId,
+                group.getName(), group.getRoleName());
     }
 
     /**
@@ -370,7 +523,13 @@ public class AuthGroupService {
 
         ensureSpecialRole(roleName, name);
 
-        return toGroupDto(group, editor, Set.of(), memberCounts(Set.of(roleName)));
+        // Mit Mitgliederzahl und mit gesetztem canViewMembers, ohne erneute
+        // Pruefung: hierher kommt nur, wen requireAdmin durchgelassen hat, und
+        // der Admin-Kreis liegt vollstaendig im Sichtkreis. Ein zweites
+        // mayViewMembers taeuschte eine Entscheidung vor, die es an dieser
+        // Stelle nicht gibt. Beide Felder haengen auch hier an demselben einen
+        // Wert - die Zusicherung des Datensatzes gilt an jedem Ausgang.
+        return toGroupDto(group, editor, Set.of(), memberCounts(Set.of(roleName)), true);
     }
 
     /**
@@ -413,6 +572,49 @@ public class AuthGroupService {
         return character.hasRole(SystemRoles.DIRECTOR)
                 || character.hasRole(SystemRoles.CEO)
                 || character.hasRole(SystemRoles.IT_ADMIN);
+    }
+
+    /**
+     * Ob dieser Charakter erfahren darf, wer in einer Gruppe ist.
+     *
+     * <p>Gelesen am Rollen-Set der Entitaet wie {@link #isAdmin} und nicht am
+     * Sicherheitskontext - sonst haetten die beiden Kreise zwei verschiedene
+     * Quellen, und ein Rollen-Sync koennte sie auseinanderlaufen lassen.</p>
+     *
+     * <p>ENTSCHIEDEN: Eine Leitung OHNE eine dieser Rollen sieht die
+     * Mitgliederliste NICHT. Sie fuehrt zwar eine Gruppe, der Nutzer hat sie im
+     * Sichtkreis aber nicht genannt, und das ist keine Nachlaessigkeit, sondern
+     * der Punkt: Leitungsrollen sind frei eintragbar (jeder FC-, Recruiter- oder
+     * Ausbilder-Titel taugt dafuer). Waere "Leitung" hier ein Zugang, wuechse
+     * der Sichtkreis kuenftig mit jeder Gruppe, die jemand anlegt - unbemerkt
+     * und ohne dass irgendwo stuende, wer inzwischen mitliest. Genau davon soll
+     * diese Aenderung wegfuehren.</p>
+     *
+     * <p>Der Preis ist bekannt und wird bewusst gezahlt: eine Leitung ausserhalb
+     * des Kreises kann weiterhin entfernen, sieht die Namen dazu aber nicht.
+     * Ihre eigentliche Aufgabe - ueber Anfragen entscheiden - braucht den
+     * Antragsteller und nicht die Mitgliederliste. Wer die Liste wirklich
+     * braucht, bekommt ROLE_A38; das ist ein Eintrag im Rollenkatalog und
+     * nachvollziehbar, eine stillschweigende Regel waere es nicht.</p>
+     */
+    private static boolean mayViewMembers(Character character) {
+        return MEMBER_VIEWER_ROLES.stream().anyMatch(character::hasRole);
+    }
+
+    /**
+     * Der Riegel vor jeder Auskunft ueber die Mitglieder einer Gruppe.
+     *
+     * <p>Ohne ihn liefe der Endpunkt weiter fuer jeden Angemeldeten: die
+     * Oberflaeche blendet den Aufklapp-Pfeil zwar aus, aber
+     * {@code GET /api/groups/{id}/members} steht offen, und heraus kaeme die
+     * vollstaendige Namensliste samt Charakter-Ids jeder SIG.</p>
+     */
+    private void requireMemberViewer(Long viewerId) {
+        if (!mayViewMembers(requireCharacter(viewerId))) {
+            throw new AccessDeniedException(
+                    "Wer in einer Gruppe ist, sehen nur die Fuehrung, die technische "
+                            + "Administration und die Ausbilder.");
+        }
     }
 
     /**
@@ -558,10 +760,26 @@ public class AuthGroupService {
         return leaderRoleNames;
     }
 
+    /**
+     * @param canViewMembers das Ergebnis von {@link #mayViewMembers(Character)}
+     *     fuer den Betrachter - EINMAL ausgewertet und hier hineingereicht, weil
+     *     daraus zwei Felder entstehen, die nie auseinanderlaufen duerfen: die
+     *     Mitgliederzahl und das gleichnamige Kennzeichen im Datensatz.
+     *     <p>Die Zahl ist eine Auskunft ueber die Mitglieder wie die Liste
+     *     selbst, nur grober - deshalb haengt sie am selben Sichtkreis, und
+     *     ausserhalb davon {@code null} statt {@code 0}, weil die Null
+     *     behaupten wuerde, die Gruppe sei leer.
+     *     <p>Das Kennzeichen sagt dasselbe ausdruecklich, damit die Oberflaeche
+     *     es nicht aus dem Fehlen der Zahl erraten muss. Ein zweiter Aufruf von
+     *     {@code mayViewMembers} an dieser Stelle haette die Kopplung nur
+     *     verschoben: zwei Auswertungen koennen sich unterscheiden, ein
+     *     durchgereichter Wert nicht.
+     */
     private AuthGroupDtos.GroupDto toGroupDto(AuthGroup group,
                                               Character viewer,
                                               Set<Long> pendingGroupIds,
-                                              Map<String, Long> memberCounts) {
+                                              Map<String, Long> memberCounts,
+                                              boolean canViewMembers) {
         return new AuthGroupDtos.GroupDto(
                 group.getId(),
                 group.getName(),
@@ -571,10 +789,67 @@ public class AuthGroupService {
                 // feste Ordnung wechselten die Etiketten in der Tabelle bei
                 // jedem Laden die Plaetze.
                 group.getLeaderRoleNames().stream().sorted().toList(),
-                memberCounts.getOrDefault(group.getRoleName(), 0L),
+                canViewMembers
+                        ? memberCounts.getOrDefault(group.getRoleName(), 0L)
+                        : null,
+                canViewMembers,
                 viewer.hasRole(group.getRoleName()),
                 pendingGroupIds.contains(group.getId()),
                 isLeaderOf(group, viewer));
+    }
+
+    /**
+     * Nimmt dem Charakter die Rolle dieser Gruppe ab - der gemeinsame Kern von
+     * Austritt und Rauswurf.
+     *
+     * <p>Beide Wege enden in genau diesen drei Zeilen, und das ist Absicht: hier
+     * steht, was "kein Mitglied mehr" heisst. Waere die Rollenentnahme ein
+     * zweites Mal ausgeschrieben, koennte die eine Fassung ein
+     * {@code characterRepo.save} vergessen oder statt der einen Rolle das ganze
+     * Set leeren, ohne dass es an der anderen auffiele.</p>
+     *
+     * <p>Entfernt wird <b>nur</b> {@code group.getRoleName()}. Corp-, Titel- und
+     * Fuehrungsrollen des Charakters bleiben unangetastet - sie haben mit dieser
+     * Gruppe nichts zu tun.</p>
+     *
+     * <p>{@code subject} ist der Satzanfang der Fehlermeldung ("Du bist",
+     * "Name ist"). Er ist der einzige Unterschied zwischen den beiden Wegen:
+     * dem Austretenden sagt man "du", ueber ein entferntes Mitglied spricht man
+     * in der dritten Person - eine Meldung "Du bist kein Mitglied" bei einem
+     * Rauswurf liesse den Leiter an seiner eigenen Mitgliedschaft zweifeln.</p>
+     *
+     * @throws IllegalArgumentException wenn der Charakter die Rolle gar nicht
+     *     traegt. Ein stilles "erledigt" verdeckte eine veraltete Anzeige oder
+     *     einen falsch verdrahteten Knopf - der Aufrufer glaubte dann, etwas
+     *     bewirkt zu haben.
+     */
+    private void takeGroupRole(AuthGroup group, Character member, String subject) {
+        if (!member.hasRole(group.getRoleName())) {
+            throw new IllegalArgumentException(
+                    subject + " kein Mitglied von \"" + group.getName() + "\".");
+        }
+        member.getRoles().remove(group.getRoleName());
+        characterRepo.save(member);
+    }
+
+    /**
+     * Die Traeger einer Rolle, nach Namen sortiert.
+     *
+     * <p>Aus demselben Ladevorgang wie {@link #memberCounts(Set)} und aus
+     * demselben Grund: {@code roles} haengt als EAGER-Sammlung am Charakter,
+     * ohne den Entity-Graph von {@code findAllWithCorporation} holte Hibernate
+     * die Rollen jedes einzelnen Charakters mit einer eigenen Abfrage nach.</p>
+     *
+     * <p>Sortiert ohne Ruecksicht auf Gross- und Kleinschreibung: EVE-Namen
+     * beginnen mal so, mal so, und eine Liste, in der "alpha" hinter "Zulu"
+     * steht, sieht nach einem Fehler aus.</p>
+     */
+    private List<Character> membersWithRole(String roleName) {
+        return characterRepo.findAllWithCorporation().stream()
+                .filter(character -> character.hasRole(roleName))
+                .sorted(Comparator.comparing(Character::getName,
+                        Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+                .toList();
     }
 
     /**

@@ -157,6 +157,96 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
   color: var(--text-secondary);
 }
 
+/* ================= Mitgliederliste einer Gruppe ================= */
+
+// Die Mitgliederzahl IST der Aufklapp-Punkt. Als <button> wegen Tastatur und
+// Vorlesehilfe - sie muss dabei aber aussehen wie die Zweitzeile, die sie war,
+// sonst steht in jeder Zeile ein Knopf, der vom Beitreten-Knopf ablenkt.
+.member-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &:hover { color: var(--text-primary); }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+}
+
+// Gedreht statt ausgetauscht: ein zweites Symbol koennte im Zwischenzustand
+// nicht zur Zeile darunter passen.
+.chevron {
+  font-size: 0.65rem;
+  transition: transform 0.15s;
+
+  &.open { transform: rotate(90deg); }
+}
+
+// Die aufgeklappte Zeile ist keine eigene Gruppe, sondern gehoert zu der
+// darueber - deshalb leicht eingesenkt und ohne die Hover-Faerbung der
+// Tabelle, die sie sonst wie eine anklickbare Zeile aussehen liesse.
+.member-row td {
+  background-color: rgba(128, 128, 128, 0.06);
+  padding: 12px;
+}
+
+.eve-table tr.member-row:hover td {
+  background-color: rgba(128, 128, 128, 0.06);
+}
+
+.member-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+// Kachel statt Tabellenzeile: eine SIG hat schnell dreissig Mitglieder, und
+// dreissig einspaltige Zeilen schoeben die Gruppen darunter vom Bildschirm.
+.member-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-surface);
+}
+
+.member-name {
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+// Kleiner als die Knoepfe der Verwaltung: er sitzt in einer Kachel und darf
+// den Namen daneben nicht ueberragen.
+.member-remove {
+  width: 26px;
+  height: 26px;
+  font-size: 0.75rem;
+}
+
+// Eine Gruppe ohne Mitglieder ist ein gueltiger Zustand - gerade eine frisch
+// angelegte. Gedaempft, nicht in Fehlerlautstaerke.
+.member-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+
+  i { color: var(--accent-color); }
+}
+
 // Wer die Leitungsrolle traegt, sieht es an der eigenen Zeile.
 .lead-marker {
   margin-left: 0.4rem;
@@ -493,6 +583,10 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
   display: flex;
   justify-content: center;
   padding: 4rem;
+
+  // Innerhalb einer Tabellenzeile: 4rem Innenabstand rissen die Zeile fuer
+  // einen Moment auf die halbe Bildschirmhoehe auf.
+  &.small { padding: 0.75rem; }
 }
 
 .loading-spinner {

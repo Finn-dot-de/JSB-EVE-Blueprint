@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroupsBoardComponent } from './groups-board.component';
-import { AuthGroupService, GroupDto } from '../../services/auth-group.service';
+import { AuthGroupService, GroupDto, GroupMemberDto } from '../../services/auth-group.service';
 import { AuthRoleDto, GroupService } from '../../services/group.service';
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
@@ -28,10 +28,20 @@ describe('GroupsBoardComponent', () => {
     roleName: 'ROLE_WH',
     leaderRoleNames: ['ROLE_FC_STRAT'],
     memberCount: 3,
+    // Zwei Felder und nicht eines: die Attrappe darf beide getrennt setzen,
+    // sonst liesse sich gar nicht prüfen, welchem von beiden die Oberfläche
+    // folgt. Der Normalfall setzt sie gleichsinnig - so füllt der Server sie.
+    canViewMembers: true,
     isMember: false,
     hasPendingRequest: false,
     isLeader: false,
     ...over,
+  });
+
+  const mitglied = (characterId: number, characterName: string): GroupMemberDto => ({
+    characterId,
+    characterName,
+    portraitUrl: `https://images.evetech.net/characters/${characterId}/portrait?size=64`,
   });
 
   const rolle = (name: string): AuthRoleDto => ({
@@ -51,6 +61,8 @@ describe('GroupsBoardComponent', () => {
     getOpenRequests: ReturnType<typeof vi.fn>;
     applyForGroup: ReturnType<typeof vi.fn>;
     leaveGroup: ReturnType<typeof vi.fn>;
+    getMembers: ReturnType<typeof vi.fn>;
+    removeMember: ReturnType<typeof vi.fn>;
     decideRequest: ReturnType<typeof vi.fn>;
     saveGroup: ReturnType<typeof vi.fn>;
     deleteGroup: ReturnType<typeof vi.fn>;
@@ -66,6 +78,8 @@ describe('GroupsBoardComponent', () => {
       getOpenRequests: vi.fn().mockReturnValue(of([])),
       applyForGroup: vi.fn().mockReturnValue(of(void 0)),
       leaveGroup: vi.fn().mockReturnValue(of(void 0)),
+      getMembers: vi.fn().mockReturnValue(of([mitglied(1, 'Alpha'), mitglied(2, 'Beta')])),
+      removeMember: vi.fn().mockReturnValue(of(void 0)),
       decideRequest: vi.fn().mockReturnValue(of(void 0)),
       saveGroup: vi.fn().mockReturnValue(of(void 0)),
       deleteGroup: vi.fn().mockReturnValue(of(void 0)),
@@ -280,6 +294,313 @@ describe('GroupsBoardComponent', () => {
     expect(toast.error).toHaveBeenCalledWith('Austritt fehlgeschlagen.');
   });
 
+  // ================= Mitglieder einer Gruppe =================
+
+  it('holt beim Seitenaufbau keine einzige Mitgliederliste', () => {
+    // Der ganze Grund für das Aufklappen: eine Corporation mit zwanzig SIGs
+    // würde sonst zwanzig Listen holen, von denen keine jemand ansieht.
+    const c = build([gruppe(), gruppe({ id: 2 }), gruppe({ id: 3 })], true);
+    c.ngOnInit();
+
+    expect(groupsService.getMembers).not.toHaveBeenCalled();
+    expect(c.expandedGroupId()).toBeNull();
+  });
+
+  it('holt die Mitglieder beim Aufklappen genau einmal, nicht bei jedem Klick', async () => {
+    // Auf, zu, wieder auf: der zweite Blick auf dieselbe Gruppe darf den Server
+    // nicht erneut fragen - sonst löst jedes Auf und Zu einen Abruf aus.
+    const c = build([gruppe()], true);
+    c.ngOnInit();
+
+    c.toggleMembers(c.groups()[0]);
+    expect(groupsService.getMembers).toHaveBeenCalledWith(1);
+    expect(c.isExpanded(c.groups()[0])).toBe(true);
+    expect(c.membersFor(c.groups()[0]).map((m) => m.characterName)).toEqual(['Alpha', 'Beta']);
+
+    c.toggleMembers(c.groups()[0]);
+    expect(c.isExpanded(c.groups()[0])).toBe(false);
+
+    c.toggleMembers(c.groups()[0]);
+    expect(c.isExpanded(c.groups()[0])).toBe(true);
+    expect(groupsService.getMembers).toHaveBeenCalledTimes(1);
+  });
+
+  it('zeigt höchstens eine Mitgliederliste und holt die zweite nur einmal', () => {
+    const c = build([gruppe(), gruppe({ id: 2 })], true);
+    c.ngOnInit();
+
+    c.toggleMembers(c.groups()[0]);
+    c.toggleMembers(c.groups()[1]);
+
+    expect(c.isExpanded(c.groups()[0])).toBe(false);
+    expect(c.isExpanded(c.groups()[1])).toBe(true);
+    expect(groupsService.getMembers).toHaveBeenCalledTimes(2);
+
+    // Zurück zur ersten: die Liste liegt schon vor, kein dritter Abruf.
+    c.toggleMembers(c.groups()[0]);
+    expect(groupsService.getMembers).toHaveBeenCalledTimes(2);
+  });
+
+  it('hält eine Gruppe ohne Mitglieder aus', () => {
+    // Eine frisch angelegte SIG hat null Mitglieder - das ist kein Fehler.
+    const c = build([gruppe({ memberCount: 0 })], true);
+    groupsService.getMembers.mockReturnValue(of([]));
+    c.ngOnInit();
+
+    c.toggleMembers(c.groups()[0]);
+
+    expect(c.membersFor(c.groups()[0])).toEqual([]);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('klappt bei einem Fehlschlag wieder zu und merkt sich keine leere Liste', () => {
+    // Eine gespeicherte leere Liste läse sich für den Rest der Sitzung als
+    // "keine Mitglieder" - obwohl niemand das weiß.
+    const c = build([gruppe()], true);
+    groupsService.getMembers.mockReturnValue(fehler());
+    c.ngOnInit();
+
+    c.toggleMembers(c.groups()[0]);
+
+    expect(toast.error).toHaveBeenCalledWith('Mitglieder konnten nicht geladen werden.');
+    expect(c.isExpanded(c.groups()[0])).toBe(false);
+    expect(c.loadingMembersFor()).toBeNull();
+
+    // Der nächste Versuch fragt wieder - nichts Falsches ist hängen geblieben.
+    groupsService.getMembers.mockReturnValue(of([mitglied(1, 'Alpha')]));
+    c.toggleMembers(c.groups()[0]);
+    expect(c.membersFor(c.groups()[0]).length).toBe(1);
+  });
+
+  // ================= Sichtkreis: wer WEM zusieht =================
+
+  it('gibt dem gewöhnlichen Mitglied keinen Aufklapp-Punkt und holt nichts', () => {
+    // Der Kern der Änderung: wer in einer Gruppe ist, sieht nur die Führung,
+    // die IT und A38. Für alle anderen liefert der Server 403 - ein Pfeil, der
+    // zuverlässig in eine Fehlermeldung läuft, wäre schlimmer als kein Pfeil.
+    // So kommt es vom Server: kein Sichtkreis, also auch keine Zahl.
+    const c = build(
+      [gruppe({ canViewMembers: false, memberCount: null, isMember: true })],
+      false,
+    );
+    c.ngOnInit();
+
+    expect(c.canViewMembers(c.groups()[0])).toBe(false);
+
+    c.toggleMembers(c.groups()[0]);
+
+    expect(groupsService.getMembers).not.toHaveBeenCalled();
+    expect(c.expandedGroupId()).toBeNull();
+    expect(c.isExpanded(c.groups()[0])).toBe(false);
+    // Auch die Zahl selbst bleibt weg: sie ist dieselbe Auskunft eine Stufe
+    // gröber. "0 Mitglieder" wäre obendrein gelogen.
+    expect(c.memberLabel(c.groups()[0])).toBe('');
+    // Ohne Fehlermeldung: es ist nichts schiefgegangen, es steht nur weniger da.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('klappt mit Berechtigung auf wie bisher', () => {
+    // Die Gegenprobe zum Test darüber - das Feld sagt "diese Liste bekommst du".
+    const c = build([gruppe({ canViewMembers: true, memberCount: 2 })], false);
+    c.ngOnInit();
+
+    expect(c.canViewMembers(c.groups()[0])).toBe(true);
+
+    c.toggleMembers(c.groups()[0]);
+
+    expect(groupsService.getMembers).toHaveBeenCalledWith(1);
+    expect(c.isExpanded(c.groups()[0])).toBe(true);
+    expect(c.membersFor(c.groups()[0]).map((m) => m.characterName)).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('liest den Sichtkreis aus den gelieferten Daten und nicht aus einer Rollenliste', () => {
+    // Der Grund für das gelieferte Kennzeichen: der Kreis soll sich im Backend
+    // mit einer Zeile erweitern lassen. Eine hier nachgebaute Liste (DIRECTOR,
+    // CEO, IT_ADMIN, A38) wäre eine zweite Wahrheit - deshalb entscheidet das
+    // Feld und nicht hasAnyRole.
+    const ohneKreis = build([gruppe({ canViewMembers: false, memberCount: null })], true);
+    ohneKreis.ngOnInit();
+    expect(ohneKreis.isAdmin).toBe(true);
+    expect(ohneKreis.canViewMembers(ohneKreis.groups()[0])).toBe(false);
+
+    // Und umgekehrt: A38 ist kein Admin dieser Oberfläche, sieht die Liste aber.
+    const imKreis = build([gruppe({ canViewMembers: true, memberCount: 0 })], false);
+    imKreis.ngOnInit();
+    expect(imKreis.isAdmin).toBe(false);
+    expect(imKreis.canViewMembers(imKreis.groups()[0])).toBe(true);
+  });
+
+  it('folgt dem Kennzeichen und nicht der Zahl, wenn beide sich widersprechen', () => {
+    // Der Test, der die aufgelöste Ableitung überhaupt erst nachweisbar macht.
+    // Solange Server beides gleichsinnig füllt, verhielte sich "memberCount
+    // !== null" identisch - der Widerspruch ist die einzige Lage, in der sich
+    // die beiden Quellen unterscheiden lassen. Deshalb steht er hier künstlich
+    // im Datensatz und nicht, weil der Server ihn heute erzeugte.
+
+    // Richtung 1 - die gefährliche: eine Zahl steht da, gesehen werden darf
+    // trotzdem nichts. Aus der Zahl abgelesen stünde hier ein Pfeil, der
+    // zuverlässig 403 liefert.
+    const zahlOhneRecht = build([gruppe({ canViewMembers: false, memberCount: 42 })], false);
+    zahlOhneRecht.ngOnInit();
+    expect(zahlOhneRecht.canViewMembers(zahlOhneRecht.groups()[0])).toBe(false);
+
+    zahlOhneRecht.toggleMembers(zahlOhneRecht.groups()[0]);
+    expect(groupsService.getMembers).not.toHaveBeenCalled();
+    expect(zahlOhneRecht.expandedGroupId()).toBeNull();
+
+    // Richtung 2 - die stille: kein Zahl, aber sehen darf man. Aus der Zahl
+    // abgelesen fiele der Aufklapp-Punkt weg, obwohl der Server die Liste
+    // herausgäbe; niemand merkte es, weil nichts kaputtgeht, nur fehlt.
+    const rechtOhneZahl = build([gruppe({ canViewMembers: true, memberCount: null })], false);
+    rechtOhneZahl.ngOnInit();
+    expect(rechtOhneZahl.canViewMembers(rechtOhneZahl.groups()[0])).toBe(true);
+
+    rechtOhneZahl.toggleMembers(rechtOhneZahl.groups()[0]);
+    expect(groupsService.getMembers).toHaveBeenCalledWith(1);
+    expect(rechtOhneZahl.isExpanded(rechtOhneZahl.groups()[0])).toBe(true);
+
+    // Die Zahl bleibt dabei genau das, was sie ist - eine Beschriftung. Sie
+    // gewinnt keine Aussage über Rechte zurück, in keine der beiden Richtungen.
+    expect(zahlOhneRecht.memberLabel(zahlOhneRecht.groups()[0])).toBe('42 Mitglieder');
+    expect(rechtOhneZahl.memberLabel(rechtOhneZahl.groups()[0])).toBe('');
+  });
+
+  it('trennt Sehen und Entfernen - ein A38 sieht, wirft aber niemanden hinaus', () => {
+    // Die beiden Kreise sind im Backend verschieden und müssen es bleiben. Eine
+    // Leitung ohne Sichtkreis darf entfernen, sieht die Namen dazu aber nicht;
+    // ein A38 sieht sie und hat keinen Entfernen-Knopf.
+    const a38 = build([gruppe({ canViewMembers: true, memberCount: 2, isLeader: false })], false);
+    a38.ngOnInit();
+    expect(a38.canViewMembers(a38.groups()[0])).toBe(true);
+    expect(a38.canRemoveFrom(a38.groups()[0])).toBe(false);
+
+    const leitung = build(
+      [gruppe({ canViewMembers: false, memberCount: null, isLeader: true })],
+      false,
+    );
+    leitung.ngOnInit();
+    expect(leitung.canViewMembers(leitung.groups()[0])).toBe(false);
+    expect(leitung.canRemoveFrom(leitung.groups()[0])).toBe(true);
+  });
+
+  // ================= Mitglieder entfernen =================
+
+  it('bietet das Entfernen nicht an, wer für die Gruppe nicht zuständig ist', () => {
+    // Der gefährlichste Knopf des Features: er trägt eine FREMDE Charakter-Id.
+    // Abgeleitet wird die Zuständigkeit aus isLeader vom Server, nicht aus einer
+    // hier geratenen Rollenliste.
+    const c = build([gruppe({ isLeader: false, isMember: true })], false);
+    c.ngOnInit();
+
+    expect(c.canRemoveFrom(c.groups()[0])).toBe(false);
+  });
+
+  it('bietet es der Leitung dieser Gruppe und den Admins an', () => {
+    const leitung = build([gruppe({ isLeader: true })], false);
+    leitung.ngOnInit();
+    expect(leitung.canRemoveFrom(leitung.groups()[0])).toBe(true);
+
+    const admin = build([gruppe({ isLeader: false })], true);
+    admin.ngOnInit();
+    expect(admin.canRemoveFrom(admin.groups()[0])).toBe(true);
+  });
+
+  it('trennt die Zuständigkeit je Gruppe - eine Leitungsrolle gilt nicht überall', () => {
+    // isLeader hängt an der einzelnen Gruppe. Würde die Antwort einmal für die
+    // ganze Seite berechnet, stünde der Knopf auch in fremden SIGs.
+    const c = build([gruppe({ isLeader: true }), gruppe({ id: 2, isLeader: false })], false);
+    c.ngOnInit();
+
+    expect(c.canRemoveFrom(c.groups()[0])).toBe(true);
+    expect(c.canRemoveFrom(c.groups()[1])).toBe(false);
+  });
+
+  it('fragt mit dem NAMEN nach und entfernt danach genau dieses Mitglied', async () => {
+    const c = build([gruppe({ isLeader: true })], false);
+    c.ngOnInit();
+    c.toggleMembers(c.groups()[0]);
+
+    await c.removeMember(c.groups()[0], mitglied(2, 'Beta'));
+
+    // Der Name muss in der Rückfrage stehen: die Zeilen sehen einander gleich,
+    // und ein Fehlklick nimmt der falschen Person den Discord-Zugang.
+    expect(confirm.ask).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('Beta'),
+      'Entfernen',
+    );
+    expect(groupsService.removeMember).toHaveBeenCalledWith(1, 2);
+  });
+
+  it('entfernt nichts, wenn die Rückfrage verneint wird', async () => {
+    const c = build([gruppe({ isLeader: true })], false);
+    c.ngOnInit();
+    confirm.ask.mockResolvedValue(false);
+
+    await c.removeMember(c.groups()[0], mitglied(2, 'Beta'));
+
+    expect(confirm.ask).toHaveBeenCalled();
+    expect(groupsService.removeMember).not.toHaveBeenCalled();
+  });
+
+  it('fragt gar nicht erst, wer nicht zuständig ist', async () => {
+    // Die Sperre sitzt vor der Rückfrage: ein Dialog für etwas, das der Server
+    // ohnehin mit 403 beantwortet, ist ein Versprechen, das niemand hält.
+    const c = build([gruppe({ isLeader: false })], false);
+    c.ngOnInit();
+
+    await c.removeMember(c.groups()[0], mitglied(2, 'Beta'));
+
+    expect(confirm.ask).not.toHaveBeenCalled();
+    expect(groupsService.removeMember).not.toHaveBeenCalled();
+  });
+
+  it('frischt danach Mitgliederliste und Mitgliederzahl auf', async () => {
+    // Beides: die Liste darunter und die Zahl in der Zeile darüber. Die Zahl
+    // bloß herunterzuzählen ginge daneben, sobald jemand zeitgleich beitritt.
+    const c = build([gruppe({ isLeader: true, memberCount: 2 })], false);
+    c.ngOnInit();
+    c.toggleMembers(c.groups()[0]);
+    groupsService.getMembers.mockClear();
+    groupsService.getGroups.mockClear();
+    groupsService.getMembers.mockReturnValue(of([mitglied(1, 'Alpha')]));
+    groupsService.getGroups.mockReturnValue(of([gruppe({ isLeader: true, memberCount: 1 })]));
+
+    await c.removeMember(c.groups()[0], mitglied(2, 'Beta'));
+
+    expect(groupsService.getMembers).toHaveBeenCalledTimes(1);
+    expect(groupsService.getGroups).toHaveBeenCalledTimes(1);
+    expect(c.membersFor(c.groups()[0]).map((m) => m.characterName)).toEqual(['Alpha']);
+    expect(c.memberLabel(c.groups()[0])).toBe('1 Mitglied');
+    expect(toast.success).toHaveBeenCalledWith('Beta entfernt.');
+  });
+
+  it('meldet ein abgelehntes Entfernen mit dem Text des Servers', async () => {
+    // Der Server verbietet der Leitung, einen Admin zu entfernen. Dieser Satz
+    // ist die einzige Erklärung, die der Betrachter dafür bekommt.
+    const c = build([gruppe({ isLeader: true })], false);
+    c.ngOnInit();
+    groupsService.removeMember.mockReturnValue(
+      fehler('Mitglieder der Fuehrung entfernt nur die Fuehrung selbst.'),
+    );
+
+    await c.removeMember(c.groups()[0], mitglied(9, 'Direktor'));
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'Mitglieder der Fuehrung entfernt nur die Fuehrung selbst.',
+    );
+  });
+
+  it('meldet ein gescheitertes Entfernen auch ohne Text mit dem Standardsatz', async () => {
+    const c = build([gruppe({ isLeader: true })], false);
+    c.ngOnInit();
+    groupsService.removeMember.mockReturnValue(fehler());
+
+    await c.removeMember(c.groups()[0], mitglied(2, 'Beta'));
+
+    expect(toast.error).toHaveBeenCalledWith('Mitglied konnte nicht entfernt werden.');
+  });
+
   // ================= Entscheidungen =================
 
   it('nimmt eine Anfrage an und lädt die Gruppen neu', () => {
@@ -381,6 +702,16 @@ describe('GroupsBoardComponent', () => {
     expect(c.memberLabel(c.groups()[0])).toBe('0 Mitglieder');
     expect(c.memberLabel(c.groups()[1])).toBe('1 Mitglied');
     expect(c.memberLabel(c.groups()[2])).toBe('7 Mitglieder');
+  });
+
+  it('macht aus einer fehlenden Zahl keine Null', () => {
+    // Die Null wäre eine Aussage ("niemand ist drin"), die ohne Zahl niemand
+    // treffen kann. Leerer Text - ob die Zeile überhaupt erscheint, entscheidet
+    // ohnehin das Kennzeichen und nicht diese Beschriftung.
+    const c = build([gruppe({ canViewMembers: false, memberCount: null })], false);
+    c.ngOnInit();
+
+    expect(c.memberLabel(c.groups()[0])).toBe('');
   });
 
   // ================= Pflege =================

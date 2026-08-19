@@ -101,6 +101,13 @@ class AuthGroupServiceTest {
     private static final Long SKIRMISH_FC = 6001L;
     private static final Long ARMOR_FC = 6002L;
 
+    /**
+     * Ein Ausbilder: im Sichtkreis der Mitgliederliste, aber in keiner Gruppe
+     * Leitung und kein Admin. Genau an ihm trennen sich die beiden Kreise.
+     */
+    private static final Long A38_AUSBILDER = 8000L;
+    private static final String A38_ROLE = "ROLE_A38";
+
     private static final Long ANFRAGE_WURMLOCH = 10L;
     private static final Long ANFRAGE_LOGISTIK = 11L;
     private static final Long ANFRAGE_DES_LEITERS = 12L;
@@ -150,6 +157,7 @@ class AuthGroupServiceTest {
         charakter(STRAT_FC, "Strat-FC", FC_STRAT);
         charakter(SKIRMISH_FC, "Skirmish-FC", FC_SKIRMISH);
         charakter(ARMOR_FC, "Armor-FC", "ROLE_FC_ARMOR");
+        charakter(A38_AUSBILDER, "Ausbilderin", A38_ROLE);
 
         // Drei offene Anfragen, absichtlich ueber beide Gruppen verteilt und eine
         // davon vom Wurmloch-Leiter selbst - erst damit laesst sich sehen, wessen
@@ -662,13 +670,14 @@ class AuthGroupServiceTest {
                 .containsExactly(FC_SKIRMISH, FC_STRAT);
 
         // Mitglied ist, wer die Gruppenrolle traegt - eine offene Anfrage macht
-        // noch kein Mitglied, und die Mitgliederzahl zaehlt deshalb auch keine
-        // Bewerber mit.
+        // noch kein Mitglied.
         assertThat(sicht.get("Logistik-SIG").isMember()).isTrue();
-        assertThat(sicht.get("Logistik-SIG").memberCount()).isEqualTo(1L);
         assertThat(sicht.get("Wurmloch-SIG").isMember()).isFalse();
         assertThat(sicht.get("Wurmloch-SIG").hasPendingRequest()).isTrue();
-        assertThat(sicht.get("Wurmloch-SIG").memberCount()).isZero();
+        // Die Mitgliederzahl gehoert nicht mehr hierher: der Antragsteller ist
+        // ein gewoehnliches Mitglied und bekommt sie nicht mehr zu sehen. Was
+        // sie stattdessen tut, steht in mitgliederzahlFolgtDemselbenSichtkreis.
+        assertThat(sicht.get("Logistik-SIG").memberCount()).isNull();
 
         // Und der Leiter erkennt seine eigene Gruppe am Kennzeichen, ohne dass
         // die Oberflaeche Rollennamen vergleichen muss.
@@ -921,6 +930,413 @@ class AuthGroupServiceTest {
         // die es nicht mehr gibt, und liesse sich weder anzeigen noch entscheiden.
         verify(requestRepo).deleteByGroupId(WURMLOCH_ID);
         verify(groupRepo).deleteById(WURMLOCH_ID);
+    }
+
+    // ==================================================================
+    // Rauswurf: der einzige Weg, auf dem eine FREMDE Charakter-ID hereinkommt
+    // ==================================================================
+
+    /*
+     * Alles darueber nimmt den Charakter aus dem Sicherheitskontext und kann
+     * deshalb gar nichts anderes anfassen als den Aufrufer selbst. Hier
+     * entscheidet allein die Pruefung im Dienst, wessen Rollen geschrieben
+     * werden - faellt sie aus, ist aus dem Austrittsknopf ein Rauswurfknopf fuer
+     * jeden Angemeldeten geworden, und der Discord-Sync raeumt still hinterher.
+     */
+
+    @Test
+    @DisplayName("Die Leitung wirft hinaus - und nimmt dabei nur die Rolle DIESER Gruppe")
+    void rauswurfNimmtAusschliesslichDieGruppenrolle() {
+        Character betroffener = charaktere.get(ANTRAGSTELLER);
+        betroffener.getRoles().addAll(Set.of(WURMLOCH_ROLE, LOGISTIK_ROLE, SystemRoles.MEMBER));
+
+        service.removeMember(WURMLOCH_LEITER, WURMLOCH_ID, ANTRAGSTELLER);
+
+        // Der Kern der Sache: ein Charakter traegt neben der Gruppenrolle seine
+        // Corp-, Titel- und Fuehrungsrollen. Wuerde hier das Set geleert statt
+        // ein Eintrag entfernt, waere er aus der halben Anwendung ausgesperrt -
+        // und niemand saehe den Zusammenhang mit einem Klick in einer SIG.
+        assertThat(betroffener.getRoles())
+                .containsExactlyInAnyOrder(LOGISTIK_ROLE, SystemRoles.MEMBER);
+        verify(characterRepo).save(betroffener);
+        // Geschrieben wird ausschliesslich der Betroffene, nie der Handelnde.
+        verify(characterRepo, never()).save(charaktere.get(WURMLOCH_LEITER));
+    }
+
+    @Test
+    @DisplayName("Wer nicht zustaendig ist, wirft niemanden hinaus - auch nicht sich selbst")
+    void rauswurfDurchUnzustaendigeScheitert() {
+        Character betroffener = charaktere.get(ANTRAGSTELLER);
+        betroffener.getRoles().add(WURMLOCH_ROLE);
+
+        // Ein gewoehnliches Mitglied.
+        assertThatThrownBy(() -> service.removeMember(MITGLIED_OHNE_AMT, WURMLOCH_ID, ANTRAGSTELLER))
+                .isInstanceOf(AccessDeniedException.class);
+        // Und die Leitung einer ANDEREN Gruppe: eine Leitungsrolle gilt fuer
+        // ihre Gruppe, nicht fuer alle. Ohne diesen Fall bliebe offen, ob der
+        // Dienst die Zustaendigkeit gegen die Gruppe prueft oder bloss fragt,
+        // ob der Aufrufer irgendwo Leitung ist.
+        assertThatThrownBy(() -> service.removeMember(LOGISTIK_LEITER, WURMLOCH_ID, ANTRAGSTELLER))
+                .isInstanceOf(AccessDeniedException.class);
+        // Selbst der Betroffene kommt hier nicht durch - fuer den eigenen
+        // Austritt gibt es leave(). Das ist kein Verlust, sondern haelt diesen
+        // Endpunkt frei von einem Fall, in dem der Aufrufer die geprueften Ids
+        // selbst bestimmt.
+        assertThatThrownBy(() -> service.removeMember(ANTRAGSTELLER, WURMLOCH_ID, ANTRAGSTELLER))
+                .isInstanceOf(AccessDeniedException.class);
+
+        assertThat(betroffener.getRoles()).contains(WURMLOCH_ROLE);
+        verify(characterRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Die Fuehrung wirft auch aus einer Gruppe hinaus, die sie nicht leitet")
+    void adminWirftAusJederGruppeHinaus() {
+        charaktere.get(ANTRAGSTELLER).getRoles().add(HERRENLOS_ROLE);
+
+        // Eine Gruppe ohne hinterlegte Leitung: gaebe es den Admin-Zweig nicht,
+        // koennte niemand mehr jemanden aus ihr entfernen.
+        service.removeMember(ADMIN, HERRENLOS_ID, ANTRAGSTELLER);
+
+        assertThat(charaktere.get(ANTRAGSTELLER).getRoles()).doesNotContain(HERRENLOS_ROLE);
+        verify(characterRepo).save(charaktere.get(ANTRAGSTELLER));
+    }
+
+    @Test
+    @DisplayName("Eine Leitung wirft keinen Admin hinaus - ein zweiter Admin schon")
+    void leitungWirftKeinenAdminHinaus() {
+        charakter(CEO_ID, "Bossfrau", SystemRoles.CEO);
+        Character ceo = charaktere.get(CEO_ID);
+        ceo.getRoles().add(WURMLOCH_ROLE);
+
+        // Die entschiedene Richtung: ein einzelner FC soll nicht genau die
+        // Personen aus seiner SIG schneiden koennen, die ihn beaufsichtigen -
+        // zumal die Leitungsrolle an einem Ingame-Titel haengt und den Traeger
+        // wechseln kann. Der Admin verliert dabei nichts: er kommt mit leave()
+        // jederzeit von selbst heraus.
+        assertThatThrownBy(() -> service.removeMember(WURMLOCH_LEITER, WURMLOCH_ID, CEO_ID))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThat(ceo.getRoles()).contains(WURMLOCH_ROLE);
+        verify(characterRepo, never()).save(any());
+
+        // Die Gegenprobe, sonst waere aus dem Schutz eine Sackgasse geworden.
+        service.removeMember(ADMIN, WURMLOCH_ID, CEO_ID);
+
+        assertThat(ceo.getRoles()).doesNotContain(WURMLOCH_ROLE);
+        // Und die Fuehrungsrolle selbst bleibt: entfernt wird die Gruppenrolle,
+        // nicht das Amt.
+        assertThat(ceo.getRoles()).contains(SystemRoles.CEO);
+    }
+
+    @Test
+    @DisplayName("Die Leitung kann sich selbst hinauswerfen und bleibt trotzdem Leitung")
+    void leitungWirftSichSelbstHinaus() {
+        Character leiter = charaktere.get(WURMLOCH_LEITER);
+        leiter.getRoles().add(WURMLOCH_ROLE);
+
+        service.removeMember(WURMLOCH_LEITER, WURMLOCH_ID, WURMLOCH_LEITER);
+
+        // Mitgliedschaft und Zustaendigkeit sind zwei verschiedene Rollen. Wer
+        // beides verwechselte, haette dem FC mit dem Austritt die Gruppe
+        // entzogen, die er weiter fuehren soll.
+        assertThat(leiter.getRoles()).doesNotContain(WURMLOCH_ROLE);
+        assertThat(leiter.getRoles()).contains(WURMLOCH_LEADER_ROLE);
+    }
+
+    @Test
+    @DisplayName("Wer die Rolle gar nicht traegt, kann nicht hinausgeworfen werden")
+    void rauswurfOhneMitgliedschaftScheitert() {
+        assertThatThrownBy(() -> service.removeMember(WURMLOCH_LEITER, WURMLOCH_ID, ANTRAGSTELLER))
+                .isInstanceOf(IllegalArgumentException.class)
+                // Beide Namen in der Meldung: ein "Du bist kein Mitglied" liesse
+                // die Leitung an der eigenen Mitgliedschaft zweifeln.
+                .hasMessageContaining("Antragsteller")
+                .hasMessageContaining("Wurmloch-SIG");
+
+        verify(characterRepo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Unbekannte Gruppe, unbekannter Charakter - und kein Auskunftsschalter fuer Unzustaendige")
+    void rauswurfMitUnbekanntenIdsScheitert() {
+        assertThatThrownBy(() -> service.removeMember(ADMIN, 4711L, ANTRAGSTELLER))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("4711");
+
+        assertThatThrownBy(() -> service.removeMember(ADMIN, WURMLOCH_ID, 424242L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("424242");
+
+        // Die Reihenfolge im Dienst ist selbst eine Zusicherung: die
+        // Zustaendigkeit wird VOR dem Nachschlagen des Charakters geprueft.
+        // Andernfalls beantwortete der Endpunkt jedem Angemeldeten, welche
+        // Charakter-Ids es gibt - "unbekannt" gegen "kein Mitglied" ist ein
+        // Unterschied, den man reihum abfragen kann.
+        assertThatThrownBy(() -> service.removeMember(MITGLIED_OHNE_AMT, WURMLOCH_ID, 424242L))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verify(characterRepo, never()).save(any());
+    }
+
+    // ==================================================================
+    // Die Mitgliederliste
+    // ==================================================================
+
+    @Test
+    @DisplayName("Die Mitgliederliste zeigt die Traeger der Rolle, nach Namen sortiert")
+    void mitgliederlisteZeigtDieRollentraegerSortiert() {
+        charakter(7001L, "zulu Pilot", WURMLOCH_ROLE);
+        charakter(7002L, "Alpha Pilot", WURMLOCH_ROLE);
+        // Traegt eine andere Gruppenrolle und gehoert damit nicht hierher.
+        charaktere.get(ANTRAGSTELLER).getRoles().add(LOGISTIK_ROLE);
+
+        List<AuthGroupDtos.GroupMemberDto> mitglieder = service.membersOf(ADMIN, WURMLOCH_ID);
+
+        // Ohne Ruecksicht auf Gross- und Kleinschreibung: EVE-Namen beginnen mal
+        // so, mal so, und "alpha" hinter "Zulu" saehe nach einem Fehler aus.
+        assertThat(mitglieder).extracting(AuthGroupDtos.GroupMemberDto::characterName)
+                .containsExactly("Alpha Pilot", "zulu Pilot");
+        assertThat(mitglieder).extracting(AuthGroupDtos.GroupMemberDto::characterId)
+                .containsExactly(7002L, 7001L);
+        // Das Portrait haengt an der ID des Mitglieds - eine vertauschte ID
+        // zeigte in der Liste ein fremdes Gesicht zum richtigen Namen.
+        assertThat(mitglieder.getFirst().portraitUrl()).contains("/characters/7002/portrait");
+    }
+
+    @Test
+    @DisplayName("Eine Gruppe ohne Mitglieder liefert eine leere Liste, eine unbekannte einen Fehler")
+    void mitgliederlisteBeiLeererUndUnbekannterGruppe() {
+        // Leer ist ein gueltiger Zustand: frisch angelegt hat jede Gruppe null
+        // Mitglieder. Eine Ausnahme daraus zu machen, brach die Anzeige genau in
+        // dem Moment, in dem der Admin sie zum ersten Mal aufklappt.
+        assertThat(service.membersOf(ADMIN, HERRENLOS_ID)).isEmpty();
+
+        assertThatThrownBy(() -> service.membersOf(ADMIN, 4711L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("4711");
+    }
+
+    // ==================================================================
+    // Der Sichtkreis: wer erfahren darf, WER in einer Gruppe ist
+    // ==================================================================
+
+    /*
+     * Zwei verschiedene Kreise liegen hier nebeneinander, und sie muessen
+     * verschieden bleiben:
+     *   SEHEN     - Direktor, CEO, IT-Admin, A38.
+     *   ENTFERNEN - die Leitung genau dieser Gruppe oder die Fuehrung.
+     * Wer sie zusammenzoege, gaebe entweder jedem Ausbilder die Macht,
+     * Mitgliedschaften abzuraeumen, oder jeder frei eingetragenen Leitungsrolle
+     * Einblick in jede Mitgliederliste.
+     */
+
+    @Test
+    @DisplayName("Sichtkreis: Ein gewoehnliches Mitglied sieht die Mitgliederliste nicht - auch nicht die der eigenen Gruppe")
+    void gewoehnlichesMitgliedSiehtDieMitgliederNicht() {
+        // Es ist selbst Mitglied - und genau das ist der Punkt: die eigene
+        // Mitgliedschaft ist kein Ausweis. Ohne die Regel liefe der Endpunkt
+        // fuer jeden Angemeldeten und gaebe Namen und Charakter-Ids jeder SIG
+        // heraus; die Oberflaeche blendet nur den Aufklapp-Pfeil aus, sie haelt
+        // niemanden auf.
+        charaktere.get(MITGLIED_OHNE_AMT).getRoles().add(WURMLOCH_ROLE);
+
+        assertThatThrownBy(() -> service.membersOf(MITGLIED_OHNE_AMT, WURMLOCH_ID))
+                .isInstanceOf(AccessDeniedException.class);
+
+        // Eine Ausnahme und keine leere Liste: eine leere Liste behauptete
+        // "niemand ist drin" und liesse sich von einer wirklich leeren Gruppe
+        // nicht unterscheiden - eine Falschaussage statt einer Verweigerung.
+        assertThat(service.membersOf(ADMIN, WURMLOCH_ID))
+                .extracting(AuthGroupDtos.GroupMemberDto::characterId)
+                .containsExactly(MITGLIED_OHNE_AMT);
+    }
+
+    @Test
+    @DisplayName("Sichtkreis: Direktor, CEO, IT-Admin und A38 sehen die Mitgliederliste")
+    void derSichtkreisSiehtDieMitglieder() {
+        // Die Gegenprobe zu allem darunter: waere die Pruefung zu streng, saehe
+        // niemand mehr, wer in einer SIG ist - und der Fehler faellt erst auf,
+        // wenn sich jemand beschwert.
+        charakter(CEO_ID, "Bossfrau", SystemRoles.CEO);
+        charakter(IT_ADMIN_ID, "Finn", SystemRoles.IT_ADMIN);
+        charaktere.get(ANTRAGSTELLER).getRoles().add(WURMLOCH_ROLE);
+
+        // ADMIN traegt ROLE_DIRECTOR.
+        for (Long betrachter : List.of(ADMIN, CEO_ID, IT_ADMIN_ID, A38_AUSBILDER)) {
+            assertThat(service.membersOf(betrachter, WURMLOCH_ID))
+                    .as("Betrachter %s", betrachter)
+                    .extracting(AuthGroupDtos.GroupMemberDto::characterId)
+                    .containsExactly(ANTRAGSTELLER);
+        }
+    }
+
+    @Test
+    @DisplayName("Sichtkreis: Eine Leitung ohne eine dieser Rollen sieht die Mitgliederliste NICHT")
+    void leitungOhneSichtkreisSiehtDieMitgliederNicht() {
+        charaktere.get(ANTRAGSTELLER).getRoles().add(WURMLOCH_ROLE);
+
+        // ENTSCHIEDEN: nein. Der Wurmloch-FC fuehrt diese Gruppe und darf sogar
+        // aus ihr entfernen - der Nutzer hat die Leitung im Sichtkreis aber
+        // nicht genannt, und das ist keine Luecke in seiner Aufzaehlung:
+        // Leitungsrollen sind frei eintragbar. Waere "Leitung" hier ein Zugang,
+        // wuechse der Sichtkreis kuenftig mit jeder angelegten Gruppe mit, ohne
+        // dass irgendwo stuende, wer inzwischen mitliest - genau der Zustand,
+        // von dem diese Aenderung wegfuehren soll. Wer die Liste wirklich
+        // braucht, bekommt ROLE_A38; das ist ein sichtbarer Eintrag im
+        // Rollenkatalog, eine stillschweigende Regel waere es nicht.
+        assertThatThrownBy(() -> service.membersOf(WURMLOCH_LEITER, WURMLOCH_ID))
+                .isInstanceOf(AccessDeniedException.class);
+
+        // Und die Zustaendigkeit bleibt davon unberuehrt: entfernen darf sie
+        // weiterhin. Waeren die beiden Kreise derselbe, schluege diese Zeile
+        // fehl - und die Leitung koennte ihre eigene Gruppe nicht mehr pflegen.
+        service.removeMember(WURMLOCH_LEITER, WURMLOCH_ID, ANTRAGSTELLER);
+        assertThat(charaktere.get(ANTRAGSTELLER).getRoles()).doesNotContain(WURMLOCH_ROLE);
+    }
+
+    @Test
+    @DisplayName("Sichtkreis: Ein A38 sieht die Mitglieder, wirft aber niemanden hinaus")
+    void a38SiehtAberEntferntNicht() {
+        // Der Test, der die beiden Kreise auseinanderhaelt. Waeren sie zu einem
+        // verschmolzen, ginge es in die eine oder die andere Richtung schief:
+        // entweder saehe der Ausbilder nichts mehr, oder er koennte reihum jede
+        // Mitgliedschaft der Corporation abraeumen - und der Discord-Sync zoege
+        // still nach.
+        Character mitglied = charaktere.get(ANTRAGSTELLER);
+        mitglied.getRoles().add(WURMLOCH_ROLE);
+
+        assertThat(service.membersOf(A38_AUSBILDER, WURMLOCH_ID))
+                .extracting(AuthGroupDtos.GroupMemberDto::characterName)
+                .containsExactly("Antragsteller");
+
+        assertThatThrownBy(() -> service.removeMember(A38_AUSBILDER, WURMLOCH_ID, ANTRAGSTELLER))
+                .isInstanceOf(AccessDeniedException.class);
+
+        assertThat(mitglied.getRoles()).contains(WURMLOCH_ROLE);
+        verify(characterRepo, never()).save(any());
+
+        // Und ueber Anfragen entscheidet er ebenso wenig: Sehen ist kein Amt.
+        assertThatThrownBy(() -> service.decide(A38_AUSBILDER, ANFRAGE_WURMLOCH, "approve"))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("Sichtkreis: Die Mitgliederzahl entfaellt fuer Unberechtigte und steht fuer den Kreis")
+    void mitgliederzahlFolgtDemselbenSichtkreis() {
+        charaktere.get(ANTRAGSTELLER).getRoles().add(LOGISTIK_ROLE);
+        charaktere.get(MITGLIED_OHNE_AMT).getRoles().add(LOGISTIK_ROLE);
+
+        Map<String, AuthGroupDtos.GroupDto> nutzersicht =
+                service.groupsFor(MITGLIED_OHNE_AMT).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                AuthGroupDtos.GroupDto::name, gruppe -> gruppe));
+
+        // Die Zahl nennt zwar keine Namen, ist aber dieselbe Auskunft eine Stufe
+        // grober - und wer nur beitreten und austreten will, braucht sie nicht.
+        // Bliebe sie stehen, waere sie ein Leck mit Ansage: eine Zahl, die sich
+        // nach dem eigenen Beitritt von 1 auf 2 bewegt, ist abzaehlbar, und bei
+        // einer Gruppe mit genau einem Mitglied verraet schon die 1 zusammen mit
+        // dem Discord-Rollenetikett die Person.
+        assertThat(nutzersicht.get("Logistik-SIG").memberCount()).isNull();
+        // null und nicht 0: die Null waere eine Falschaussage ("niemand ist
+        // drin") - derselbe Grund, aus dem die Liste eine Ausnahme wirft.
+        assertThat(nutzersicht.get("Wurmloch-SIG").memberCount()).isNull();
+        // Beitreten und austreten braucht er weiterhin - der Rest des
+        // Datensatzes bleibt vollstaendig.
+        assertThat(nutzersicht.get("Logistik-SIG").isMember()).isTrue();
+
+        // Und fuer den Sichtkreis steht die Zahl da, sonst waere aus dem Schutz
+        // eine Abschaffung geworden. Gezaehlt werden Mitglieder, keine Bewerber:
+        // fuer die Wurmloch-SIG liegt ein offener Antrag vor, sie steht trotzdem
+        // auf null.
+        Map<String, AuthGroupDtos.GroupDto> ausbildersicht =
+                service.groupsFor(A38_AUSBILDER).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                AuthGroupDtos.GroupDto::name, gruppe -> gruppe));
+        assertThat(ausbildersicht.get("Logistik-SIG").memberCount()).isEqualTo(2L);
+        assertThat(ausbildersicht.get("Wurmloch-SIG").memberCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("Sichtkreis: canViewMembers steht fuer den Kreis und faellt fuer alle anderen")
+    void canViewMembersNenntDieBerechtigungBeimNamen() {
+        // Dasselbe Urteil wie bei der Mitgliederliste, nur ausdruecklich im
+        // Datensatz. Bisher stand es dort nur als Nebenwirkung einer fehlenden
+        // Zahl - und eine Nebenwirkung laesst sich nicht pruefen, ohne sie zu
+        // erraten.
+        charakter(CEO_ID, "Bossfrau", SystemRoles.CEO);
+        charakter(IT_ADMIN_ID, "Finn", SystemRoles.IT_ADMIN);
+
+        // ADMIN traegt ROLE_DIRECTOR.
+        for (Long betrachter : List.of(ADMIN, CEO_ID, IT_ADMIN_ID, A38_AUSBILDER)) {
+            assertThat(service.groupsFor(betrachter))
+                    .as("Betrachter %s", betrachter)
+                    .isNotEmpty()
+                    .allMatch(AuthGroupDtos.GroupDto::canViewMembers);
+        }
+
+        // Die Gegenprobe, und die zweite Haelfte ist die wichtigere: der
+        // Wurmloch-FC fuehrt seine Gruppe und darf sogar aus ihr entfernen -
+        // sehen darf er trotzdem nicht. Waere "Leitung" hier ein Zugang,
+        // wuechse der Sichtkreis mit jeder angelegten Gruppe mit, ohne dass
+        // irgendwo stuende, wer inzwischen mitliest.
+        for (Long betrachter : List.of(MITGLIED_OHNE_AMT, WURMLOCH_LEITER)) {
+            assertThat(service.groupsFor(betrachter))
+                    .as("Betrachter %s", betrachter)
+                    .isNotEmpty()
+                    .noneMatch(AuthGroupDtos.GroupDto::canViewMembers);
+        }
+    }
+
+    @Test
+    @DisplayName("Gleichlauf: Wo canViewMembers false ist, fehlt die Zahl - und umgekehrt")
+    void kennzeichenUndZahlBleibenGekoppelt() {
+        // Der eigentliche Zweck des neuen Feldes, und der einzige Test, der ihn
+        // sichert. Die Oberflaeche leitete die Berechtigung bisher aus
+        // memberCount == null ab; das war zeichengenau richtig, stand aber
+        // nirgends geschrieben. Entkoppelt jemand die beiden - Zahl fuer alle,
+        // Liste nur fuer den Kreis, oder umgekehrt -, wird die Anzeige STILL
+        // falsch: kein Uebersetzer, kein anderer Test schlaegt an, es erscheint
+        // lediglich der falsche Knopf. Dieser Test faellt dann.
+        charakter(CEO_ID, "Bossfrau", SystemRoles.CEO);
+        charakter(IT_ADMIN_ID, "Finn", SystemRoles.IT_ADMIN);
+        charaktere.get(ANTRAGSTELLER).getRoles().add(LOGISTIK_ROLE);
+
+        // Absichtlich quer durch alle Kreise: drinnen, draussen, und die
+        // Leitung dazwischen, an der sich Sehen und Entfernen trennen.
+        List<Long> betrachtende = List.of(ADMIN, CEO_ID, IT_ADMIN_ID, A38_AUSBILDER,
+                MITGLIED_OHNE_AMT, WURMLOCH_LEITER, ANTRAGSTELLER);
+
+        for (Long betrachter : betrachtende) {
+            List<AuthGroupDtos.GroupDto> sicht = service.groupsFor(betrachter);
+            assertThat(sicht).as("Betrachter %s", betrachter).isNotEmpty();
+
+            for (AuthGroupDtos.GroupDto gruppe : sicht) {
+                // Beide Richtungen, denn beide Entkopplungen sind denkbar: eine
+                // Zahl ohne Recht verriete die Gruppengroesse an jeden, ein
+                // Recht ohne Zahl liesse die Oberflaeche eine Auskunft
+                // anbieten, die sie nicht hat.
+                assertThat(gruppe.memberCount() != null)
+                        .as("Betrachter %s, Gruppe %s", betrachter, gruppe.name())
+                        .isEqualTo(gruppe.canViewMembers());
+            }
+
+            // Und die Zusicherung deckt sich mit dem, was sie zusichert: der
+            // Endpunkt fuer die Mitgliederliste entscheidet genauso. Ohne diese
+            // Klammer koennten Feld und Endpunkt gemeinsam falsch liegen - die
+            // Oberflaeche zeigte dann einen Aufklapp-Pfeil, der 403 liefert,
+            // oder verbaerge eine Liste, die offen stuende.
+            boolean darfSehen = sicht.getFirst().canViewMembers();
+            if (darfSehen) {
+                assertThat(service.membersOf(betrachter, WURMLOCH_ID))
+                        .as("Betrachter %s", betrachter)
+                        .isNotNull();
+            } else {
+                assertThatThrownBy(() -> service.membersOf(betrachter, WURMLOCH_ID))
+                        .as("Betrachter %s", betrachter)
+                        .isInstanceOf(AccessDeniedException.class);
+            }
+        }
     }
 
     // ==================================================================

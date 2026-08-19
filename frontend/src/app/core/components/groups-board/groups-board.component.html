@@ -57,10 +57,29 @@
                          title="Du trägst eine der Leitungsrollen dieser Gruppe"></i>
                     }
                   </div>
-                  <div class="item-group"
-                       [title]="'Charaktere mit der Rolle ' + group.roleName + ' - offene Anfragen zählen hier nicht mit'">
-                    {{ memberLabel(group) }}
-                  </div>
+                  <!-- Die Mitgliederzahl ist der Aufklapp-Punkt: sie steht
+                       ohnehin schon da und sagt genau das, was darunter
+                       erscheint. Ein eigenes Symbol daneben waere ein zweiter
+                       Bedienpunkt fuer dieselbe Sache.
+
+                       Und deshalb faellt fuer ein gewoehnliches Mitglied hier
+                       ALLES weg - Pfeil und Zahl in einem: die Zahl ist
+                       dieselbe Auskunft eine Stufe grober, und ein Pfeil, der
+                       zuverlaessig 403 liefert, waere schlimmer als kein
+                       Pfeil. Uebrig bleibt der Name, die Beschreibung, die
+                       Leitung und der eine Knopf rechts.
+
+                       Die Bedingung fragt die Berechtigung und nicht die Zahl:
+                       ob eine da steht, ist eine Anzeigefrage, ob der Pfeil
+                       gedrueckt werden darf, eine Rechtefrage. -->
+                  @if (canViewMembers(group)) {
+                    <button class="item-group member-toggle" (click)="toggleMembers(group)"
+                            [attr.aria-expanded]="isExpanded(group)"
+                            [title]="'Charaktere mit der Rolle ' + group.roleName + ' anzeigen - offene Anfragen zählen hier nicht mit'">
+                      <i class="fa-solid fa-chevron-right chevron" [class.open]="isExpanded(group)"></i>
+                      {{ memberLabel(group) }}
+                    </button>
+                  }
                 </td>
 
                 <!-- Eine Gruppe ohne Beschreibung ist normal, kein Fehler: ein
@@ -114,6 +133,47 @@
                   }
                 </td>
               </tr>
+
+              <!-- Die Mitglieder haengen an ihrer Gruppe und stehen deshalb
+                   direkt unter ihr, nicht auf einer zweiten Seite. Geladen wird
+                   erst hier - siehe toggleMembers. -->
+              @if (isExpanded(group)) {
+                <tr class="member-row">
+                  <td colspan="4">
+                    @if (loadingMembersFor() === group.id) {
+                      <div class="loading-container small"><div class="loading-spinner"></div></div>
+                    } @else if (membersFor(group).length === 0) {
+                      <div class="member-empty">
+                        <i class="fa-solid fa-circle-info"></i>
+                        Niemand trägt die Rolle {{ group.roleName }}.
+                      </div>
+                    } @else {
+                      <div class="member-list">
+                        @for (member of membersFor(group); track member.characterId) {
+                          <div class="member-card">
+                            <img class="portrait" [src]="member.portraitUrl"
+                                 (error)="onPortraitError($event)" [alt]="member.characterName"
+                                 loading="lazy">
+                            <span class="member-name">{{ member.characterName }}</span>
+
+                            <!-- Nur fuer Zustaendige, und das entscheidet
+                                 isLeader vom Server - nicht eine hier geratene
+                                 Rollenliste. -->
+                            @if (canRemoveFrom(group)) {
+                              <button class="btn-icon btn-danger member-remove"
+                                      (click)="removeMember(group, member)"
+                                      [title]="'Rolle ' + group.roleName + ' abnehmen'"
+                                      [attr.aria-label]="member.characterName + ' aus der Gruppe entfernen'">
+                                <i class="fa-solid fa-user-minus"></i>
+                              </button>
+                            }
+                          </div>
+                        }
+                      </div>
+                    }
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>
@@ -217,7 +277,15 @@
                 <tr>
                   <td>
                     <div class="item-name">{{ group.name }}</div>
-                    <div class="item-group">{{ memberLabel(group) }}</div>
+                    <!-- Dieselbe Bedingung wie oben, obwohl sie hier praktisch
+                         immer zutrifft: die Pflege sieht nur ein Admin, und der
+                         Admin-Kreis liegt vollstaendig im Sichtkreis. Beide
+                         Tabellen haengen damit an derselben Quelle - ohne die
+                         Bedingung stuende hier eine leere Zweitzeile, sobald
+                         sich die Kreise einmal verschieben. -->
+                    @if (canViewMembers(group)) {
+                      <div class="item-group">{{ memberLabel(group) }}</div>
+                    }
                   </td>
                   <td><span class="role-badge">{{ group.roleName }}</span></td>
                   <td>

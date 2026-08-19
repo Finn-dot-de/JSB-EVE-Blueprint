@@ -29,15 +29,62 @@ public class AuthGroupDtos {
      *
      * @param memberCount       wie viele Charaktere die Rolle derzeit tragen - das
      *     ist nicht die Zahl der offenen Anfragen, eine Gruppe kann mit laufendem
-     *     Antrag durchaus noch null Mitglieder haben
+     *     Antrag durchaus noch null Mitglieder haben.
+     *     <p>{@code null} fuer jeden ausserhalb des Sichtkreises, der auch die
+     *     Mitgliederliste sehen darf. Die Zahl nennt zwar keine Namen, sie ist
+     *     aber dieselbe Auskunft eine Stufe grober - und wer beitreten und
+     *     austreten will, braucht sie nicht. Sie stehen zu lassen waere zudem
+     *     ein Leck mit Ansage: eine Gruppe, deren Zahl sich nach dem eigenen
+     *     Beitritt von 3 auf 4 bewegt, ist abzaehlbar, und bei einer Gruppe mit
+     *     genau einem Mitglied verraet schon die 1 zusammen mit einem
+     *     Discord-Rollenetikett die Person.
+     *     <p>Bewusst {@code null} und nicht {@code 0}: die Null waere eine
+     *     Falschaussage ("niemand ist drin"), aus demselben Grund, aus dem die
+     *     Mitgliederliste fuer Unberechtigte eine Ausnahme wirft und keine leere
+     *     Liste liefert. Die Oberflaeche blendet die Zahl bei {@code null} aus.
+     * @param canViewMembers    ob der Betrachter die Mitgliederliste dieser Gruppe
+     *     abrufen darf - dieselbe Auswertung, aus der auch {@code memberCount}
+     *     entsteht und an der {@code GET /api/groups/{id}/members} scheitert.
+     *     <p>Steht neben {@code memberCount} und nicht in ihm, obwohl die beiden
+     *     heute zeichengenau dasselbe sagen: die Zahl ist eine <b>Auskunft</b>,
+     *     die Berechtigung eine <b>Zusicherung</b>. Beides in einem Feld zu
+     *     tragen hiesse, die Oberflaeche muesste aus dem Fehlen einer Zahl auf
+     *     ein Recht schliessen - eine Ableitung, die nirgends geschrieben steht
+     *     und deshalb still falsch wird, sobald jemand die beiden entkoppelt
+     *     (Zahl fuer alle, Liste nur fuer den Kreis, oder umgekehrt). Kein Test
+     *     und kein Uebersetzer schluege dabei an; die Oberflaeche zeigte
+     *     lediglich den falschen Knopf.
+     *     <p>Ein {@code boolean} und kein {@code Boolean}: "unbekannt, ob
+     *     erlaubt" gibt es nicht - der Dienst kennt den Betrachter, wenn er den
+     *     Datensatz baut.
      * @param isMember          ob der angemeldete Charakter die Rolle bereits traegt
      * @param hasPendingRequest ob von ihm eine offene Anfrage vorliegt
      * @param isLeader          ob er mindestens eine der Leitungsrollen traegt
      */
     public record GroupDto(Long id, String name, String description, String roleName,
                            List<String> leaderRoleNames,
-                           long memberCount,
+                           Long memberCount, boolean canViewMembers,
                            boolean isMember, boolean hasPendingRequest, boolean isLeader) {}
+
+    /**
+     * Ein Mitglied einer Gruppe: der Charakter, der ihre Rolle traegt.
+     *
+     * <p>Bewusst dieselben drei Felder wie im Antragskopf von
+     * {@link GroupRequestDto} - ID, Name, Portrait. Die Oberflaeche zeigt eine
+     * Mitgliederliste und eine Anfrageliste direkt untereinander; unterschiedliche
+     * Feldnamen fuer dieselbe Person waeren dort nur eine Stolperstelle.</p>
+     *
+     * <p>Diesen Datensatz bekommt nicht jeder Angemeldete zu sehen, sondern nur
+     * der Sichtkreis aus {@code AuthGroupService} (Fuehrung, IT und A38). Wer
+     * nicht dazugehoert, bekommt eine {@code AccessDeniedException} und keine
+     * leere Liste - eine leere Liste behauptete, die Gruppe sei leer.</p>
+     *
+     * <p>Ohne Rollennamen und ohne Rechtekennzeichen: welche Rollen jemand sonst
+     * noch traegt, gehoert in den Rollenkatalog und nicht in die Mitgliederliste
+     * einer einzelnen SIG. Ob der Betrachter entfernen darf, haengt an der Gruppe
+     * und nicht am einzelnen Mitglied - das sagt {@link GroupDto#isLeader()}.</p>
+     */
+    public record GroupMemberDto(Long characterId, String characterName, String portraitUrl) {}
 
     /**
      * Eine Anfrage, wie die Verwaltung sie sieht.

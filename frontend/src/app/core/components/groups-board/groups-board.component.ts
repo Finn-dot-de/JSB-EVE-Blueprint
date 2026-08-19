@@ -5,6 +5,7 @@ import {
   AuthGroupService,
   GroupDecision,
   GroupDto,
+  GroupMemberDto,
   GroupRequestDto,
   SaveGroupDto,
 } from '../../services/auth-group.service';
@@ -107,6 +108,30 @@ export class GroupsBoardComponent implements OnInit {
   loadingRequests = signal(false);
   saving = signal(false);
   editingGroup = signal<SaveGroupDto | null>(null);
+
+  /**
+   * Welche Zeile ihre Mitglieder zeigt - höchstens eine.
+   *
+   * <p>Genau eine und nicht beliebig viele: die Mitgliederliste schiebt sich
+   * zwischen zwei Tabellenzeilen, und drei aufgeklappte SIGs mit je zwanzig
+   * Charakteren machen aus der Übersicht eine Bildschirmwanderung. Wer
+   * vergleichen will, klappt um - die einmal geholte Liste bleibt gespeichert,
+   * der Wechsel kostet also keinen neuen Abruf.</p>
+   */
+  expandedGroupId = signal<number | null>(null);
+
+  /**
+   * Die bereits geholten Mitgliederlisten, je Gruppen-Id.
+   *
+   * <p>Der Grund für den Speicher: geladen wird erst beim Aufklappen, und ein
+   * zweites Aufklappen derselben Zeile darf den Server nicht erneut fragen -
+   * sonst klickt sich ein Admin durch die Liste und löst mit jedem Auf und Zu
+   * einen Abruf aus.</p>
+   */
+  private members = signal<Map<number, GroupMemberDto[]>>(new Map());
+
+  /** Die Gruppe, deren Mitglieder gerade unterwegs sind - für den Spinner. */
+  loadingMembersFor = signal<number | null>(null);
 
   /**
    * Ob der Rollenname von Hand angefasst wurde.
@@ -320,6 +345,142 @@ export class GroupsBoardComponent implements OnInit {
     });
   }
 
+  // ================= Mitglieder einer Gruppe =================
+
+  /**
+   * Ob der Betrachter erfahren darf, WER in dieser Gruppe ist.
+   *
+   * <p>Gefragt wird das Feld, das der Server genau dafür schickt - nicht das
+   * Fehlen von `memberCount` und erst recht keine hier nachgebaute Rollenliste
+   * aus DIRECTOR, CEO, IT_ADMIN und A38. Die Rollenliste wäre eine zweite
+   * Wahrheit: Rollen stammen auch aus Ingame-Titeln, und der Kreis soll sich
+   * mit einer Zeile im Backend erweitern lassen, ohne dass hier jemand
+   * nachzieht.</p>
+   *
+   * <p>Und die Zahl wäre eine geliehene: sie fällt heute mit der Berechtigung
+   * zusammen, aber nur, weil der Server beides aus derselben Prüfung füllt.
+   * Trennt jemand die beiden - Zahl für alle, Liste nur für den Kreis oder
+   * umgekehrt -, wäre die Oberfläche still falsch, ohne dass ein Test
+   * anschlägt. Deshalb hat die Berechtigung ihren eigenen Namen.</p>
+   *
+   * <p>Blendet nur aus - durchgesetzt wird die Regel im `AuthGroupService` des
+   * Backends. Der Punkt ist ein anderer: ein Aufklapp-Pfeil, der zuverlässig
+   * eine Fehlermeldung bringt, ist schlechter als kein Pfeil. Ein gewöhnliches
+   * Mitglied sieht die Gruppe, ihre Beschreibung, ihre Leitung und genau einen
+   * Knopf - beitreten, ausstehend oder verlassen. Mehr braucht es nicht.</p>
+   */
+  canViewMembers(group: GroupDto): boolean {
+    return group.canViewMembers;
+  }
+
+  /** Ob die Zeile dieser Gruppe gerade ihre Mitglieder zeigt. */
+  isExpanded(group: GroupDto): boolean {
+    return this.expandedGroupId() === group.id;
+  }
+
+  /** Die geholten Mitglieder dieser Gruppe - leer, solange nichts geholt wurde. */
+  membersFor(group: GroupDto): GroupMemberDto[] {
+    return this.members().get(group.id) ?? [];
+  }
+
+  /**
+   * Klappt die Mitgliederliste einer Zeile auf oder wieder zu.
+   *
+   * <p>Der Abruf hängt am Aufklappen und nicht am Seitenaufbau: eine
+   * Corporation hat schnell zwanzig SIGs, und zwanzig Mitgliederlisten zu holen,
+   * von denen keine jemand ansieht, verzögert die Seite für alle.</p>
+   *
+   * <p>Geholt wird nur, was noch nicht dasteht - siehe {@link members}. Wer
+   * dieselbe Zeile zweimal aufklappt, löst deshalb keinen zweiten Abruf aus.</p>
+   *
+   * <p>Die Sperre steht hier und nicht nur am Pfeil im Template: die Vorlage
+   * blendet den Bedienpunkt zwar aus, aber der Riegel gehört an die Stelle, die
+   * den Abruf auslöst - sonst genügt ein zweiter Aufrufer der Methode, und ein
+   * Unberechtigter läuft in die 403 des Servers.</p>
+   */
+  toggleMembers(group: GroupDto) {
+    if (!this.canViewMembers(group)) return;
+
+    if (this.isExpanded(group)) {
+      this.expandedGroupId.set(null);
+      return;
+    }
+
+    this.expandedGroupId.set(group.id);
+    if (!this.members().has(group.id)) this.loadMembers(group.id);
+  }
+
+  /**
+   * Holt die Mitgliederliste einer Gruppe.
+   *
+   * <p>Ein Fehlschlag klappt die Zeile wieder zu und legt nichts ab: eine leere
+   * Liste stünde sonst als "keine Mitglieder" da, obwohl niemand das weiß - und
+   * bliebe für den Rest der Sitzung gespeichert.</p>
+   */
+  private loadMembers(groupId: number) {
+    this.loadingMembersFor.set(groupId);
+    this.groupsService.getMembers(groupId).subscribe({
+      next: (members) => {
+        this.members.update((cache) => new Map(cache).set(groupId, members));
+        this.loadingMembersFor.set(null);
+      },
+      error: (err) => {
+        this.loadingMembersFor.set(null);
+        this.expandedGroupId.set(null);
+        this.toastService.error(err.error?.message || 'Mitglieder konnten nicht geladen werden.');
+      },
+    });
+  }
+
+  /**
+   * Ob der Betrachter aus DIESER Gruppe entfernen darf.
+   *
+   * <p>Genau derselbe Kreis, der über ihre Anfragen entscheidet: aufnehmen und
+   * entfernen sind dieselbe Befugnis von zwei Seiten. `isLeader` kommt vom
+   * Server - welche Rollen jemand wirklich trägt, ist im Browser nicht
+   * nachzurechnen, weil Rollen auch aus Ingame-Titeln stammen. Eine hier
+   * geratene Rollenliste zeigte den Knopf mal zu viel, mal zu wenig.</p>
+   *
+   * <p>Blendet nur aus. Durchgesetzt wird die Regel im `AuthGroupService` des
+   * Backends, samt der Sonderregel, dass eine Leitung keinen Admin entfernt.</p>
+   */
+  canRemoveFrom(group: GroupDto): boolean {
+    return group.isLeader || this.isAdmin;
+  }
+
+  /**
+   * Wirft ein Mitglied aus der Gruppe.
+   *
+   * <p>Die Rückfrage nennt den Namen, und das ist der Punkt: die Zeilen einer
+   * Mitgliederliste sehen einander gleich, ein Fehlklick trifft die falsche
+   * Person - und die steht danach ohne Erklärung vor gesperrten
+   * Discord-Kanälen.</p>
+   *
+   * <p>Danach beides neu: die Mitgliederliste ohne Umweg über den Speicher, und
+   * die Gruppen wegen der Mitgliederzahl in der Zeile darüber. Die Zahl bloß
+   * herunterzuzählen ginge daneben, sobald jemand anderes zeitgleich beitritt.</p>
+   */
+  async removeMember(group: GroupDto, member: GroupMemberDto) {
+    if (!this.canRemoveFrom(group)) return;
+
+    const confirmed = await this.confirmService.ask(
+      'Mitglied entfernen?',
+      `${member.characterName} verliert die Rolle ${group.roleName} und damit den Zugang zu allem, was an "${group.name}" hängt - auch zu den Discord-Kanälen. Zurück geht es nur über einen neuen Antrag.`,
+      'Entfernen',
+    );
+    if (!confirmed) return;
+
+    this.groupsService.removeMember(group.id, member.characterId).subscribe({
+      next: () => {
+        this.toastService.success(`${member.characterName} entfernt.`);
+        this.loadMembers(group.id);
+        this.load();
+      },
+      error: (err) =>
+        this.toastService.error(err.error?.message || 'Mitglied konnte nicht entfernt werden.'),
+    });
+  }
+
   // ================= Verwaltung =================
 
   approve(request: GroupRequestDto) {
@@ -525,8 +686,17 @@ export class GroupsBoardComponent implements OnInit {
    * <p>Am Bildschirm stand hier eine 0, während ein Antrag lief, und das las
    * sich wie ein Fehler. Gezählt werden die Träger der Rolle; eine offene
    * Anfrage ist noch keine Mitgliedschaft und zählt deshalb nicht mit.</p>
+   *
+   * <p>Ohne Zahl bleibt der Text leer und wird nicht etwa zu "0 Mitglieder"
+   * oder "unbekannt": die Null behauptete, die Gruppe sei leer, und "unbekannt"
+   * wiese auf etwas hin, das den Betrachter nichts angeht. Wer die Zeile
+   * überhaupt zu sehen bekommt, entscheidet {@link canViewMembers} in der
+   * Vorlage - hier wird nur eine fehlende Zahl abgefangen, keine Berechtigung
+   * geprüft.</p>
    */
   memberLabel(group: GroupDto): string {
-    return group.memberCount === 1 ? '1 Mitglied' : `${group.memberCount} Mitglieder`;
+    const count = group.memberCount;
+    if (count === null) return '';
+    return count === 1 ? '1 Mitglied' : `${count} Mitglieder`;
   }
 }

@@ -55,6 +55,41 @@ describe('AuthGroupService', () => {
     leave.flush(null);
   });
 
+  it('holt die Mitglieder einer Gruppe unter der Gruppen-Adresse', () => {
+    // Kein Betrachter im Pfad, obwohl die Adresse seit der Einschränkung einen
+    // eigenen Rechtekreis hat: der Server nimmt den angemeldeten Charakter.
+    // Stünde er im Pfad, wäre er eine Behauptung, die sich fälschen ließe.
+    service.getMembers(7).subscribe();
+    const members = httpMock.expectOne(`${apiUrl}/7/members`);
+    expect(members.request.method).toBe('GET');
+    members.flush([]);
+  });
+
+  it('reicht die Ablehnung des Servers durch, statt eine leere Liste zu liefern', () => {
+    // Wer nicht zum Sichtkreis gehört (Führung, IT, A38), bekommt 403. Das muss
+    // beim Aufrufer als Fehler ankommen: eine hier abgefangene leere Liste läse
+    // sich als "niemand ist in dieser Gruppe" - genau die Falschaussage, die
+    // das Backend mit der Ausnahme vermeidet.
+    let status = 0;
+    service.getMembers(7).subscribe({ error: (err) => (status = err.status) });
+    httpMock
+      .expectOne(`${apiUrl}/7/members`)
+      .flush({ message: 'Nicht erlaubt.' }, { status: 403, statusText: 'Forbidden' });
+
+    expect(status).toBe(403);
+  });
+
+  it('entfernt ein Mitglied mit DELETE und FREMDER Charakter-Id im Pfad', () => {
+    // Der einzige Aufruf dieses Dienstes, der eine fremde Charakter-Id trägt -
+    // das genaue Gegenteil von leaveGroup, wo sie mit Absicht fehlt. Rutschte
+    // hier die Gruppen-Id an die Stelle der Charakter-Id, träfe der Aufruf einen
+    // beliebigen anderen Charakter.
+    service.removeMember(7, 42).subscribe();
+    const remove = httpMock.expectOne(`${apiUrl}/7/members/42`);
+    expect(remove.request.method).toBe('DELETE');
+    remove.flush(null);
+  });
+
   it('schickt die Entscheidung als Teil der Adresse', () => {
     service.decideRequest(3, 'approve').subscribe();
     httpMock.expectOne(`${apiUrl}/requests/3/approve`).flush(null);

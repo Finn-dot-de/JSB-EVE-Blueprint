@@ -156,6 +156,174 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
 /* =========================================
+   CHARAKTER: SUCHE UND ROLLENVERGABE
+   ========================================= */
+.character-search,
+.character-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+}
+
+// Die Suche selbst bleibt schmal: ein Namensfeld über die volle Breite eines
+// 27-Zoll-Schirms sieht aus, als gehörte ein Absatz hinein.
+.character-search > .field { max-width: 360px; }
+
+.character-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.character-hit {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.5rem 0.85rem;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+
+  &:hover { border-color: $accent-soft; }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+  }
+
+  img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+  }
+
+  // Der Name links, die Corp rechts: dazwischen der ganze Rest der Zeile.
+  .character-hit-name { margin-right: auto; }
+}
+
+.character-hit-name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+
+  .muted { font-size: 0.8rem; }
+}
+
+.character-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+
+  // Der Knopf ganz nach rechts, egal wie lang der Name ist.
+  .btn-secondary { margin-left: auto; }
+}
+
+.character-portrait {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+}
+
+.character-name-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.character-name {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.character-sub {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.role-block-title {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.assign-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.assign-item {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.assign-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  // Ohne Untergrenze schrumpft die Spalte auf die Breite des längsten Wortes,
+  // sobald die Begründung lang wird - der Rollenname bräche dann um.
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.assign-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--accent-color);
+}
+
+.assign-note {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+// Die Warnung steht neben dem Knopf und nicht in einer Fussnote: wer erst nach
+// dem Klick erfährt, dass der Entzug nicht hält, versucht es dreimal.
+.assign-action {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-left: auto;
+}
+
+.button-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 260px;
+  color: var(--highlight-color);
+  font-size: 0.78rem;
+  line-height: 1.4;
+
+  i { flex-shrink: 0; }
+}
+
+/* =========================================
    ROLLEN-TABELLE
    ========================================= */
 .role-table-wrapper {
@@ -255,6 +423,39 @@ $surface-tint: color-mix(in srgb, var(--text-primary) 4%, transparent);
   &.source-BUILT_IN { @include badge-colors(var(--text-secondary), 18%, 65%); }
   &.source-CUSTOM { @include badge-colors(var(--success-color), 16%, 45%); }
   &.source-TITLE { @include badge-colors(var(--accent-color), 14%, 70%); }
+}
+
+.audit-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+
+  &.audit-GRANT { @include badge-colors(var(--success-color), 16%, 45%); }
+  &.audit-REVOKE { @include badge-colors(var(--danger-color), 16%, 45%); }
+}
+
+// Die Selbstvergabe wird hervorgehoben und nicht bloß mitgeschrieben: sie ist
+// der eine Fall, den ein Nachweis überhaupt sichtbar machen soll.
+.self-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+
+  @include badge-colors(var(--highlight-color), 18%, 40%);
+}
+
+.cell-when {
+  white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 /* =========================================

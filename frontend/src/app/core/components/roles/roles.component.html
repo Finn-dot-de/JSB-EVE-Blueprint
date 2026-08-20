@@ -1,6 +1,239 @@
 <div class="roles-container">
 
   <div class="section-divider">
+    <span>Rollen eines Charakters</span>
+  </div>
+
+  <p class="section-hint">
+    Rollen von Hand vergeben und wieder entziehen. Eine so vergebene Rolle wird dabei als
+    dauerhaft markiert - sonst nähme der Abgleich sie in spätestens zehn Minuten wieder weg.
+    Was aus einem Ingame-Titel kommt, lässt sich hier nicht abnehmen; dafür muss die Zuordnung
+    weiter unten gelöst oder der Titel ingame entzogen werden.
+  </p>
+
+  @if (selectedCharacter(); as character) {
+
+    <div class="character-card">
+      <div class="character-head">
+        <img class="character-portrait" [src]="character.portraitUrl"
+             [alt]="'Portrait von ' + character.characterName">
+        <div class="character-name-box">
+          <span class="character-name">{{ character.characterName }}</span>
+          <span class="character-sub">{{ heldRoles().length }} Rollen</span>
+        </div>
+        <button class="btn-secondary" (click)="clearCharacter()">
+          <i class="fa-solid fa-xmark"></i> Anderen Charakter wählen
+        </button>
+      </div>
+
+      <label class="field">
+        <span>Grund (freiwillig)</span>
+        <input type="text" name="changeReason" [ngModel]="changeReason()"
+               (ngModelChange)="changeReason.set($event)"
+               placeholder="z.B. übernimmt die Rekrutierung" autocomplete="off">
+      </label>
+      <p class="field-hint">
+        Der Grund landet im Nachweis darunter. Er darf leer bleiben - ein erzwungener Grund
+        wird ohnehin zu "x".
+      </p>
+
+      <h4 class="role-block-title">Trägt diese Rollen</h4>
+      @if (heldRoles().length === 0) {
+        <div class="empty-hint">
+          <i class="fa-solid fa-circle-info"></i>
+          {{ character.characterName }} trägt keine einzige Rolle.
+        </div>
+      } @else {
+        <div class="assign-list">
+          @for (role of heldRoles(); track role.roleName) {
+            <div class="assign-item">
+              <div class="assign-info">
+                <span class="assign-name">
+                  {{ role.roleName }}
+                  <span class="source-badge" [ngClass]="'source-' + role.source">
+                    {{ sourceLabel(role.source) }}
+                  </span>
+                  @if (role.survivesSync) {
+                    <span class="special-badge" title="Bleibt bei einer Neuberechnung erhalten">
+                      <i class="fa-solid fa-thumbtack"></i> dauerhaft
+                    </span>
+                  }
+                </span>
+                <span class="assign-note">{{ role.note }}</span>
+              </div>
+
+              <div class="assign-action">
+                @if (buttonWarning(role); as warning) {
+                  <span class="button-warning">
+                    <i class="fa-solid fa-triangle-exclamation"></i> {{ warning }}
+                  </span>
+                }
+                <button class="btn-danger" (click)="revokeRole(role)"
+                        [disabled]="!role.revocable || isPending(role)"
+                        [attr.aria-label]="role.roleName + ' entziehen'">
+                  <i class="fa-solid fa-user-minus"></i> Entziehen
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      <h4 class="role-block-title">Könnte diese Rollen bekommen</h4>
+      @if (availableRoles().length === 0) {
+        <div class="empty-hint">
+          <i class="fa-solid fa-circle-info"></i>
+          Es gibt keine weitere Rolle, die sich von Hand vergeben liesse.
+        </div>
+      } @else {
+        <div class="assign-list">
+          @for (role of availableRoles(); track role.roleName) {
+            <div class="assign-item">
+              <div class="assign-info">
+                <span class="assign-name">
+                  {{ role.roleName }}
+                  <span class="source-badge" [ngClass]="'source-' + role.source">
+                    {{ sourceLabel(role.source) }}
+                  </span>
+                </span>
+                <span class="assign-note">{{ role.note }}</span>
+              </div>
+
+              <div class="assign-action">
+                @if (buttonWarning(role); as warning) {
+                  <span class="button-warning">
+                    <i class="fa-solid fa-triangle-exclamation"></i> {{ warning }}
+                  </span>
+                }
+                <button class="btn-primary" (click)="grantRole(role)"
+                        [disabled]="!role.assignable || isPending(role)"
+                        [attr.aria-label]="role.roleName + ' zuweisen'">
+                  <i class="fa-solid fa-user-plus"></i> Zuweisen
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+  } @else if (loadingSelected() || loadingCharacters()) {
+    <div class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+  } @else {
+
+    <div class="character-search">
+      <label class="field">
+        <span>Charakter suchen</span>
+        <input type="text" name="characterQuery" [ngModel]="characterQuery()"
+               (ngModelChange)="characterQuery.set($event)"
+               placeholder="Name eintippen …" autocomplete="off">
+      </label>
+
+      @if (characterQuery().trim().length < minSearchLength) {
+        <p class="field-hint">
+          Ab {{ minSearchLength }} Zeichen wird gesucht - Mains und Alts stehen in derselben
+          Liste, denn eine Rolle hängt am Charakter und nicht am Account.
+        </p>
+      } @else if (characterMatches().length === 0) {
+        <div class="empty-hint">
+          <i class="fa-solid fa-circle-info"></i>
+          Kein registrierter Charakter passt dazu. Wer sich nie angemeldet hat, steht hier nicht.
+        </div>
+      } @else {
+        <div class="character-hits">
+          @for (choice of characterMatches(); track choice.id) {
+            <button class="character-hit" (click)="selectCharacter(choice.id)">
+              <img [src]="choice.portraitUrl" [alt]="'Portrait von ' + choice.name">
+              <span class="character-hit-name">
+                {{ choice.name }}
+                @if (choice.mainName) {
+                  <span class="muted">Alt von {{ choice.mainName }}</span>
+                } @else {
+                  <span class="muted">Main</span>
+                }
+              </span>
+              <span class="muted">{{ choice.corporationName }}</span>
+            </button>
+          }
+        </div>
+        @if (hiddenMatches() > 0) {
+          <p class="field-hint">
+            {{ hiddenMatches() }} weitere Treffer werden nicht gezeigt - grenze die Suche ein.
+          </p>
+        }
+      }
+    </div>
+
+  }
+
+  <div class="section-divider">
+    <span>{{ auditHeading() }}</span>
+  </div>
+
+  <p class="section-hint">
+    Wer wann welche Rolle von Hand vergeben oder entzogen hat. Die Aufzeichnung beginnt mit
+    ihrer Einführung: ein leerer Verlauf heisst "seitdem nichts von Hand geändert" - nie
+    "war schon immer da".
+  </p>
+
+  @if (loadingAudit()) {
+    <div class="loading-container">
+      <div class="loading-spinner"></div>
+    </div>
+  } @else if (audit().length === 0) {
+    <div class="empty-hint">
+      <i class="fa-solid fa-circle-info"></i>
+      Bisher wurde keine Rolle von Hand vergeben oder entzogen.
+    </div>
+  } @else {
+    <div class="role-table-wrapper">
+      <table class="role-table">
+        <thead>
+          <tr>
+            <th>Wann</th>
+            <th>Charakter</th>
+            <th>Rolle</th>
+            <th>Was</th>
+            <th>Durch</th>
+            <th>Grund</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (entry of audit(); track entry.id) {
+            <tr>
+              <td class="cell-when">{{ entry.occurredAt | date: 'dd.MM.yyyy HH:mm' }}</td>
+              <td>{{ entry.characterName }}</td>
+              <td class="cell-role">{{ entry.roleName }}</td>
+              <td>
+                <span class="audit-badge" [ngClass]="'audit-' + entry.action">
+                  {{ auditActionLabel(entry) }}
+                </span>
+              </td>
+              <td>
+                {{ entry.actorName }}
+                @if (entry.selfAssigned) {
+                  <span class="self-badge" title="Der Handelnde hat sich selbst bedient">
+                    <i class="fa-solid fa-user-shield"></i> an sich selbst
+                  </span>
+                }
+              </td>
+              <td class="cell-description">
+                @if (entry.reason) {
+                  {{ entry.reason }}
+                } @else {
+                  <span class="muted">-</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <div class="section-divider">
     <span>Corporation Titles</span>
   </div>
 

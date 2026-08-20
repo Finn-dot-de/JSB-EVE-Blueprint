@@ -8,6 +8,7 @@ import { DiscordService } from './discord.service';
 import { DoctrineService } from './doctrine.service';
 import { FleetService } from './fleet.service';
 import { GroupService } from './group.service';
+import { RoleAssignmentService } from './role-assignment.service';
 import { SkillPlanService } from './skill-plan.service';
 import { NavigationService } from './navigation.service';
 import { MyAssetService } from './my-asset.service';
@@ -30,6 +31,7 @@ describe('HTTP-Dienste', () => {
         DoctrineService,
         FleetService,
         GroupService,
+        RoleAssignmentService,
         SkillPlanService,
         NavigationService,
         MyAssetService,
@@ -482,6 +484,47 @@ describe('HTTP-Dienste', () => {
       const request = httpMock.expectOne(`${environment.apiUrl}/groups/roles/ROLE_RECRUITER`);
       expect(request.request.method).toBe('DELETE');
       request.flush(null);
+    });
+  });
+
+  describe('RoleAssignmentService', () => {
+    const apiUrl = `${environment.apiUrl}/roles`;
+
+    it('holt die Rollen eines Charakters samt Bewertung', () => {
+      TestBed.inject(RoleAssignmentService).rolesOf(42).subscribe();
+
+      httpMock.expectOne(`${apiUrl}/characters/42`).flush(null);
+    });
+
+    it('weist eine Rolle zu und schickt den Grund im Rumpf', () => {
+      TestBed.inject(RoleAssignmentService).grant(42, 'ROLE_RECRUITER', 'wirbt an').subscribe();
+
+      const request = httpMock.expectOne(`${apiUrl}/characters/42/grant`);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual({ roleName: 'ROLE_RECRUITER', reason: 'wirbt an' });
+      request.flush(null);
+    });
+
+    it('entzieht über POST, damit der Grund nicht in der Adresszeile landet', () => {
+      // In der Adresszeile stünde er in jedem Zugriffsprotokoll.
+      TestBed.inject(RoleAssignmentService).revoke(42, 'ROLE_RECRUITER', '').subscribe();
+
+      const request = httpMock.expectOne(`${apiUrl}/characters/42/revoke`);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual({ roleName: 'ROLE_RECRUITER', reason: '' });
+      request.flush(null);
+    });
+
+    it('holt den Verlauf eines Charakters', () => {
+      TestBed.inject(RoleAssignmentService).auditFor(42).subscribe();
+
+      httpMock.expectOne(`${apiUrl}/characters/42/audit`).flush([]);
+    });
+
+    it('holt den Verlauf über alle Charaktere', () => {
+      TestBed.inject(RoleAssignmentService).recentAudit().subscribe();
+
+      httpMock.expectOne(`${apiUrl}/audit`).flush([]);
     });
   });
 

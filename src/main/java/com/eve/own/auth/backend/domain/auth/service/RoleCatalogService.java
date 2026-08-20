@@ -38,7 +38,10 @@ public class RoleCatalogService {
      */
     private static final Map<String, String> BUILT_IN_DESCRIPTIONS = Map.of(
             SystemRoles.USER, "Basis-Recht fuer alle angemeldeten Charaktere",
-            SystemRoles.MEMBER, "Mitglied einer zugelassenen Corporation",
+            // Nicht mehr "Mitglied einer zugelassenen Corporation": Diese Rolle
+            // kommt seit der Umstellung ausschliesslich aus dem Ingame-Titel
+            // "Member", nicht aus der blossen Zugehoerigkeit.
+            SystemRoles.MEMBER, "Vollmitglied - kommt aus dem Ingame-Titel Member",
             SystemRoles.MARAUDERS, "Mitglied der Haupt-Corporation",
             SystemRoles.GUEST, "Angemeldet, aber in keiner zugelassenen Corporation",
             SystemRoles.CEO, "Fuehrung der Corporation",

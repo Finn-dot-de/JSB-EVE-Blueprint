@@ -85,15 +85,33 @@ public class CharacterRoleService {
         return characterRepo.save(character);
     }
 
+    /**
+     * Was allein aus der Corporation-Zugehoerigkeit folgt.
+     *
+     * <p>Bewusst nur {@code USER} und - in der Haupt-Corp - {@code MARAUDERS}.
+     * {@code MEMBER} stand hier frueher ebenfalls und wurde damit jedem
+     * zuteil, der irgendwo in einer betreuten Corporation sass. Das war zu
+     * grosszuegig: Ein Junior Member trug dieselbe Rolle wie ein Vollmitglied,
+     * und die beiden Menuepunkte dahinter (Fleet Pings, Doctrines) standen
+     * jedem offen.</p>
+     *
+     * <p>{@code MEMBER} kommt jetzt ausschliesslich aus dem gleichnamigen
+     * Ingame-Titel, also ueber {@link #titleRoles}. Wer den Titel nicht traegt,
+     * verliert die Rolle beim naechsten Abgleich - das ist gewollt und war der
+     * Zweck der Umstellung.</p>
+     *
+     * <p>{@code USER} bleibt bedingungslos: Daran haengt, dass jemand ueberhaupt
+     * angemeldet ist. Wer es an einen Titel bindet, sperrt sich selbst aus.</p>
+     */
     private Set<String> membershipRoles(Character character) {
         Long corporationId = character.getCorporation().getId();
         if (!corporationScope.isAllowed(corporationId)) {
             return Set.of(SystemRoles.GUEST);
         }
         if (corporationScope.isMain(corporationId)) {
-            return Set.of(SystemRoles.USER, SystemRoles.MEMBER, SystemRoles.MARAUDERS);
+            return Set.of(SystemRoles.USER, SystemRoles.MARAUDERS);
         }
-        return Set.of(SystemRoles.USER, SystemRoles.MEMBER);
+        return Set.of(SystemRoles.USER);
     }
 
     /**

@@ -80,6 +80,16 @@ public class DiscordRoleSyncService {
             // sonstigen Fehler: abwarten und erneut druecken.
             return Optional.of(ohneAbgleich(plan,
                     "Discord bremst gerade (429). In ein paar Sekunden noch einmal versuchen."));
+        } catch (HttpClientErrorException.Forbidden e) {
+            // Eigener Zweig, seit der Abgleich mit einem Lesezugriff beginnt:
+            // Scheitert schon der, kennt niemand den Ist-Zustand, und es geht
+            // kein einziger Schreibzugriff hinaus. Unter "Discord antwortet
+            // nicht" abgelegt, klaenge das nach Stoerung - es ist aber eine
+            // Rangfolge, die sich in den Servereinstellungen richten laesst.
+            return Optional.of(ohneAbgleich(plan,
+                    "Discord verweigert die Auskunft ueber dieses Konto (403). Die Bot-Rolle "
+                            + "muss ueber den zu setzenden Rollen stehen; am Server-Owner "
+                            + "scheitert jeder Bot."));
         } catch (RuntimeException e) {
             return Optional.of(ohneAbgleich(plan, "Discord antwortet nicht: " + e.getMessage()));
         }
@@ -93,7 +103,7 @@ public class DiscordRoleSyncService {
         List<DiscordSyncErgebnis.Zeile> zeilen = ergebnisse.stream()
                 .map(e -> new DiscordSyncErgebnis.Zeile(
                         plan.authRolleJeDiscordRolle().get(e.discordRoleId()),
-                        e.discordRoleId(), e.aktion(), e.erfolg(), e.grund()))
+                        e.discordRoleId(), e.aktion(), e.erfolg(), e.geaendert(), e.grund()))
                 .toList();
 
         long gescheitert = zeilen.stream().filter(z -> !z.erfolg()).count();

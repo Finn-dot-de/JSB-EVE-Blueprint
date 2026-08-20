@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -48,10 +49,29 @@ class DiscordBotServiceRollenTest {
         return new DiscordBotService(builder, "token", GUILD, "cid", "secret");
     }
 
+    /**
+     * Der Lesezugriff, mit dem seit dem Umbau jeder Abgleich beginnt.
+     *
+     * <p>Er steht in jedem Test dieser Klasse an erster Stelle: Ohne den
+     * Ist-Zustand entscheidet der Abgleich nicht, ob geschrieben werden muss -
+     * er schriebe wieder blind.</p>
+     */
+    private void mitgliedHat(String... rollen) {
+        String liste = String.join("\", \"", rollen);
+        server.expect(requestTo(BASIS))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(rollen.length == 0
+                                ? "{\"roles\": []}"
+                                : "{\"roles\": [\"" + liste + "\"]}",
+                        MediaType.APPLICATION_JSON));
+    }
+
     @Test
     @DisplayName("setzt eine verwaltete Rolle einzeln und nimmt die andere einzeln weg")
     void jeRolleEinAufruf() {
         DiscordBotService bot = dienst();
+        // Verkehrt herum belegt: die gewuenschte fehlt, die ungewuenschte sitzt.
+        mitgliedHat(VERWALTET_NEIN);
         server.expect(requestTo(BASIS + "/roles/" + VERWALTET_JA))
                 .andExpect(method(HttpMethod.PUT))
                 .andRespond(withSuccess());
@@ -84,6 +104,10 @@ class DiscordBotServiceRollenTest {
         // Ausloesbar von jedem Angemeldeten fuer sich selbst. Frueher ging hier
         // ein leeres roles-Feld raus und das Mitglied verlor JEDE Rolle.
         DiscordBotService bot = dienst();
+        // Die 9999 ist von Hand vergeben und hat keine Zuordnung. Sie steht in
+        // der Antwort, damit der Test scheitert, falls der Abgleich sie
+        // anfasst - ein DELETE darauf waere ein unerwarteter Aufruf.
+        mitgliedHat(VERWALTET_JA, "9999");
         server.expect(requestTo(BASIS + "/roles/" + VERWALTET_JA))
                 .andExpect(method(HttpMethod.DELETE))
                 .andRespond(withSuccess());
@@ -101,6 +125,7 @@ class DiscordBotServiceRollenTest {
         // genau das tat der alte Sammelaufruf: ein 403, und der Nutzer bekam
         // gar keine seiner Rollen.
         DiscordBotService bot = dienst();
+        mitgliedHat(VERWALTET_NEIN);
         server.expect(requestTo(BASIS + "/roles/" + VERWALTET_JA))
                 .andExpect(method(HttpMethod.PUT))
                 .andRespond(withStatus(HttpStatus.FORBIDDEN));
@@ -132,6 +157,7 @@ class DiscordBotServiceRollenTest {
         // anstiess, bekam eine Fehlermeldung ueber den Spitznamen und kein Wort
         // darueber, dass seine Rollen laengst gesetzt waren.
         DiscordBotService bot = dienst();
+        mitgliedHat();
         server.expect(requestTo(BASIS + "/roles/" + VERWALTET_JA))
                 .andExpect(method(HttpMethod.PUT))
                 .andRespond(withSuccess());
@@ -153,6 +179,10 @@ class DiscordBotServiceRollenTest {
         // Solange kein Mapping gepflegt ist, hat das Auth in Discord nichts zu
         // suchen. Der Gegenfall - ohne ihn wuerde ein Code, der pauschal
         // aufraeumt, die beiden Tests darueber trotzdem bestehen.
+        //
+        // Auch der Lesezugriff faellt weg: Ohne eine einzige Zuordnung gibt es
+        // nichts zu vergleichen, und ein GET je Konto und halbe Stunde waere
+        // ein Aufruf fuer eine Frage, die niemand gestellt hat.
         DiscordBotService bot = dienst();
         server.expect(ExpectedCount.never(), requestTo(BASIS));
 

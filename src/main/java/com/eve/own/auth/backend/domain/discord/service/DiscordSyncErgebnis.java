@@ -38,11 +38,16 @@ public record DiscordSyncErgebnis(
      *                  {@code null} bei einer verwalteten Rolle, die dieser
      *                  Charakter nicht haben soll. Ohne sie stuende in der
      *                  Rueckmeldung nur eine achtzehnstellige Zahl.
+     * @param geaendert ob dafuer etwas an Discord geschickt wurde. Der
+     *                  Abgleich liest inzwischen zuerst und schreibt nur die
+     *                  Differenz; ohne dieses Feld saehe "steht schon richtig"
+     *                  aus wie "wurde gerade gesetzt".
      */
     public record Zeile(String authRolle,
                         String discordRoleId,
                         DiscordRollenErgebnis.Aktion aktion,
                         boolean erfolg,
+                        boolean geaendert,
                         String grund) {
     }
 

@@ -93,7 +93,7 @@ class CharacterRoleServiceTest {
             Character saved = service.applyRoles(characterIn(MAIN_CORP), TOKEN);
 
             assertThat(saved.getRoles())
-                    .containsExactlyInAnyOrder(SystemRoles.USER, SystemRoles.MEMBER, SystemRoles.MARAUDERS);
+                    .containsExactlyInAnyOrder(SystemRoles.USER, SystemRoles.MARAUDERS);
         }
 
         @Test
@@ -102,7 +102,7 @@ class CharacterRoleServiceTest {
             Character saved = service.applyRoles(characterIn(ALT_CORP), TOKEN);
 
             assertThat(saved.getRoles())
-                    .containsExactlyInAnyOrder(SystemRoles.USER, SystemRoles.MEMBER);
+                    .containsExactlyInAnyOrder(SystemRoles.USER);
         }
 
         @Test
@@ -193,7 +193,7 @@ class CharacterRoleServiceTest {
             Character saved = service.applyRoles(characterIn(MAIN_CORP), TOKEN);
 
             assertThat(saved.getRoles())
-                    .containsExactlyInAnyOrder(SystemRoles.USER, SystemRoles.MEMBER, SystemRoles.MARAUDERS);
+                    .containsExactlyInAnyOrder(SystemRoles.USER, SystemRoles.MARAUDERS);
         }
 
         @Test
@@ -228,7 +228,7 @@ class CharacterRoleServiceTest {
             Character saved = service.applyRoles(characterIn(MAIN_CORP), TOKEN);
 
             assertThat(saved.getRoles())
-                    .containsExactlyInAnyOrder(SystemRoles.USER, SystemRoles.MEMBER, SystemRoles.MARAUDERS);
+                    .containsExactlyInAnyOrder(SystemRoles.USER, SystemRoles.MARAUDERS);
         }
 
         @Test

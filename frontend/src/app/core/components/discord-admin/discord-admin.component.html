@@ -43,5 +43,334 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Soll-Ist-Prüfung. Steht auf dieser Seite und nicht auf einer eigenen:
+         Die Frage "hat meine Zuordnung gewirkt?" entsteht genau hier, eine
+         Zeile über der Tabelle, in der sie gerade eingetragen wurde. -->
+    <div class="section-divider">
+      <span class="divider-line"></span>
+      <span>Soll-Ist-Prüfung</span>
+      <span class="divider-line"></span>
+    </div>
+
+    <p class="section-hint">
+      Vergleicht, welche Rollen das Auth vorsieht, mit denen, die das Konto in Discord
+      tatsächlich trägt. <strong>Die Prüfung ändert nichts</strong> - sie stellt nur fest.<br />
+      Was in Discord ohne Zuordnung vergeben wurde, steht je Charakter mit dabei - als
+      vorhanden, nicht als Fehler.
+    </p>
+
+    <div class="toolbar">
+      @if (auditVeraltet()) {
+        <span class="stale-note">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          Seit der Prüfung wurde etwas geändert - die Zahlen unten sind von vorher.
+        </span>
+      }
+      <button class="btn-primary" (click)="pruefen()" [disabled]="auditLoading()">
+        <i class="fa-solid" [class.fa-magnifying-glass]="!auditLoading()"
+           [class.fa-spinner]="auditLoading()" [class.fa-spin]="auditLoading()"></i>
+        {{ auditLoading() ? 'Prüfe…' : 'Jetzt prüfen' }}
+      </button>
+    </div>
+
+    @if (audit() === null) {
+      <!-- Ungeprüft ist nicht dasselbe wie fehlerfrei und darf nicht so
+           aussehen: jede Prüfung kostet einen Aufruf je Konto, deshalb läuft
+           sie nicht von selbst beim Öffnen der Seite. -->
+      <div class="surface-panel audit-hint">
+        <i class="fa-solid fa-circle-info"></i>
+        Noch nicht geprüft. Der Zeitplan im Hintergrund prüft alle sechs Stunden und meldet
+        ins Log; hier bekommst du das Ergebnis sofort.
+      </div>
+    } @else {
+      <!-- ZUERST der Konflikt: Er erklärt die Abweichungen darunter, statt
+           selbst eine zu sein. Wer nur die fehlende Rolle nachträgt, hat sie
+           bis zum nächsten Abgleich - dann überschreibt der zweite Charakter
+           erneut, was der erste gesetzt hat. -->
+      @for (eintrag of konflikte(); track eintrag.discordUserId) {
+        <div class="surface-panel conflict-panel">
+          <h3 class="conflict-title">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            Ein Discord-Konto, mehrere Charaktere - mit verschiedenen Rollen
+          </h3>
+          <p class="conflict-text">
+            Das Konto <code>{{ eintrag.discordUserId }}</code> hängt an
+            {{ eintrag.charaktere.length }} Charakteren, die unterschiedliche Rollen fordern.
+            Der Abgleich läuft für jeden einmal über dasselbe Konto, und der letzte Lauf
+            überschreibt den vorigen - so verliert jemand Rollen, ohne dass es auffällt.
+            <strong>Es gilt der Main: {{ eintrag.mainCharacterName }}.</strong>
+          </p>
+          <div class="conflict-chars">
+            @for (charakter of eintrag.charaktere; track charakter.characterId) {
+              <div class="conflict-char" [class.is-main]="istMain(eintrag, charakter.characterId)">
+                <span class="char-name">
+                  {{ charakter.name }}
+                  @if (istMain(eintrag, charakter.characterId)) {
+                    <span class="role-badge main-badge">Main - gilt</span>
+                  }
+                </span>
+                <span class="badge-list">
+                  @for (rolle of charakter.sollRollen; track rolle) {
+                    <span class="role-badge">{{ rollenName(rolle) }}</span>
+                  } @empty {
+                    <span class="cell-empty">keine Rolle</span>
+                  }
+                </span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Die Gegenüberstellung selbst - je CHARAKTER, nicht je Konto.
+           Gerechnet wird je Konto (anders fiele der Fall oben auseinander),
+           gefragt wird aber nach Charakteren: "Was hat Tom, und was fehlt
+           ihm." Wer die Kontosicht liest, macht die Zuordnung im Kopf. -->
+      @if (charaktere().length > 0) {
+        <div class="section-divider">
+          <span class="divider-line"></span>
+          <span>Auth-Rolle gegen Discord-Rolle</span>
+          <span class="divider-line"></span>
+        </div>
+
+        <p class="section-hint">
+          Je Charakter eine Zeile pro Auth-Rolle: welche Discord-Rolle sie bedeutet, ob sie dort
+          sitzt, und wenn nicht, warum nicht. Was das Konto darüber hinaus trägt, steht darunter -
+          von Hand vergebene Rollen sind <strong>kein Fehler</strong>.<br />
+          Charaktere ohne verknüpftes Discord-Konto stehen nicht in dieser Liste; es gibt zu ihnen
+          kein Konto, das etwas tragen könnte.
+        </p>
+
+        <div class="toolbar">
+          @if (unauffaellige() > 0) {
+            <span class="section-hint">
+              {{ unauffaellige() }} von {{ charaktere().length }} Charakteren sind unauffällig.
+            </span>
+          }
+          <button class="btn-secondary" (click)="nurAuffaellige.set(!nurAuffaellige())">
+            <i class="fa-solid" [class.fa-eye]="nurAuffaellige()"
+               [class.fa-filter]="!nurAuffaellige()"></i>
+            {{ nurAuffaellige() ? 'Alle Charaktere zeigen' : 'Nur Auffällige zeigen' }}
+          </button>
+        </div>
+      }
+
+      @for (zeile of sichtbareCharaktere(); track zeile.characterId) {
+        <div class="surface-panel character-panel" [class.not-checkable]="!zeile.pruefbar">
+          <div class="character-head">
+            <div>
+              <div class="item-name">
+                {{ zeile.characterName }}
+                @if (zeile.sollUneinig) {
+                  <!-- Verweis auf den Kasten oben: Wer diese Zeilen ohne den
+                       Hinweis liest, trägt die Rolle von Hand nach und hat sie
+                       bis zum nächsten Abgleich. -->
+                  <span class="role-badge extra">Doppelverknüpfung - siehe oben</span>
+                }
+              </div>
+              <div class="item-group">
+                Konto {{ zeile.discordUserId }}
+                @if (zeile.mainCharacterId !== zeile.characterId) {
+                  · Soll vom Main: {{ zeile.mainCharacterName }}
+                }
+              </div>
+            </div>
+            <!-- Je Charakter, nicht je Seite: Angestoßen wird der Abgleich für
+                 den, an dem gerade etwas nicht stimmt. -->
+            <button class="btn-secondary" (click)="stosseAn(zeile.characterId)"
+                    [disabled]="syncLaeuft() !== null">
+              <i class="fa-solid"
+                 [class.fa-rotate]="syncLaeuft() !== zeile.characterId"
+                 [class.fa-spinner]="syncLaeuft() === zeile.characterId"
+                 [class.fa-spin]="syncLaeuft() === zeile.characterId"></i>
+              {{ syncLaeuft() === zeile.characterId ? 'Abgleich läuft…' : 'Abgleich anstoßen' }}
+            </button>
+          </div>
+
+          <!-- Über dieses Konto ist NICHTS bekannt. Der Kasten steht deshalb
+               über der Tabelle und nicht als Zeile darin: Wer ihn übersieht,
+               liest "unbekannt" als "fehlt" und sucht einen Fehler, den es
+               nicht gibt. Beim Server-Owner ist das der Dauerzustand. -->
+          @if (!zeile.pruefbar) {
+            <div class="access-block">
+              <h4 class="access-title">
+                <i class="fa-solid fa-eye-slash"></i>
+                Über dieses Konto ist nichts feststellbar
+              </h4>
+              <p class="access-text">{{ zeile.hinweis }}</p>
+              @if (zugriffVerweigert(zeile)) {
+                <ul class="access-list">
+                  <li>
+                    Der Nutzer ist <strong>Server-Owner</strong> - an ihm kann kein Bot Rollen
+                    lesen oder setzen. Daran lässt sich nichts ändern.
+                  </li>
+                  <li>
+                    Die <strong>Bot-Rolle steht zu tief</strong> - sie muss in den
+                    Servereinstellungen über jeder Rolle stehen, die sie vergeben soll.
+                  </li>
+                </ul>
+              }
+              <p class="access-text">
+                Die Zeilen unten sagen deshalb "unbekannt" und nicht "fehlt": Was das Konto
+                trägt, hat niemand gesehen.
+              </p>
+            </div>
+          }
+
+          <table class="eve-table">
+            <thead>
+              <tr>
+                <th>Auth-Rolle</th>
+                <th>Discord-Rolle</th>
+                <th>In Discord</th>
+                <th>Grund</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (rolle of zeile.rollen; track rolle.authRolle) {
+                <tr>
+                  <td class="item-name">{{ rolle.authRolle }}</td>
+                  <td>
+                    @if (rolle.discordRoleId) {
+                      <code class="role-id">{{ rolle.discordRoleId }}</code>
+                      @if (rolle.discordRoleName) {
+                        <div class="item-group">{{ rolle.discordRoleName }}</div>
+                      }
+                    } @else {
+                      <span class="cell-empty">keine zugeordnet</span>
+                    }
+                  </td>
+                  <td>
+                    @switch (rolle.zustand) {
+                      @case ('VORHANDEN') {
+                        <span class="state ok"><i class="fa-solid fa-check"></i> ja</span>
+                      }
+                      @case ('FEHLT') {
+                        <span class="state missing"><i class="fa-solid fa-xmark"></i> nein</span>
+                      }
+                      @default {
+                        <span class="state unknown">
+                          <i class="fa-solid fa-question"></i> unbekannt
+                        </span>
+                      }
+                    }
+                  </td>
+                  <!-- Der Grund steht in DERSELBEN Zeile. Als Fußnote gelesen
+                       wird er nicht: "fehlt" ist die halbe Auskunft, gehandelt
+                       wird nach der Ursache. -->
+                  <td class="cell-description">
+                    @if (rolle.ursache) {
+                      <span class="role-badge"
+                            [class.missing]="rolle.zustand === 'FEHLT'">{{ ursacheKurz(rolle.ursache) }}</span>
+                      <div class="grund-text">{{ rolle.grund }}</div>
+                    } @else {
+                      <span class="cell-empty">-</span>
+                    }
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="4" class="cell-empty">
+                    Im Auth hängt an diesem Charakter keine Rolle, die eine Discord-Rolle nach
+                    sich zöge.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+
+          <!-- Was das Konto sonst trägt. Es steht hier, weil der Leser sehen
+               will, was DA ist - nicht nur, was fehlt. Ohne Zuordnung ist es
+               kein Befund; genau diese Verwechslung hat den Abgleich schon
+               einmal handvergebene Rollen abräumen lassen. -->
+          @if (zeile.weitereDiscordRollen.length > 0) {
+            <div class="extra-roles">
+              <h4 class="extra-title">Was das Konto sonst noch trägt</h4>
+              <div class="badge-list">
+                @for (rolle of zeile.weitereDiscordRollen; track rolle.discordRoleId) {
+                  <span class="role-badge" [class.extra]="rolle.verwaltet"
+                        [title]="rolle.discordRoleId">
+                    {{ rolle.name || rolle.discordRoleId }}
+                    @if (!rolle.verwaltet) {
+                      <span class="badge-note">nicht vom Auth verwaltet</span>
+                    }
+                  </span>
+                }
+              </div>
+              <p class="extra-note">
+                Grau: von Hand vergeben - Standard-, Farb- oder Pingrollen. Das Auth kennt sie
+                nicht, fasst sie nicht an, und sie sind <strong>kein Fehler</strong>.
+                @if (hatUeberzaehlige(zeile)) {
+                  Rot: eine Rolle, die das Auth verwaltet, die dieser Charakter aber nicht haben
+                  soll - der nächste Abgleich nimmt sie ab.
+                }
+              </p>
+            </div>
+          }
+
+          <!-- Die Antwort auf den Knopf. Ein Knopf, der nur "fertig" sagt, wäre
+               hier nutzlos: Angestoßen wird er, weil vorher etwas nicht ging. -->
+          @if (fehlerFuer(zeile.characterId); as fehler) {
+            <div class="sync-block failed">
+              <h4 class="sync-title">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                Der Abgleich wurde nicht ausgeführt
+              </h4>
+              <p class="sync-hinweis">{{ fehler }}</p>
+            </div>
+          }
+
+          @if (ergebnisFuer(zeile.characterId); as ergebnis) {
+            <div class="sync-block" [class.failed]="!ergebnis.ausgefuehrt">
+              <h4 class="sync-title">
+                <i class="fa-solid fa-rotate"></i>
+                Ergebnis des angestoßenen Abgleichs
+              </h4>
+              @if (ergebnis.hinweis) {
+                <p class="sync-hinweis">{{ ergebnis.hinweis }}</p>
+              }
+              @if (ergebnis.ausgefuehrt) {
+                @for (rolle of ergebnis.rollen; track rolle.discordRoleId + rolle.aktion) {
+                  <div class="sync-line" [class.failed]="!rolle.erfolg">
+                    <i class="fa-solid"
+                       [class.fa-circle-check]="rolle.erfolg"
+                       [class.fa-circle-xmark]="!rolle.erfolg"></i>
+                    <span class="sync-role">
+                      {{ rolle.authRolle || rollenName(rolle.discordRoleId) }}
+                    </span>
+                    <code class="role-id">{{ rolle.discordRoleId }}</code>
+                    <span class="sync-aktion">{{ aktionText(rolle) }}</span>
+                    @if (!rolle.erfolg) {
+                      <span class="sync-grund">{{ rolle.grund }}</span>
+                    }
+                  </div>
+                } @empty {
+                  <p class="sync-hinweis">
+                    Nichts zu tun - jede vorgesehene Rolle saß bereits, und keine verwaltete war
+                    zu viel.
+                  </p>
+                }
+              }
+            </div>
+          }
+        </div>
+      }
+
+      @if (ohneBefund()) {
+        <!-- Die einzige Stelle, an der Übereinstimmung überhaupt erwähnt wird -
+             als Zahl. Eine Liste, in der alles grün ist, verdeckt die zwei
+             Fälle, auf die es ankommt. -->
+        <div class="surface-panel audit-ok">
+          <i class="fa-solid fa-circle-check"></i>
+          @if (charaktere().length === 0) {
+            Kein Charakter hat ein Discord-Konto verknüpft - es gibt nichts abzugleichen.
+          } @else {
+            Keine Abweichung. {{ unauffaellige() }} geprüfte Charaktere tragen genau die Rollen,
+            die das Auth vorsieht.
+          }
+        </div>
+      }
+    }
   }
 </div>

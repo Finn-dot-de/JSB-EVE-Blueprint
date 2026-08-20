@@ -10,6 +10,11 @@ import com.eve.own.auth.backend.domain.discord.entity.DiscordRoleMapping;
 import com.eve.own.auth.backend.domain.discord.repository.DiscordConnectionRepository;
 import com.eve.own.auth.backend.domain.discord.repository.DiscordRoleMappingRepository;
 import com.eve.own.auth.backend.domain.discord.service.DiscordBotService;
+import com.eve.own.auth.backend.domain.discord.service.DiscordCharacterAudit;
+import com.eve.own.auth.backend.domain.discord.service.DiscordRoleAudit;
+import com.eve.own.auth.backend.domain.discord.service.DiscordRoleAuditService;
+import com.eve.own.auth.backend.domain.discord.service.DiscordRoleSyncService;
+import com.eve.own.auth.backend.domain.discord.service.DiscordSyncErgebnis;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -17,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,6 +53,8 @@ public class DiscordAuthController {
     private final CharacterRepository characterRepo;
     private final DiscordRoleMappingRepository mappingRepo;
     private final RoleCatalogService roleCatalogService;
+    private final DiscordRoleAuditService discordRoleAuditService;
+    private final DiscordRoleSyncService discordRoleSyncService;
 
     public DiscordAuthController(@Value("${discord.client-id}") String clientId,
                                  @Value("${app.base.url}") String baseUrl,
@@ -55,7 +63,9 @@ public class DiscordAuthController {
                                  DiscordConnectionRepository connectionRepo,
                                  CharacterRepository characterRepo,
                                  DiscordRoleMappingRepository mappingRepo,
-                                 RoleCatalogService roleCatalogService) {
+                                 RoleCatalogService roleCatalogService,
+                                 DiscordRoleAuditService discordRoleAuditService,
+                                 DiscordRoleSyncService discordRoleSyncService) {
         this.clientId = clientId;
         this.redirectUri = baseUrl.endsWith("/") ? baseUrl + "api/discord/callback" : baseUrl + "/api/discord/callback";
         this.frontendUrl = frontendUrl;
@@ -65,6 +75,8 @@ public class DiscordAuthController {
         this.characterRepo = characterRepo;
         this.mappingRepo = mappingRepo;
         this.roleCatalogService = roleCatalogService;
+        this.discordRoleAuditService = discordRoleAuditService;
+        this.discordRoleSyncService = discordRoleSyncService;
     }
 
     @GetMapping("/login")
@@ -162,6 +174,81 @@ public class DiscordAuthController {
                 .toList();
 
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Stellt fest, ob Discord traegt, was das Auth vorsieht - ohne etwas zu aendern.
+     *
+     * <p>Neben dem Zeitplan, nicht statt seiner. Der Zeitplan findet die
+     * Abweichung auch dann, wenn niemand hinsieht; dieser Endpunkt beantwortet
+     * die Frage, die unmittelbar nach jeder Aenderung an den Mappings kommt -
+     * "hat es gewirkt?". Sie sechs Stunden lang unbeantwortet zu lassen heisst,
+     * dass sie stattdessen von Hand in Discord nachgesehen wird.</p>
+     *
+     * <p>Dieselbe Berechtigung wie die Mappings darueber: Wer die Zuordnung
+     * pflegt, ist der, der ihr Ergebnis pruefen muss.</p>
+     */
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
+    @GetMapping("/audit")
+    public ResponseEntity<List<DiscordRoleAudit>> pruefeRollen() {
+        return ResponseEntity.ok(discordRoleAuditService.pruefeAlle());
+    }
+
+    /**
+     * Dieselbe Pruefung, aufgeschluesselt je Charakter.
+     *
+     * <p>Gerechnet wird weiterhin je Discord-Konto - das muss so bleiben, sonst
+     * faellt der Fall "zwei Charaktere, ein Konto" wieder auseinander. Gefragt
+     * wird aber nach Charakteren: "Was hat Tom, und was fehlt ihm." Wer die
+     * Kontosicht liest, muss die Zuordnung im Kopf machen; das tut man einmal
+     * und danach nicht mehr.</p>
+     */
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
+    @GetMapping("/audit/characters")
+    public ResponseEntity<List<DiscordCharacterAudit>> pruefeCharaktere() {
+        return ResponseEntity.ok(discordRoleAuditService.pruefeCharaktere());
+    }
+
+    /**
+     * Die Gegenueberstellung fuer einen einzelnen Charakter.
+     *
+     * <p>Kostet einen Aufruf an Discord statt einen je Konto - gedacht fuer die
+     * Ruecksicht nach einem angestossenen Abgleich. Die volle Uebersicht dafuer
+     * neu zu laden, hiesse fuer eine Zeile jedes verknuepfte Konto erneut
+     * abzufragen.</p>
+     *
+     * <p>404 nur, wenn es den Charakter nicht gibt. "Nicht verknuepft" ist eine
+     * gueltige Antwort mit Inhalt, kein Fehler - sie nennt die Ursache.</p>
+     */
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
+    @GetMapping("/audit/characters/{characterId}")
+    public ResponseEntity<DiscordCharacterAudit> pruefeCharakter(@PathVariable Long characterId) {
+        return discordRoleAuditService.pruefeCharakter(characterId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Fuehrt den Abgleich fuer einen Charakter sofort aus und meldet, was dabei herauskam.
+     *
+     * <p>Die Ursache "der Abgleich lief noch nicht" benennt eine Wartezeit von
+     * bis zu dreissig Minuten. Ohne diesen Endpunkt waere sie eine Feststellung
+     * ohne Handlungsmoeglichkeit - man saehe die Ursache und koennte nichts tun
+     * als warten.</p>
+     *
+     * <p>POST und nicht GET: Der Aufruf aendert etwas in Discord. Als GET
+     * wuerde ihn frueher oder spaeter jemand aus einem Browser-Tab heraus
+     * wiederholen lassen.</p>
+     *
+     * <p>Dieselbe Berechtigung wie die Pruefung. Wer die Zuordnung pflegt, ist
+     * der, der ihr Ergebnis durchsetzen koennen muss.</p>
+     */
+    @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)
+    @PostMapping("/sync/{characterId}")
+    public ResponseEntity<DiscordSyncErgebnis> stosseAbgleichAn(@PathVariable Long characterId) {
+        return discordRoleSyncService.stosseAn(characterId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PreAuthorize(AccessRules.FLEET_STAFF_OR_LEADERSHIP)

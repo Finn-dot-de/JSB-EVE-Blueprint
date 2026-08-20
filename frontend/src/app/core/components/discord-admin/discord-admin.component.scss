@@ -1,0 +1,500 @@
+/* =========================================================
+   Discord-Verwaltung - die Soll-Ist-Pruefung unter der Zuordnungstabelle.
+
+   Ausser .surface-panel ist keine dieser Klassen global: .eve-table,
+   .item-name, .item-group, .role-badge, .badge-list, .cell-empty,
+   .cell-description, .toolbar, .btn-primary und .btn-secondary stammen
+   woertlich aus groups-board, .section-divider und .section-hint ebenso.
+   Sie stehen deshalb hier noch einmal - einen Import quer durch die
+   Komponenten gibt es in diesem Projekt nicht.
+
+   Die obere Tabelle traegt ihre Farben weiter inline. Sie hier nachzubauen
+   hiesse, Regeln zu schreiben, die von den Inline-Angaben ohnehin ueberstimmt
+   werden - ein zweiter Satz Wahrheiten fuer dieselbe Tabelle.
+   ========================================================= */
+
+.roles-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-bottom: 3rem;
+}
+
+/* Bewusst OHNE ::before/::after, anders als in asset-audit: Die
+   Zuordnungsueberschrift darueber setzt ihre beiden Linien als <span>. Mit
+   Pseudo-Elementen bekaeme sie vier. */
+.section-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 1.5rem 0 0.5rem 0;
+}
+
+.divider-line {
+  flex: 1;
+  border-bottom: 1px solid var(--border-color);
+
+  &:first-child { margin-right: 1.5rem; }
+  &:last-child { margin-left: 1.5rem; }
+}
+
+.section-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.section-divider + .section-hint { margin-top: -1.5rem; }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+// Der Hinweis steht neben dem Knopf, nicht ueber dem Ergebnis: Wer die
+// Zuordnung gerade geaendert hat, sieht hier, dass die Zahlen darunter aelter
+// sind als seine Aenderung - und den Knopf gleich daneben.
+.stale-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--warning-color);
+
+  i { font-size: 0.8rem; }
+}
+
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid transparent;
+  padding: 0.55rem 1.1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: var(--accent-contrast);
+
+  &:hover:not(:disabled) { background-color: var(--accent-hover); }
+}
+
+// Umriss statt Flaeche - wortgleich aus groups-board. Der Knopf steht in JEDER
+// Charakterkarte; eine volle Flaeche je Karte waere eine Reihe Handlungsbefehle
+// fuer eine Seite, auf der man meistens nur nachsieht.
+.btn-secondary {
+  background-color: transparent;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+
+  &:hover:not(:disabled) { color: var(--text-primary); }
+}
+
+/* ================= Zustaende ohne Tabelle ================= */
+
+.audit-hint,
+.audit-ok {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.audit-hint i { color: var(--accent-neutral); }
+
+// Gruen nur an dieser einen Stelle - und nur als Satz. Eine Liste gruener
+// Zeilen wuerde die zwei Faelle verdecken, um die es geht.
+.audit-ok i { color: var(--success-color); }
+
+/* ================= Der Doppelverknuepfungs-Fall ================= */
+
+// Die einzige Flaeche der Seite mit farbiger Kante. Das ist kein Anzeigefehler
+// und keine einzelne fehlende Rolle, sondern der Grund, warum jemand still
+// Rollen verliert - und er bleibt bestehen, auch wenn man die Rolle von Hand
+// nachtraegt.
+.conflict-panel {
+  border-left: 4px solid var(--danger-color);
+  background-color: color-mix(in srgb, var(--danger-color) 7%, var(--bg-surface));
+}
+
+.conflict-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+
+  i { color: var(--danger-color); }
+}
+
+.conflict-text {
+  margin: 0 0 1rem 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.6;
+
+  code {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+  }
+}
+
+.conflict-chars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+// Je Charakter eine Zeile mit seinem Soll nebeneinander: Der Widerspruch ist
+// nur zu sehen, wenn die beiden Rollenlisten untereinander stehen.
+.conflict-char {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-surface);
+
+  &.is-main {
+    border-color: color-mix(in srgb, var(--accent-neutral) 45%, transparent);
+  }
+}
+
+.char-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+/* ================= Tabellen ================= */
+
+.eve-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-primary);
+
+  th {
+    text-align: left;
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+    font-size: 0.9rem;
+    vertical-align: top;
+  }
+
+  tr:hover td { background-color: rgba(128, 128, 128, 0.06); }
+}
+
+.item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+
+  // Das Etikett steht in derselben Zeile wie der Name, nicht darunter: Es
+  // gehoert zu ihm und soll nicht wie eine eigene Angabe wirken.
+  .role-badge { margin-left: 0.5rem; }
+}
+
+// Die Zweitzeile unter dem Namen - die weiteren Charaktere und die Konto-Id
+// sind Nebenangaben und duerfen den Namen nicht ueberstimmen.
+.item-group {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.cell-description {
+  color: var(--text-secondary);
+  max-width: 34rem;
+}
+
+// Eine leere Zelle ist der Normalfall: Zu einer sitzenden Rolle gibt es keinen
+// Grund zu nennen. Ein Strich haelt die Zelle besetzt, ohne sich wie eine
+// Meldung zu lesen.
+.cell-empty {
+  color: var(--text-secondary);
+  opacity: 0.45;
+}
+
+/* ================= Rollen-Etiketten ================= */
+
+// Wortgleich zu navigation-admin und groups-board. Die Grundform ist neutral:
+// im Konfliktkasten stehen die Soll-Rollen zweier Charaktere nebeneinander,
+// und keine der beiden Listen ist fuer sich genommen falsch.
+.role-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background-color: color-mix(in srgb, var(--text-secondary) 16%, var(--bg-surface));
+  color: color-mix(in srgb, var(--text-secondary) 65%, var(--text-primary));
+
+  // Fehlt in Discord: Das Auth sieht die Rolle vor, sie sitzt nur nicht.
+  // Warnfarbe, nicht Alarmfarbe - der naechste Abgleich setzt sie ohnehin.
+  &.missing {
+    background-color: color-mix(in srgb, var(--warning-color) 18%, var(--bg-surface));
+    color: color-mix(in srgb, var(--warning-color) 45%, var(--text-primary));
+  }
+
+  // Zu viel in Discord: Jemand traegt eine VERWALTETE Rolle, die ihm nicht
+  // zusteht. Das ist die ernstere Richtung - hier stehen Rechte offen.
+  &.extra {
+    background-color: color-mix(in srgb, var(--danger-color) 18%, var(--bg-surface));
+    color: color-mix(in srgb, var(--danger-color) 45%, var(--text-primary));
+  }
+
+  &.main-badge {
+    background-color: color-mix(in srgb, var(--accent-neutral) 20%, var(--bg-surface));
+    color: color-mix(in srgb, var(--accent-neutral) 50%, var(--text-primary));
+  }
+}
+
+// Mehrere Rollen stehen gleichrangig nebeneinander. Der Umbruch ist noetig,
+// weil ein Charakter ein halbes Dutzend tragen kann und die Spalte sonst die
+// Tabelle auseinanderzieht.
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ================= Die Gegenueberstellung je Charakter ================= */
+
+// Je Charakter eine eigene Flaeche statt einer durchgehenden Tabelle: Die
+// Gegenueberstellung ist eine Tabelle FUER SICH, und darunter haengen noch die
+// vorhandenen Rollen und das Abgleichsergebnis. In einer gemeinsamen Tabelle
+// stuende all das in einer Zelle.
+.character-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+// Kein Rot: "nicht feststellbar" ist kein Fehler, sondern eine offene Frage.
+// Die neutrale Kante hebt die Karte heraus, ohne Alarm zu schlagen - beim
+// Server-Owner ist dieser Zustand der Dauerzustand.
+.character-panel.not-checkable {
+  border-left: 4px solid var(--accent-neutral);
+}
+
+.character-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.character-panel .eve-table {
+  th { padding: 8px 10px; }
+  td { padding: 8px 10px; }
+}
+
+// Die Rollen-Id genuegt zur Arbeit - sie wird in Discord gesucht, nicht
+// gelesen. Feste Laufweite, damit sich achtzehn Ziffern vergleichen lassen.
+.role-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  font-size: 0.85rem;
+
+  &.ok i { color: var(--success-color); }
+
+  // Warnfarbe, nicht Alarmfarbe: Der naechste Abgleich setzt die Rolle
+  // ohnehin - sofern die Ursache daneben das zulaesst.
+  &.missing i { color: var(--warning-color); }
+
+  // Grau und mit Fragezeichen. "Unbekannt" darf sich nicht wie "fehlt" lesen,
+  // sonst sucht jemand einen Fehler, den niemand gesehen hat.
+  &.unknown {
+    color: var(--text-secondary);
+    i { color: var(--accent-neutral); }
+  }
+}
+
+// Der ausformulierte Grund unter dem Etikett - er steht in derselben Zeile wie
+// die Rolle, weil er zu ihr gehoert. Als Fussnote liest ihn niemand.
+.grund-text {
+  margin-top: 3px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* ================= Nichts feststellbar ================= */
+
+// Ueber der Tabelle und nicht als Zeile darin: Wer diesen Kasten uebersieht,
+// liest "unbekannt" als "fehlt".
+.access-block {
+  border: 1px solid color-mix(in srgb, var(--accent-neutral) 40%, transparent);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  background-color: color-mix(in srgb, var(--accent-neutral) 8%, transparent);
+}
+
+.access-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+
+  i { color: var(--accent-neutral); }
+}
+
+.access-text {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+// Genau zwei Punkte, weil es genau zwei Ursachen fuer den 403 gibt. Beide kann
+// der Leser selbst nachsehen; eine dritte gaebe es zu raten.
+.access-list {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+
+  li + li { margin-top: 0.3rem; }
+}
+
+/* ================= Vorhandene Rollen ohne Zuordnung ================= */
+
+.extra-roles {
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.9rem;
+}
+
+.extra-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.extra-note {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+// Der Zusatz steht IM Etikett, nicht in einer Legende: Eine graue Rolle ohne
+// diesen Halbsatz sieht aus wie eine, die jemand abraeumen sollte.
+.badge-note {
+  margin-left: 0.4rem;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+/* ================= Ergebnis des angestossenen Abgleichs ================= */
+
+.sync-block {
+  border-left: 3px solid var(--accent-neutral);
+  border-radius: 0 6px 6px 0;
+  padding: 0.75rem 1rem;
+  background-color: color-mix(in srgb, var(--text-primary) 4%, transparent);
+
+  // Nur wenn der Abgleich gar nicht hinausging. Eine einzelne gescheiterte
+  // Rolle faerbt ihre Zeile, nicht den ganzen Kasten - sonst saehe ein Lauf,
+  // der drei von vier Rollen gesetzt hat, wie ein Fehlschlag aus.
+  &.failed {
+    border-left-color: var(--danger-color);
+    background-color: color-mix(in srgb, var(--danger-color) 7%, transparent);
+  }
+}
+
+.sync-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.sync-hinweis {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.sync-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+
+  i { color: var(--success-color); }
+
+  &.failed i { color: var(--danger-color); }
+}
+
+.sync-role {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+// Der Grund steht neben der Rolle, in derselben Zeile - der Knopf wird
+// gedrueckt, WEIL vorher etwas nicht ging. "Gescheitert" allein waere dieselbe
+// Auskunft wie das Schweigen davor.
+.sync-grund {
+  flex: 1 1 100%;
+  color: var(--danger-color);
+  line-height: 1.5;
+}

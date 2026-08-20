@@ -3,9 +3,11 @@ package com.eve.own.auth.backend.domain.discord.scheduler;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.discord.entity.DiscordConnection;
+import com.eve.own.auth.backend.domain.discord.entity.DiscordRoleMapping;
 import com.eve.own.auth.backend.domain.discord.repository.DiscordConnectionRepository;
 import com.eve.own.auth.backend.domain.discord.repository.DiscordRoleMappingRepository;
 import com.eve.own.auth.backend.domain.discord.service.DiscordBotService;
+import com.eve.own.auth.backend.domain.discord.service.DiscordSyncStand;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -22,24 +24,25 @@ public class DiscordSyncScheduler {
     private final CharacterRepository characterRepo;
     private final DiscordRoleMappingRepository mappingRepo;
     private final DiscordBotService discordBotService;
+    private final DiscordSyncStand syncStand;
 
     public DiscordSyncScheduler(DiscordConnectionRepository connectionRepo, CharacterRepository characterRepo,
-                                DiscordRoleMappingRepository mappingRepo, DiscordBotService discordBotService) {
+                                DiscordRoleMappingRepository mappingRepo, DiscordBotService discordBotService,
+                                DiscordSyncStand syncStand) {
         this.connectionRepo = connectionRepo;
         this.characterRepo = characterRepo;
         this.mappingRepo = mappingRepo;
         this.discordBotService = discordBotService;
+        this.syncStand = syncStand;
     }
 
-    @Scheduled(fixedRate = 1_800_000)
+    @Scheduled(fixedRate = 1_800_00)
     public void syncDiscordRoles() {
         log.info("Starte Discord Role Sync...");
         List<DiscordConnection> connections = connectionRepo.findAll();
 
-        // Alles, wofuer es ein Mapping gibt - die Menge, die dieses Auth
-        // ueberhaupt anfassen darf. Einmal je Lauf, nicht je Mitglied.
         List<String> verwalteteRollen = mappingRepo.findAll().stream()
-                .map(m -> m.getDiscordRoleId())
+                .map(DiscordRoleMapping::getDiscordRoleId)
                 .filter(id -> id != null && !id.isBlank())
                 .distinct()
                 .toList();
@@ -64,8 +67,18 @@ public class DiscordSyncScheduler {
                 // Soll-Liste als vollstaendiges "roles"-Feld raus - bei Discord
                 // ein Vollersatz, also zugleich der Befehl, jede handvergebene
                 // Rolle zu entfernen.
+                // Der Rueckgabewert ist neu, hier aber ohne Aufgabe: Der Zeitplan
+                // hat niemanden, dem er berichten koennte, und protokolliert
+                // seine Fehlschlaege wie bisher je Rolle. Ihn auszuwerten hiesse,
+                // alle dreissig Minuten dieselbe Liste ins Log zu schreiben.
                 discordBotService.syncManagedRoles(conn.getDiscordUserId(),
                         verwalteteRollen, expectedDiscordRoles, expectedNickname);
+
+                // Erst jetzt vermerken: Vorher ist es keine Wahrheit, sondern
+                // eine Absicht. Ohne diesen Vermerk kann die Pruefung eine
+                // fehlende Rolle nicht von einer blossen Wartezeit trennen und
+                // meldet "unbekannt", wo nur noch nichts geschehen ist.
+                syncStand.notiere(conn.getDiscordUserId());
 
                 Thread.sleep(200);
 

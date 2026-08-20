@@ -1,5 +1,7 @@
 package com.eve.own.auth.backend.domain.discord.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -57,13 +59,23 @@ class DiscordBotServiceRollenTest {
                 .andExpect(method(HttpMethod.DELETE))
                 .andRespond(withSuccess());
 
-        bot.syncManagedRoles(USER, List.of(VERWALTET_JA, VERWALTET_NEIN),
-                List.of(VERWALTET_JA), null);
+        List<DiscordRollenErgebnis> ergebnis = bot.syncManagedRoles(USER,
+                List.of(VERWALTET_JA, VERWALTET_NEIN), List.of(VERWALTET_JA), null);
 
         // Die eigentliche Zusicherung: genau diese zwei Aufrufe und kein
         // weiterer. Ein PATCH auf das Mitglied mit einem "roles"-Feld waere
         // hier ein unerwarteter dritter Aufruf und liesse den Test scheitern.
         server.verify();
+
+        // Und je Rolle eine Rueckmeldung. Ohne sie stuende auch nach einem von
+        // Hand angestossenen Abgleich nur im Log, was passiert ist - wer ihn
+        // ausloest, sieht das Log nicht und sieht in Discord nach.
+        assertThat(ergebnis).extracting(DiscordRollenErgebnis::discordRoleId,
+                        DiscordRollenErgebnis::aktion, DiscordRollenErgebnis::erfolg)
+                .containsExactly(
+                        tuple(VERWALTET_JA, DiscordRollenErgebnis.Aktion.VERGEBEN, true),
+                        tuple(VERWALTET_NEIN, DiscordRollenErgebnis.Aktion.ENTZOGEN, true));
+        assertThat(ergebnis).allMatch(e -> e.grund() == null);
     }
 
     @Test
@@ -96,11 +108,43 @@ class DiscordBotServiceRollenTest {
                 .andExpect(method(HttpMethod.DELETE))
                 .andRespond(withSuccess());
 
-        bot.syncManagedRoles(USER, List.of(VERWALTET_JA, VERWALTET_NEIN),
-                List.of(VERWALTET_JA), null);
+        List<DiscordRollenErgebnis> ergebnis = bot.syncManagedRoles(USER,
+                List.of(VERWALTET_JA, VERWALTET_NEIN), List.of(VERWALTET_JA), null);
 
         // Beide Aufrufe sind erfolgt, obwohl der erste abgelehnt wurde.
         server.verify();
+
+        // Die abgelehnte Rolle steht mit Grund im Ergebnis, die zweite als
+        // gelungen. Wuerde die Ablehnung nur protokolliert - wie bisher -,
+        // meldete der angestossene Abgleich pauschal Erfolg, und der Nutzer
+        // wartete auf eine Rolle, die nie kommt.
+        assertThat(ergebnis).hasSize(2);
+        assertThat(ergebnis.getFirst().erfolg()).isFalse();
+        assertThat(ergebnis.getFirst().grund()).contains("403");
+        assertThat(ergebnis.get(1).erfolg()).isTrue();
+    }
+
+    @Test
+    @DisplayName("ein verweigerter Spitzname wirft die Rollenergebnisse nicht weg")
+    void spitznameScheitertOhneDasErgebnisMitzunehmen() {
+        // Am Server-Owner scheitert der Spitzname immer. Frueher warf dieser
+        // letzte Aufruf und nahm das ganze Ergebnis mit: Wer den Abgleich
+        // anstiess, bekam eine Fehlermeldung ueber den Spitznamen und kein Wort
+        // darueber, dass seine Rollen laengst gesetzt waren.
+        DiscordBotService bot = dienst();
+        server.expect(requestTo(BASIS + "/roles/" + VERWALTET_JA))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withSuccess());
+        server.expect(requestTo(BASIS))
+                .andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        List<DiscordRollenErgebnis> ergebnis = bot.syncManagedRoles(USER,
+                List.of(VERWALTET_JA), List.of(VERWALTET_JA), "Comander-Video");
+
+        server.verify();
+        assertThat(ergebnis).singleElement()
+                .extracting(DiscordRollenErgebnis::erfolg).isEqualTo(true);
     }
 
     @Test

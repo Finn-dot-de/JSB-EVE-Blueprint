@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.discord.service;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +10,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -37,6 +39,72 @@ public class DiscordBotService {
         this.botClient = builder.baseUrl("https://discord.com/api/v10")
                 .defaultHeader("Authorization", "Bot " + botToken)
                 .build();
+    }
+
+    /**
+     * Ein Mitglied, wie Discord es liefert - gebraucht wird nur {@code roles}.
+     *
+     * <p>{@code ignoreUnknown}, weil die Antwort noch ein Dutzend weiterer
+     * Felder traegt (user, nick, joined_at, flags ...) und Discord jederzeit
+     * neue hinzufuegen darf. Ohne das wuerde ein Feld, das niemanden hier
+     * interessiert, die Pruefung zum Absturz bringen.</p>
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GuildMember(List<String> roles) {}
+
+    /**
+     * Liest, welche Rollen ein Mitglied in Discord <b>tatsaechlich</b> traegt.
+     *
+     * <p>Der erste lesende Aufruf dieser Klasse. Bis hierher waren alle vier
+     * Aufrufe schreibend: das Auth schickte seinen Soll-Zustand hinaus und
+     * erfuhr nie, was daraus wurde. Ein 403 je Rolle wird protokolliert und
+     * dann vergessen - ob die Rolle am Ende sass, stand nirgends.</p>
+     *
+     * <p>Wirft weiter, statt zu schlucken: Ob Discord die Auskunft verweigert
+     * (403 am Server-Owner, oder die Bot-Rolle steht zu tief) oder das Mitglied
+     * gar nicht mehr da ist (404), muss der Aufrufer unterscheiden koennen.
+     * Wer beides zu einer leeren Liste einebnete, meldete anschliessend jede
+     * Soll-Rolle als fehlend - ein Fehlalarm ueber genau die Konten, bei denen
+     * man am wenigsten weiss.</p>
+     *
+     * @return die Rollen-Ids des Mitglieds, auch die von Hand vergebenen
+     */
+    public List<String> getMemberRoles(String discordUserId) {
+        GuildMember mitglied = botClient.get()
+                .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
+                .retrieve()
+                .body(GuildMember.class);
+        // Discord liefert das Feld immer; die Absicherung kostet nichts und
+        // haelt einen leeren Koerper von der Auswertung fern.
+        return mitglied == null || mitglied.roles() == null
+                ? List.of()
+                : List.copyOf(mitglied.roles());
+    }
+
+    /** Eine Rolle des Servers - gebraucht werden Id und Name. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record GuildRole(String id, String name) {}
+
+    /**
+     * Liest die Rollen, die es auf dem Server ueberhaupt gibt.
+     *
+     * <p>Zwei Dinge haengen daran, die sich ohne diese Liste nicht sagen lassen.
+     * Erstens die Ursache: Steht in der Zuordnung eine Id, die auf dem Server
+     * niemand kennt, dann fehlt die Rolle nicht wegen des Bots - sie wurde in
+     * Discord geloescht oder neu angelegt und hat seither eine andere Id. Ohne
+     * die Liste bliebe genau dieser Fall unter "unbekannt" liegen. Zweitens der
+     * Name: In der Uebersicht steht sonst nur eine achtzehnstellige Zahl, und
+     * niemand weiss, welche Rolle das ist.</p>
+     *
+     * <p>Ein Aufruf je Durchlauf, nicht je Konto - die Liste gilt fuer den
+     * ganzen Server.</p>
+     */
+    public List<GuildRole> getGuildRoles() {
+        GuildRole[] rollen = botClient.get()
+                .uri("/guilds/{guildId}/roles", guildId)
+                .retrieve()
+                .body(GuildRole[].class);
+        return rollen == null ? List.of() : List.of(rollen);
     }
 
     // --- DTOs für die Discord API Antworten ---
@@ -121,17 +189,29 @@ public class DiscordBotService {
      * DELETE. Was das Auth nicht verwaltet, wird nicht angefasst - es kann gar
      * nicht mehr verloren gehen.</p>
      *
+     * <p><b>Der Rueckgabewert ist neu, die Aufrufer sind es nicht.</b> Wer ihn
+     * nicht braucht - Zeitplan und Trennen-Endpunkt - ruft die Methode
+     * unveraendert auf und laesst ihn liegen. Wer den Abgleich von Hand
+     * anstoesst, braucht ihn: ohne Rueckmeldung stuende auch danach nur im Log,
+     * was passiert ist, und die Frage "hat es gewirkt?" bliebe unbeantwortet.</p>
+     *
      * @param verwalteteRollen alle Discord-Rollen, fuer die es ein Mapping gibt.
      *                         Nur diese werden angefasst.
      * @param sollRollen       die Teilmenge davon, die das Mitglied haben soll
+     * @return je angefasster Rolle, was versucht wurde und was daraus wurde -
+     *         in der Reihenfolge der Aufrufe
      */
-    public void syncManagedRoles(String discordUserId,
-                                 Collection<String> verwalteteRollen,
-                                 Collection<String> sollRollen,
-                                 String nickname) {
+    public List<DiscordRollenErgebnis> syncManagedRoles(String discordUserId,
+                                                        Collection<String> verwalteteRollen,
+                                                        Collection<String> sollRollen,
+                                                        String nickname) {
         Set<String> soll = new HashSet<>(sollRollen);
+        List<DiscordRollenErgebnis> ergebnisse = new ArrayList<>();
         for (String rolle : new LinkedHashSet<>(verwalteteRollen)) {
             boolean gewuenscht = soll.contains(rolle);
+            DiscordRollenErgebnis.Aktion aktion = gewuenscht
+                    ? DiscordRollenErgebnis.Aktion.VERGEBEN
+                    : DiscordRollenErgebnis.Aktion.ENTZOGEN;
             try {
                 if (gewuenscht) {
                     botClient.put()
@@ -146,6 +226,7 @@ public class DiscordBotService {
                             .retrieve()
                             .toBodilessEntity();
                 }
+                ergebnisse.add(DiscordRollenErgebnis.gelungen(rolle, aktion));
             } catch (HttpClientErrorException.Forbidden e) {
                 // WARN, nicht INFO: Ein Abgleich, der bei jedem Lauf scheitert
                 // und nichts bewirkt, ist kein Nebenschauplatz. Auf INFO ging
@@ -164,17 +245,33 @@ public class DiscordBotService {
                         rolle, discordUserId, gewuenscht ? "vergeben" : "entziehen");
                 // Weitermachen: Eine gesperrte Rolle darf die uebrigen nicht
                 // mitreissen. Genau das tat der alte Sammelaufruf.
+                ergebnisse.add(DiscordRollenErgebnis.gescheitert(rolle, aktion,
+                        "Discord verweigert diese Rolle (403). Entweder steht die Bot-Rolle "
+                                + "darunter - dann in den Servereinstellungen hoeher ziehen - oder "
+                                + "der Nutzer ist Server-Owner; an dem kann kein Bot etwas aendern."));
             }
         }
         if (nickname != null && !nickname.isBlank()) {
-            botClient.patch()
-                    .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("nick",
-                            nickname.length() > 32 ? nickname.substring(0, 32) : nickname))
-                    .retrieve()
-                    .toBodilessEntity();
+            try {
+                botClient.patch()
+                        .uri("/guilds/{guildId}/members/{userId}", guildId, discordUserId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("nick",
+                                nickname.length() > 32 ? nickname.substring(0, 32) : nickname))
+                        .retrieve()
+                        .toBodilessEntity();
+            } catch (HttpClientErrorException.Forbidden e) {
+                // Der Spitzname ist eine Hoeflichkeit, die Rollen sind die
+                // Aufgabe. Frueher warf dieser Aufruf und nahm das gesamte
+                // Ergebnis mit: Wer den Abgleich anstiess, bekam eine
+                // Fehlermeldung ueber den Spitznamen und kein Wort darueber,
+                // dass seine Rollen laengst gesetzt waren. Am Server-Owner
+                // scheitert er ohnehin immer.
+                log.warn("Discord verweigert den Spitznamen fuer Nutzer {}: {}",
+                        discordUserId, e.getMessage());
+            }
         }
+        return ergebnisse;
     }
 
     // 3. User auf den Server einladen

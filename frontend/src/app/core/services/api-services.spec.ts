@@ -280,6 +280,38 @@ describe('HTTP-Dienste', () => {
       expect(remove.request.method).toBe('DELETE');
       remove.flush(null);
     });
+
+    // Die Prüfung darf nichts ändern. Ein POST oder DELETE an dieser Stelle
+    // wäre genau das Werkzeug, das beim Prüfen repariert - deshalb steht die
+    // Methode hier ausdrücklich im Test.
+    it('liest die Prüfung und schreibt dabei nichts', () => {
+      service.getAudit().subscribe();
+
+      const audit = httpMock.expectOne(`${apiUrl}/audit`);
+      expect(audit.request.method).toBe('GET');
+      audit.flush([]);
+    });
+
+    // Einen Charakter nachzusehen darf nicht die ganze Übersicht kosten: Die
+    // holt für eine Zeile jedes verknüpfte Konto erneut von Discord.
+    it('liest den Stand eines einzelnen Charakters', () => {
+      service.getCharacterAudit(2118431553).subscribe();
+
+      const stand = httpMock.expectOne(`${apiUrl}/audit/characters/2118431553`);
+      expect(stand.request.method).toBe('GET');
+      stand.flush(null);
+    });
+
+    // Die einzige Stelle dieser Seite, die in Discord etwas ändert - deshalb
+    // POST. Als GET ließe ihn früher oder später jemand aus einem Browser-Tab
+    // heraus wiederholen.
+    it('stößt den Abgleich für einen Charakter an', () => {
+      service.stosseAbgleichAn(2118431553).subscribe();
+
+      const sync = httpMock.expectOne(`${apiUrl}/sync/2118431553`);
+      expect(sync.request.method).toBe('POST');
+      sync.flush(null);
+    });
   });
 
   describe('NavigationService', () => {

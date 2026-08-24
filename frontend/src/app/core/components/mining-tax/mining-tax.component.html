@@ -141,17 +141,23 @@
           <div class="surface-panel" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid" [style.border-color]="data.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
             <div>
               <h3 style="margin: 0; color: var(--text-primary); font-size: 1.1rem;">Corp Master Wallet Konto</h3>
+              <!-- Die Gutschriften gehören hierher, weil der Saldo sie bereits
+                   enthält (Zahlung + Gutschrift - Schuld). Ohne sie stünde daneben
+                   ein Saldo, den die beiden anderen Zahlen nicht ergeben - und der
+                   Member sähe ein Guthaben, das er sich nicht erklären kann. -->
               <div style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">
-                Zeitraum-Steuern: {{ formatIskFull(data.totalDebt) }} | Geleistete Zahlungen: {{ formatIskFull(data.totalPaid) }}
+                Zeitraum-Steuern: {{ formatIskCents(data.totalDebt) }}
+                | Geleistete Zahlungen: {{ formatIskCents(data.totalPaid) }}
+                | Gutschriften: {{ formatIskCents(data.totalCredited) }}
               </div>
             </div>
             <div style="text-align: right;">
               <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary);">Aktueller Saldo</div>
               <div style="font-size: 1.8rem; font-weight: 700;" [style.color]="data.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
                 @if (data.currentBalance >= 0) {
-                  + {{ formatIskFull(data.currentBalance) }} (Guthaben)
+                  + {{ formatIskCents(data.currentBalance) }} (Guthaben)
                 } @else {
-                  {{ formatIskFull(data.currentBalance) }} (Schulden)
+                  {{ formatIskCents(data.currentBalance) }} (Schulden)
                 }
               </div>
             </div>
@@ -188,20 +194,38 @@
             }
 
             <div class="invoice-amount" [class.paid]="monthLedger.isPaid">
-              {{ formatIskFull(monthLedger.totalTax) }}
+              {{ formatIskCents(monthLedger.totalTax) }}
             </div>
 
+            <!-- Die drei Beträge ergeben zusammen die Monatssteuer oben:
+                 überwiesen + nachgetragen + noch fällig. Fehlte der mittlere
+                 Posten, ergäben die Zahlen die Summe nicht, und der Rest sähe
+                 wie ein Rechenfehler aus.
+                 "Überwiesen" statt "Bezahlt", seit ein nachgetragener Monat das
+                 Abzeichen BEZAHLT trägt: sonst stünde daneben ein "Bezahlt: 0",
+                 und beide Wörter meinten dasselbe und widersprächen sich. -->
             <div style="display: flex; justify-content: center; gap: 2rem; color: var(--text-secondary); font-size: 0.95rem; margin-top: 1.5rem;">
-              <span><strong>Bezahlt:</strong> {{ formatIskFull(monthLedger.taxPaid) }}</span>
-              <span><strong>Fehlt noch:</strong> {{ formatIskFull(monthLedger.totalTax - monthLedger.taxPaid > 0 ? monthLedger.totalTax - monthLedger.taxPaid : 0) }}</span>
+              <span><strong>Überwiesen:</strong> {{ formatIskCents(monthLedger.taxPaid) }}</span>
+              @if (hasBackfill(monthLedger)) {
+                <span><strong>Nachgetragen:</strong> {{ formatIskCents(monthLedger.creditApplied) }}</span>
+              }
+              <span><strong>Fehlt noch:</strong> {{ formatIskCents(monthLedger.amountDue) }}</span>
               <span style="border-left: 1px solid var(--border-color); padding-left: 2rem; color: var(--text-primary);">
                 <i class="fa-solid fa-cube" style="color: var(--accent-color); margin-right: 8px"></i> <strong>Gesamtvolumen:</strong> {{ formatVolume(getTotalVolume(monthLedger.details)) }}
               </span>
             </div>
 
-            @if (!monthLedger.isPaid) {
+            <!-- Wieviel gefordert wird, sagt `amountDue` und nicht der Status:
+                 ein teilweise nachgetragener Monat ist noch offen und verlangt
+                 trotzdem nur den Rest, nicht den Monatsbetrag.
+                 OB überhaupt gefordert wird, entscheidet dagegen der Status.
+                 Der Server rechnet einen Monat ab 95 Prozent Deckung als
+                 bezahlt; die letzten Prozent stehen dann noch in `amountDue`.
+                 Ohne die Abfrage auf `isPaid` bäte ausgerechnet ein Monat mit
+                 dem Abzeichen BEZAHLT um eine Überweisung. -->
+            @if (!monthLedger.isPaid && needsTransfer(monthLedger)) {
               <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 1.5rem; font-style: italic;">
-                Bitte überweise den offenen Betrag an das Corporation Master Wallet. Betreff: <strong>Steuer {{ monthLedger.month }}</strong>
+                Bitte überweise <strong>{{ formatIskCents(monthLedger.amountDue) }}</strong> an das Corporation Master Wallet. Betreff: <strong>Steuer {{ monthLedger.month }}</strong>
               </p>
             }
           </div>
@@ -231,8 +255,8 @@
                     <td><span class="badge" [ngClass]="item.category.toLowerCase()">{{ item.category }}</span></td>
                     <td style="text-align: right; color: var(--text-secondary);">{{ item.quantity.toLocaleString('de-DE') }}</td>
                     <td style="text-align: right; color: var(--text-primary); font-weight: 500;">{{ formatVolume(item.volume) }}</td>
-                    <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(item.jitaPrice) }}</td>
-                    <td style="text-align: right; font-weight: 600; color: #ff3366;">{{ formatIskFull(item.taxToPay) }}</td>
+                    <td style="text-align: right; color: var(--text-secondary);">{{ formatIskCents(item.jitaPrice) }}</td>
+                    <td style="text-align: right; font-weight: 600; color: #ff3366;">{{ formatIskCents(item.taxToPay) }}</td>
                   </tr>
                 }
                 @if (monthLedger.details.length === 0) {
@@ -253,10 +277,15 @@
     }
   }
 
-  <!-- ======================== ADMIN ANSICHT ======================== -->
+  <!-- ======================== ADMIN ANSICHT (BILANZ + AKTE) ======================== -->
   @if (activeTab() === 'LEDGERS' && isLeadership) {
     <div class="surface-panel" style="margin-bottom: 2rem;">
       <h3 style="margin-top: 0; color: var(--text-primary);"><i class="fa-solid fa-users"></i> Account-Bilanzen (Schulden & Guthaben)</h3>
+      <p class="panel-hint">
+        <i class="fa-solid fa-hand-pointer"></i>
+        Ein Klick auf eine Zeile öffnet die Steuerakte: welche Erze der Account geschürft hat,
+        woraus sich seine Steuer zusammensetzt und welche Gutschriften er bereits bekommen hat.
+      </p>
 
       @if (loadingAdminLedgers()) {
         <div class="loading-container"><div class="loading-spinner"></div></div>
@@ -268,38 +297,271 @@
               <th>Pilot (Main)</th>
               <th style="text-align: right;">Erzeugte Steuern</th>
               <th style="text-align: right;">Bezahlt</th>
+              <th style="text-align: right;">Gutschriften</th>
               <th style="text-align: right;">Aktueller Saldo</th>
             </tr>
             </thead>
             <tbody>
               @for (pilot of adminLedgers(); track pilot.mainId) {
-                <tr>
+                <tr class="clickable" [class.row-selected]="isSelectedMember(pilot.mainId)"
+                    (click)="openMember(pilot.mainId)" [title]="'Steuerakte von ' + pilot.mainName + ' öffnen'">
                   <td>
                     <div style="display: flex; align-items: center; gap: 10px;">
-                      <img [src]="pilot.portraitUrl" style="width: 32px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <img [src]="pilot.portraitUrl" (error)="onPortraitError($event)" [alt]="pilot.mainName"
+                           style="width: 32px; border-radius: 4px; border: 1px solid var(--border-color);">
                       <span style="font-weight: 500;">{{ pilot.mainName }}</span>
                     </div>
                   </td>
-                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(pilot.totalTax) }}</td>
-                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(pilot.totalPaid) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskCents(pilot.totalTax) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskCents(pilot.totalPaid) }}</td>
+                  <!-- Alle vier Spalten mit beiden Nachkommastellen: Steuer, Zahlung,
+                       Gutschrift und Saldo werden im Server als BigDecimal gefuehrt.
+                       Rundete die Zeile sie auf ganze ISK, stuenden vier gerundete
+                       Zahlen nebeneinander, die sich nicht mehr aufrechnen. -->
+                  <td style="text-align: right; color: var(--success-color);">{{ formatIskCents(pilot.totalCredited) }}</td>
                   <td style="text-align: right; font-weight: 700; font-size: 1.05rem;"
                       [style.color]="pilot.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
                     @if (pilot.currentBalance >= 0) {
-                      + {{ formatIskFull(pilot.currentBalance) }}
+                      + {{ formatIskCents(pilot.currentBalance) }}
                     } @else {
-                      {{ formatIskFull(pilot.currentBalance) }}
+                      {{ formatIskCents(pilot.currentBalance) }}
                     }
                   </td>
                 </tr>
               }
               @if (adminLedgers().length === 0) {
-                <tr><td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Keine Bilanzen gefunden.</td></tr>
+                <tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 2rem;">Keine Bilanzen gefunden.</td></tr>
               }
             </tbody>
           </table>
         </div>
       }
     </div>
+
+    <!-- ---------- Steuerakte des angeklickten Members ---------- -->
+    @if (loadingMember()) {
+      <div class="loading-container"><div class="loading-spinner"></div></div>
+    } @else if (selectedMember(); as member) {
+
+      <div class="surface-panel member-head">
+        <img class="member-portrait" [src]="member.portraitUrl" (error)="onPortraitError($event)" [alt]="member.accountName">
+        <div class="member-title">
+          <h3>{{ member.accountName }}</h3>
+          <small>Account inkl. aller Alts &ndash; so wird auch die Steuer geführt.</small>
+        </div>
+
+        <div class="member-figures">
+          <div class="figure">
+            <span class="figure-label">Erzeugte Steuern</span>
+            <span class="figure-value">{{ formatIskCents(member.totalTax) }}</span>
+          </div>
+          <div class="figure">
+            <span class="figure-label">Bezahlt</span>
+            <span class="figure-value">{{ formatIskCents(member.totalPaid) }}</span>
+          </div>
+          <div class="figure">
+            <span class="figure-label">Gutschriften</span>
+            <span class="figure-value credited">{{ formatIskCents(member.totalCredited) }}</span>
+          </div>
+          <div class="figure">
+            <span class="figure-label">Saldo</span>
+            <span class="figure-value" [style.color]="member.currentBalance >= 0 ? '#00dfa2' : '#ff3366'">
+              @if (member.currentBalance >= 0) {
+                + {{ formatIskCents(member.currentBalance) }}
+              } @else {
+                {{ formatIskCents(member.currentBalance) }}
+              }
+            </span>
+          </div>
+        </div>
+
+        <button class="btn-icon" (click)="closeMember()" title="Akte schliessen">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      @if (memberMonth(); as monthLedger) {
+        <div class="month-navigation">
+          <button class="nav-arrow" (click)="olderMemberMonth()"
+                  [disabled]="memberMonthIndex() === member.months.length - 1" title="Vorheriger Monat">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+
+          <h2 class="month-title">{{ formatMonthLabel(monthLedger.month) }}</h2>
+
+          <button class="nav-arrow" (click)="newerMemberMonth()"
+                  [disabled]="memberMonthIndex() === 0" title="Nächster Monat">
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
+
+        <div class="surface-panel" style="margin-bottom: 2rem;">
+          <div class="panel-head">
+            <h3 style="margin: 0;">
+              <i class="fa-solid fa-gem"></i> Geschürfte Erze &amp; Steuerzusammensetzung
+              @if (monthLedger.isPaid) {
+                <span class="invoice-badge inline paid"><i class="fa-solid fa-check"></i> BEZAHLT</span>
+              } @else {
+                <span class="invoice-badge inline open"><i class="fa-solid fa-triangle-exclamation"></i> OFFEN</span>
+              }
+            </h3>
+            <span style="color: var(--text-secondary); font-size: 0.85rem;">
+              Monatssteuer: <strong style="color: var(--danger-color);">{{ formatIskCents(monthLedger.totalTax) }}</strong>
+              &middot; davon überwiesen: {{ formatIskCents(monthLedger.taxPaid) }}
+              <!-- Dieselben Zahlen wie in der Eigensicht des Mitglieds. Sonst
+                   spräche die Führung ein Mitglied auf einen Rückstand an, den
+                   dessen eigener Bildschirm als beglichen ausweist. -->
+              @if (hasBackfill(monthLedger)) {
+                &middot; nachgetragen: {{ formatIskCents(monthLedger.creditApplied) }}
+              }
+              &middot; Volumen: {{ formatVolume(getTotalVolume(monthLedger.details)) }}
+            </span>
+          </div>
+
+          <table class="eve-table">
+            <thead>
+            <tr>
+              <th>Erz</th>
+              <th>Kategorie</th>
+              <th style="text-align: right;">Menge</th>
+              <th style="text-align: right;">Volumen</th>
+              <th style="text-align: right;">Jita Buy</th>
+              <th style="text-align: right;">Steueranteil</th>
+              <th style="text-align: right;">Anteil</th>
+            </tr>
+            </thead>
+            <tbody>
+              @for (item of monthLedger.details; track item.typeId) {
+                <tr>
+                  <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <img [src]="typeIcon(item.typeId, 32)" [alt]="item.typeName" style="width: 24px; border-radius: 4px;">
+                      <span>{{ item.typeName }}</span>
+                    </div>
+                  </td>
+                  <td><span class="badge" [ngClass]="item.category.toLowerCase()">{{ item.category }}</span></td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ item.quantity.toLocaleString('de-DE') }}</td>
+                  <td style="text-align: right;">{{ formatVolume(item.volume) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ formatIskCents(item.jitaPrice) }}</td>
+                  <td style="text-align: right; font-weight: 600; color: #ff3366;">{{ formatIskCents(item.taxToPay) }}</td>
+                  <td style="text-align: right; color: var(--text-secondary);">{{ taxShare(item, monthLedger.details) }}</td>
+                </tr>
+              }
+              @if (monthLedger.details.length === 0) {
+                <tr><td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">In diesem Monat wurde nichts abgebaut.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <div class="surface-panel text-center" style="color: var(--text-secondary); padding: 3rem; margin-bottom: 2rem;">
+          <i class="fa-solid fa-bed fa-2x" style="margin-bottom: 1rem; opacity: 0.5;"></i>
+          <p>Für diesen Account liegt kein Abrechnungsmonat vor.</p>
+        </div>
+      }
+
+      <!-- ---------- Gutschrift vergeben ---------- -->
+      <div class="surface-panel credit-panel">
+        <h3 style="margin-top: 0;"><i class="fa-solid fa-hand-holding-dollar"></i> Steuergutschrift vergeben</h3>
+        <p class="panel-hint">
+          Eine Gutschrift senkt, was dieser Account unterm Strich schuldet.
+        </p>
+
+        <div class="tax-form">
+          <div class="form-group">
+            <label>Betrag in ISK</label>
+            <!-- Bewusst type="text": ein Zahlenfeld gäbe einen double zurück, und
+                 der Betrag wäre ungenau, bevor er losgeschickt wird. -->
+            <input type="text" inputmode="decimal" [(ngModel)]="creditAmount"
+                   placeholder="z.B. 250000000 oder 12500,50">
+          </div>
+          <div class="form-group">
+            <label>Grund (freiwillig)</label>
+            <input type="text" [(ngModel)]="creditReason"
+                   placeholder="z.B. Anteil Moon-Ping 12.08.">
+          </div>
+          <button class="btn-primary" (click)="grantCredit()" [disabled]="grantingCredit()">
+            <i class="fa-solid fa-plus"></i> Gutschreiben
+          </button>
+        </div>
+
+        <p class="field-hint">
+          Der Grund gilt für die nächste Buchung
+        </p>
+
+        <!-- ---------- Bereits vergebener Verlauf ---------- -->
+        <h4 class="credit-history-title">
+          <i class="fa-solid fa-clock-rotate-left"></i> Bereits gutgeschrieben
+        </h4>
+        <p class="panel-hint">
+
+        </p>
+
+        @if (member.credits.length === 0) {
+          <div class="empty-hint">
+            <i class="fa-solid fa-circle-info"></i>
+            Dieser Account hat bisher keine Gutschrift bekommen.
+          </div>
+        } @else {
+          <table class="eve-table">
+            <thead>
+            <tr>
+              <th>Wann</th>
+              <th style="text-align: right;">Betrag</th>
+              <th>Zustand</th>
+              <th>Durch</th>
+              <th>Grund</th>
+              <th style="text-align: right;">Aktion</th>
+            </tr>
+            </thead>
+            <tbody>
+              @for (credit of member.credits; track credit.id) {
+                <tr [class.credit-void]="credit.status !== 'ACTIVE'">
+                  <td style="color: var(--text-secondary); white-space: nowrap;">
+                    {{ credit.occurredAt | date: 'dd.MM.yyyy HH:mm' }}
+                  </td>
+                  <td style="text-align: right; font-weight: 600;"
+                      [style.color]="credit.amount >= 0 ? '#00dfa2' : '#ff3366'">
+                    {{ formatIskCents(credit.amount) }}
+                  </td>
+                  <td>
+                    <span class="badge credit-status" [ngClass]="'status-' + credit.status">
+                      {{ creditStatusLabel(credit.status) }}
+                    </span>
+                    @if (credit.reversalOfCreditId) {
+                      <small class="muted">zu #{{ credit.reversalOfCreditId }}</small>
+                    }
+                  </td>
+                  <td>
+                    {{ credit.actorName }}
+                    @if (credit.selfGranted) {
+                      <span class="self-badge" title="Der Handelnde hat sich selbst bedient">
+                        <i class="fa-solid fa-user-shield"></i> an sich selbst
+                      </span>
+                    }
+                  </td>
+                  <td>
+                    @if (credit.reason) {
+                      {{ credit.reason }}
+                    } @else {
+                      <span class="muted">-</span>
+                    }
+                  </td>
+                  <td style="text-align: right;">
+                    @if (isReversible(credit)) {
+                      <button class="btn-icon btn-danger-hover" (click)="reverseCredit(credit)"
+                              title="Gutschrift zurücknehmen (Gegenbuchung)">
+                        <i class="fa-solid fa-rotate-left"></i>
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+    }
   }
 
   <!-- ======================== ADMIN ANSICHT (STEUERSÄTZE) ======================== -->
@@ -381,7 +643,7 @@
                   </div>
                 </td>
                 <td><span class="badge" [ngClass]="rate.category.toLowerCase()">{{ rate.category }}</span></td>
-                <td style="text-align: right; color: var(--text-secondary);">{{ formatIskFull(rate.currentJitaBuy) }}</td>
+                <td style="text-align: right; color: var(--text-secondary);">{{ formatIskCents(rate.currentJitaBuy) }}</td>
                 <td style="text-align: right; color: #00dfa2; font-weight: 600;">{{ rate.taxPercentage }} %</td>
                 <td style="text-align: right;">
                   <button class="btn-icon btn-danger-hover" (click)="deleteTaxRate(rate.typeId)">

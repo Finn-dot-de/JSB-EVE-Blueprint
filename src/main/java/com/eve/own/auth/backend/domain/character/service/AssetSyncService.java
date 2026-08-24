@@ -112,9 +112,15 @@ public class AssetSyncService {
         List<CharacterActivity> toSave = new ArrayList<>();
         for (CharacterActivity act : newActivities) {
             if ("TAX_PAYMENT".equals(act.getActivityType())) {
+                // Exakter Vergleich statt "Differenz kleiner als ein Cent": beide
+                // Betraege liegen seit der Umstellung auf numeric(20,2) auf zwei
+                // Nachkommastellen gerundet vor, eine Toleranz hat also nichts
+                // mehr abzufangen. compareTo und nicht equals - BigDecimal.equals
+                // haelt 2.5 und 2.50 fuer verschieden.
                 boolean exists = existingTaxes.stream().anyMatch(ex ->
                         ex.getTimestamp() != null && ex.getTimestamp().equals(act.getTimestamp()) &&
-                                ex.getValue() != null && Math.abs(ex.getValue() - act.getValue()) < 0.01);
+                                ex.getValue() != null && act.getValue() != null
+                                && ex.getValue().compareTo(act.getValue()) == 0);
                 if (!exists) {
                     toSave.add(act);
                 }

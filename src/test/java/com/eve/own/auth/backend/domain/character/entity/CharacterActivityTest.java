@@ -2,6 +2,7 @@ package com.eve.own.auth.backend.domain.character.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,8 +20,22 @@ class CharacterActivityTest {
 
         assertThat(activity.getCharacterId()).isEqualTo(42L);
         assertThat(activity.getActivityType()).isEqualTo("MINING_VOLUME");
-        assertThat(activity.getValue()).isEqualTo(1234.5);
+        // Die Spalte ist numeric(20,2) - der Messwert liegt auf zwei
+        // Nachkommastellen normalisiert vor, nicht als kuerzeste Darstellung.
+        assertThat(activity.getValue()).isEqualByComparingTo("1234.50");
         assertThat(activity.getTimestamp()).isEqualTo(MEASURED_AT);
+    }
+
+    @Test
+    @DisplayName("laesst einen fehlenden Messwert fehlend, statt ihn zu null zu machen")
+    void keepsMissingValueMissing() {
+        // Null heisst "nicht gemessen" und ist etwas anderes als 0,00 ISK. Wer
+        // das gleichsetzt, macht aus einer fehlenden Zahlung eine Zahlung ueber
+        // nichts - die Steuerbilanz filtert genau auf diesen Unterschied.
+        CharacterActivity activity =
+                CharacterActivity.of(42L, ActivityType.TAX_PAYMENT, (BigDecimal) null, MEASURED_AT);
+
+        assertThat(activity.getValue()).isNull();
     }
 
     @Test

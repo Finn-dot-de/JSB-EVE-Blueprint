@@ -34,10 +34,47 @@ export function formatIsk(value: Numeric): string {
   return formatCompact(value) + ' ISK';
 }
 
-/** Der exakte Betrag mit Tausenderpunkten - für Summen, auf die es ankommt. */
+/**
+ * Der volle Betrag mit Tausenderpunkten, auf ganze ISK gerundet.
+ *
+ * <p>Für <b>geschätzte</b> Werte: die Bewertung von Besitz, die aus
+ * `market_prices` stammt und dort bewusst als `double` geführt wird. Zwei
+ * Nachkommastellen wären hier keine Genauigkeit, sondern die Behauptung einer
+ * Genauigkeit, die der Wert nicht hat - der Preis von morgen ist ohnehin ein
+ * anderer.</p>
+ *
+ * <p>Für Beträge, die jemand schuldet, zahlt oder gutgeschrieben bekommt, ist
+ * das die falsche Wahl - dafür gibt es {@link formatIskCents}.</p>
+ */
 export function formatIskFull(value: Numeric): string {
   if (isMissing(value)) return '0 ISK';
   return value.toLocaleString(LOCALE, { maximumFractionDigits: 0 }) + ' ISK';
+}
+
+/**
+ * Der Betrag mit beiden Nachkommastellen, etwa `1.250.000,50 ISK`.
+ *
+ * <p>Für jeden Betrag, der <b>genau</b> geführt wird - in der Datenbank als
+ * `numeric(20,2)`, im Server als `BigDecimal`: Steuerschuld, geleistete
+ * Zahlung, Gutschrift, Saldo und der Preis, mit dem gerechnet wurde. Hier hieß
+ * es einmal "für Gutschriften und nur für die", weil Steuer und Zahlung damals
+ * `double` waren und ihre letzte Stelle wirklich nur Rauschen. Das gilt nicht
+ * mehr. Eine Steuer über 1.842.491.900,97 als "1.842.491.901" anzuzeigen wirft
+ * genau die Stelle weg, für die der Server auf `BigDecimal` umgestellt wurde -
+ * und wer den angezeigten Betrag überweist, trifft die Schuld nie.</p>
+ *
+ * <p>Der Wert kommt als JSON-<em>Zahl</em> an und ist im Browser damit ein
+ * `double`. Für die Anzeige ist das unschädlich: bis 10^12 ISK liegt dessen
+ * Fehler bei rund 0,0002 ISK und damit weit unter dem halben Cent, ab dem die
+ * zweite Nachkommastelle kippen würde. Beim <em>Senden</em> gilt das nicht -
+ * siehe `MiningService.grantCredit`.</p>
+ */
+export function formatIskCents(value: Numeric): string {
+  if (isMissing(value)) return '0,00 ISK';
+  return value.toLocaleString(LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }) + ' ISK';
 }
 
 export function formatNumber(value: Numeric): string {

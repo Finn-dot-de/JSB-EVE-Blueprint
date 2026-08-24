@@ -531,6 +531,80 @@
   // dieselben Neontöne und wären auf Weiß sonst nicht zu lesen.
   &.paid { color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary)); }
   &.open { color: color-mix(in srgb, var(--danger-color) 55%, var(--text-primary)); }
+
+  // In der Steuerakte steht das Abzeichen mitten in einer Überschrift und nicht
+  // in der Ecke eines Banners - dort würde die absolute Lage es aus der Zeile
+  // heben und über den Nachbarn legen.
+  &.inline {
+    position: static;
+    margin-left: 0.75rem;
+    vertical-align: middle;
+  }
+}
+
+/* Der Nachweis zu einem nachgetragenen Monat.
+   In der ruhigen Akzentfarbe und nicht in Warngelb oder Rot: ein Nachtrag ist
+   eine Korrektur und kein Zwischenfall. Ein Kasten, der nach Beanstandung
+   aussieht, macht aus einem gewöhnlichen Vorgang einen Verdacht.
+   Zur Textfarbe hin gemischt, wie bei den Abzeichen: die reinen Neontöne der
+   Bedeutungsfarben sind auf hellem Grund nicht zu lesen. */
+.backfill-proof {
+  margin: 1.5rem auto 0;
+  max-width: 70ch;
+  padding: 0.85rem 1.1rem;
+  border-radius: 6px;
+  /* Nur links eine Kante statt eines vollen Rahmens: der Kasten soll zum Monat
+     darüber gehören und nicht als eigene Meldung danebenstehen. */
+  border-left: 3px solid color-mix(in srgb, var(--accent-color) 60%, transparent);
+  background-color: color-mix(in srgb, var(--accent-color) 8%, transparent);
+  text-align: left;
+}
+
+.backfill-lead {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+
+  strong { color: var(--text-primary); }
+  i { color: var(--accent-color); margin-right: 8px; }
+}
+
+/* Eine Zeile je Buchung, damit Betrag, Urheber und Grund untereinander
+   ausgerichtet bleiben - drei Belege hintereinander in einem Fliesstext wären
+   nicht mehr auseinanderzuhalten. */
+.backfill-list {
+  margin: 0.7rem 0 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+}
+
+.backfill-amount {
+  font-weight: 700;
+  /* Tabellenziffern: die Beträge stehen untereinander und sollen sich
+     vergleichen lassen, ohne dass die Stellen gegeneinander verrutschen. */
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary));
+}
+
+.backfill-meta strong { color: var(--text-primary); font-weight: 600; }
+
+.backfill-reason {
+  font-style: italic;
+  color: var(--text-primary);
 }
 
 .invoice-amount {
@@ -540,4 +614,170 @@
   color: color-mix(in srgb, var(--danger-color) 55%, var(--text-primary));
 
   &.paid { color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary)); }
+}
+
+/* =========================================
+   STEUERAKTE EINES MEMBERS (Admin-Bilanz)
+   ========================================= */
+
+/* Stand bisher nur im Markup, ohne Regel dahinter. */
+.text-center { text-align: center; }
+
+/* Nur wo ein Klick auch etwas öffnet - ein Zeiger über einer toten Zeile ist
+   ein Versprechen, das die Seite nicht hält. */
+.eve-table tr.clickable {
+  cursor: pointer;
+}
+
+/* Die geöffnete Zeile bleibt markiert, auch wenn die Akte weit darunter
+   steht: sonst weiss man beim Zurückscrollen nicht mehr, wessen Akte offen ist. */
+.eve-table tr.row-selected td {
+  background-color: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent-color);
+}
+
+.panel-hint {
+  margin: 0.25rem 0 1rem 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.55;
+
+  i { color: var(--accent-color); margin-right: 6px; }
+}
+
+.field-hint {
+  margin: 0.9rem 0 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.empty-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+
+  i { color: var(--accent-color); }
+}
+
+.muted { color: var(--text-secondary); }
+
+.member-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  border-left: 3px solid var(--accent-color);
+
+  .btn-icon { margin-left: auto; align-self: flex-start; }
+}
+
+.member-portrait {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.member-title {
+  h3 { margin: 0; color: var(--text-primary); }
+  small { color: var(--text-secondary); font-size: 0.8rem; }
+}
+
+.member-figures {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin-left: 2rem;
+}
+
+.figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  .figure-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+  }
+
+  .figure-value {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  // Zur Textfarbe hin gemischt, sonst wäre das Neongrün auf Weiß unlesbar -
+  // dieselbe Überlegung wie beim Rechnungs-Banner.
+  .figure-value.credited {
+    color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary));
+  }
+}
+
+/* =========================================
+   GUTSCHRIFTEN
+   ========================================= */
+
+.credit-panel {
+  border-left: 3px solid var(--success-color);
+}
+
+.credit-history-title {
+  margin: 2rem 0 0.25rem 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+
+  i { color: var(--accent-color); margin-right: 6px; }
+}
+
+.credit-status {
+  &.status-ACTIVE {
+    background-color: color-mix(in srgb, var(--success-color) 16%, var(--bg-surface));
+    color: color-mix(in srgb, var(--success-color) 45%, var(--text-primary));
+  }
+  &.status-REVERSED {
+    background-color: color-mix(in srgb, var(--danger-color) 16%, var(--bg-surface));
+    color: color-mix(in srgb, var(--danger-color) 45%, var(--text-primary));
+  }
+  &.status-REVERSAL {
+    background-color: color-mix(in srgb, var(--warning-color) 16%, var(--bg-surface));
+    color: color-mix(in srgb, var(--warning-color) 45%, var(--text-primary));
+  }
+}
+
+/* Aufgehobene Buchungen bleiben lesbar, treten aber zurück - sie stehen nur
+   noch als Nachweis da, nicht mehr als geltender Betrag. */
+.credit-void td { opacity: 0.65; }
+
+.self-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background-color: color-mix(in srgb, var(--highlight-color) 18%, var(--bg-surface));
+  color: color-mix(in srgb, var(--highlight-color) 40%, var(--text-primary));
+}
+
+@media (max-width: 900px) {
+  .member-figures { margin-left: 0; gap: 1.25rem; }
 }

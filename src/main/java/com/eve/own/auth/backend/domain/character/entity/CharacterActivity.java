@@ -7,6 +7,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import lombok.Getter;
 import lombok.Setter;
@@ -30,7 +32,22 @@ public class CharacterActivity {
     @Column(name = "activity_type", nullable = false)
     private String activityType;
 
-    private Double value;
+    /**
+     * Der Messwert - je nach {@link #activityType} ISK, ein Volumen oder eine
+     * Anzahl.
+     *
+     * <p>Kein {@code Double} mehr, und der Grund ist ein einziger Kennwert:
+     * {@code TAX_PAYMENT}. Das ist die Gegenseite der Mining-Steuerschuld -
+     * darueber entscheidet sich, ob jemand als bezahlt gilt. Eine Spalte hat
+     * genau einen Typ, also wandern die uebrigen Kennzahlen mit; {@code numeric}
+     * traegt eine Anzahl von 185 ebenso wie 1.472.369,60 m³. Nebenbei
+     * verschwindet damit der Bestandsschaden, den der alte Typ hinterlassen hat:
+     * die Summe der PVE-ISK stand mit {@code 1319981075.6900005} in der
+     * Datenbank - Nachkommastellen, die keine Zahlung je hatte.</p>
+     */
+    @Column(precision = 20, scale = 2)
+    private BigDecimal value;
+
     private Instant timestamp;
 
     /**
@@ -58,12 +75,33 @@ public class CharacterActivity {
         return type.matches(activityType);
     }
 
-    /** Baut einen automatisch erhobenen Messwert. */
+    /**
+     * ISK hat ingame genau zwei Nachkommastellen - dieselbe Festlegung wie bei
+     * {@code MiningTaxCredit}.
+     */
+    private static final int ISK_SCALE = 2;
+
+    /**
+     * Baut einen automatisch erhobenen Messwert aus einer Gleitkommazahl.
+     *
+     * <p>Die Quelle ist hier tatsaechlich ein {@code double} - ESI und Fuzzwork
+     * liefern JSON-Zahlen, und JSON kennt nichts Genaueres. Der Weg ueber
+     * {@link BigDecimal#valueOf(double)} nimmt die kuerzeste Darstellung, die
+     * denselben {@code double} ergibt: aus {@code 1319981075.6900005} wird damit
+     * wieder {@code 1319981075.69}. Was hier ankommt, ist also so genau wie die
+     * Leitung es hergab; ab hier geht keine Stelle mehr verloren.</p>
+     */
     public static CharacterActivity of(Long characterId, ActivityType type, double value, Instant timestamp) {
+        return of(characterId, type, BigDecimal.valueOf(value), timestamp);
+    }
+
+    /** Baut einen Messwert, der schon exakt vorliegt. */
+    public static CharacterActivity of(Long characterId, ActivityType type, BigDecimal value,
+                                       Instant timestamp) {
         CharacterActivity activity = new CharacterActivity();
         activity.setCharacterId(characterId);
         activity.setType(type);
-        activity.setValue(value);
+        activity.setValue(value == null ? null : value.setScale(ISK_SCALE, RoundingMode.HALF_UP));
         activity.setTimestamp(timestamp);
         return activity;
     }

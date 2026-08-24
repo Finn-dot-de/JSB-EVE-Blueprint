@@ -11,9 +11,9 @@ import com.eve.own.auth.backend.domain.eve.entity.InvType;
 import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -52,43 +52,12 @@ class MiningTaxRateServiceTest {
         return type;
     }
 
-    private static MiningTaxRate rate(Long typeId, String category, double percentage) {
+    private static MiningTaxRate rate(Long typeId, String category, String percentage) {
         MiningTaxRate rate = new MiningTaxRate();
         rate.setTypeId(typeId);
         rate.setCategory(category);
-        rate.setTaxPercentage(percentage);
+        rate.setTaxPercentage(new BigDecimal(percentage));
         return rate;
-    }
-
-    @Nested
-    @DisplayName("Nachtragen unbekannter Typen")
-    class MissingRates {
-
-        @Test
-        @DisplayName("legt einen steuerfreien Satz mit der richtigen Klasse an")
-        void createsRateFromSde() {
-            when(invTypeRepo.findById(WHITE_GLAZE))
-                    .thenReturn(Optional.of(type(WHITE_GLAZE, "White Glaze", 423L)));
-
-            MiningTaxRate created = service.createMissingRate(WHITE_GLAZE);
-
-            assertThat(created.getTypeName()).isEqualTo("White Glaze");
-            assertThat(created.getCategory()).isEqualTo("ICE");
-            assertThat(created.getTaxPercentage()).isZero();
-            assertThat(created.getCurrentJitaBuy()).isZero();
-            verify(taxRateRepo).save(created);
-        }
-
-        @Test
-        @DisplayName("legt auch fuer einen der SDE unbekannten Typ etwas Sichtbares an")
-        void createsPlaceholderForUnknownType() {
-            when(invTypeRepo.findById(9999L)).thenReturn(Optional.empty());
-
-            MiningTaxRate created = service.createMissingRate(9999L);
-
-            assertThat(created.getTypeName()).isEqualTo("Unknown Ore (9999)");
-            assertThat(created.getCategory()).isEqualTo("ORE");
-        }
     }
 
     @Nested
@@ -116,7 +85,7 @@ class MiningTaxRateServiceTest {
         @Test
         @DisplayName("korrigiert eine falsch einsortierte Klasse und laesst den Prozentsatz stehen")
         void fixesWrongCategoryKeepingPercentage() {
-            MiningTaxRate wrong = rate(WHITE_GLAZE, "ORE", 15.0);
+            MiningTaxRate wrong = rate(WHITE_GLAZE, "ORE", "15.000");
             when(invTypeRepo.findAllMineables())
                     .thenReturn(List.of(type(WHITE_GLAZE, "White Glaze", 423L)));
             when(taxRateRepo.findAll()).thenReturn(new ArrayList<>(List.of(wrong)));
@@ -124,14 +93,14 @@ class MiningTaxRateServiceTest {
             service.synchronizeWithSde();
 
             assertThat(wrong.getCategory()).isEqualTo("ICE");
-            assertThat(wrong.getTaxPercentage()).isEqualTo(15.0);
+            assertThat(wrong.getTaxPercentage()).isEqualByComparingTo("15.0");
         }
 
         @Test
         @DisplayName("schreibt nichts, wenn schon alles stimmt")
         void skipsWhenNothingChanged() {
             when(invTypeRepo.findAllMineables()).thenReturn(List.of(type(VELDSPAR, "Veldspar", 462L)));
-            when(taxRateRepo.findAll()).thenReturn(new ArrayList<>(List.of(rate(VELDSPAR, "ORE", 10.0))));
+            when(taxRateRepo.findAll()).thenReturn(new ArrayList<>(List.of(rate(VELDSPAR, "ORE", "10.000"))));
 
             service.synchronizeWithSde();
 
@@ -141,7 +110,7 @@ class MiningTaxRateServiceTest {
         @Test
         @DisplayName("entfernt Saetze zu nicht mehr abbaubaren Typen")
         void removesObsoleteRates() {
-            MiningTaxRate obsolete = rate(999L, "ORE", 5.0);
+            MiningTaxRate obsolete = rate(999L, "ORE", "5.000");
             when(invTypeRepo.findAllMineables()).thenReturn(List.of(type(VELDSPAR, "Veldspar", 462L)));
             when(taxRateRepo.findAll()).thenReturn(new ArrayList<>(List.of(obsolete)));
 
@@ -171,29 +140,29 @@ class MiningTaxRateServiceTest {
         @Test
         @DisplayName("setzt einen Prozentsatz fuer eine ganze Klasse, Gross- und Kleinschreibung egal")
         void updatesWholeCategory() {
-            MiningTaxRate ore = rate(1L, "ORE", 0.0);
-            MiningTaxRate ice = rate(2L, "ICE", 0.0);
+            MiningTaxRate ore = rate(1L, "ORE", "0.000");
+            MiningTaxRate ice = rate(2L, "ICE", "0.000");
             when(taxRateRepo.findAll()).thenReturn(List.of(ore, ice));
 
-            int touched = service.updateCategory("ore", 12.5);
+            int touched = service.updateCategory("ore", new BigDecimal("12.500"));
 
             assertThat(touched).isEqualTo(1);
-            assertThat(ore.getTaxPercentage()).isEqualTo(12.5);
+            assertThat(ore.getTaxPercentage()).isEqualByComparingTo("12.5");
             assertThat(ice.getTaxPercentage()).isZero();
         }
 
         @Test
         @DisplayName("kommt mit einem Satz ohne Klasse zurecht")
         void toleratesRateWithoutCategory() {
-            when(taxRateRepo.findAll()).thenReturn(List.of(rate(1L, null, 0.0)));
+            when(taxRateRepo.findAll()).thenReturn(List.of(rate(1L, null, "0.000")));
 
-            assertThat(service.updateCategory("ORE", 10.0)).isZero();
+            assertThat(service.updateCategory("ORE", new BigDecimal("10.000"))).isZero();
         }
 
         @Test
         @DisplayName("schluesselt die Saetze nach Typ auf")
         void indexesByTypeId() {
-            when(taxRateRepo.findAll()).thenReturn(List.of(rate(1L, "ORE", 5.0), rate(2L, "ICE", 7.0)));
+            when(taxRateRepo.findAll()).thenReturn(List.of(rate(1L, "ORE", "5.000"), rate(2L, "ICE", "7.000")));
 
             assertThat(service.findAllByTypeId()).containsOnlyKeys(1L, 2L);
         }
@@ -201,7 +170,7 @@ class MiningTaxRateServiceTest {
         @Test
         @DisplayName("reicht Lesen, Speichern und Loeschen durch")
         void delegatesSimpleOperations() {
-            MiningTaxRate rate = rate(1L, "ORE", 5.0);
+            MiningTaxRate rate = rate(1L, "ORE", "5.000");
             when(taxRateRepo.findAll()).thenReturn(List.of(rate));
 
             assertThat(service.findAll()).containsExactly(rate);

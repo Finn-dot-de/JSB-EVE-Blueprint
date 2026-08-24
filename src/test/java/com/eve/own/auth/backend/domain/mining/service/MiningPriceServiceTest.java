@@ -13,6 +13,7 @@ import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
 import com.eve.own.auth.backend.esi.EsiService;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -50,7 +51,7 @@ class MiningPriceServiceTest {
         MiningTaxRate rate = new MiningTaxRate();
         rate.setTypeId(typeId);
         rate.setTypeName(typeName);
-        rate.setCurrentJitaBuy(0.0);
+        rate.setCurrentJitaBuy(BigDecimal.ZERO);
         return rate;
     }
 
@@ -73,7 +74,7 @@ class MiningPriceServiceTest {
 
             service.refreshJitaPrices();
 
-            assertThat(veldspar.getCurrentJitaBuy()).isEqualTo(12.0);
+            assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("12.00");
         }
 
         @Test
@@ -86,21 +87,21 @@ class MiningPriceServiceTest {
 
             service.refreshJitaPrices();
 
-            assertThat(veldspar.getCurrentJitaBuy()).isEqualTo(20.0);
+            assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("20.00");
         }
 
         @Test
         @DisplayName("laesst den Preis unangetastet, wenn der Markt gar nichts hergibt")
         void keepsPriceWhenMarketIsSilent() {
             MiningTaxRate veldspar = rate(VELDSPAR, "Veldspar");
-            veldspar.setCurrentJitaBuy(99.0);
+            veldspar.setCurrentJitaBuy(new BigDecimal("99.00"));
             when(taxRateRepo.findAll()).thenReturn(List.of(veldspar));
             when(esiService.getFuzzworkPrices(anyList()))
                     .thenReturn(Map.of(String.valueOf(VELDSPAR), price(null, null)));
 
             service.refreshJitaPrices();
 
-            assertThat(veldspar.getCurrentJitaBuy()).isEqualTo(99.0);
+            assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("99.00");
         }
     }
 
@@ -125,7 +126,7 @@ class MiningPriceServiceTest {
 
             service.refreshJitaPrices();
 
-            assertThat(veldspar.getCurrentJitaBuy()).isEqualTo(55.0);
+            assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("55.00");
         }
 
         @Test
@@ -144,7 +145,7 @@ class MiningPriceServiceTest {
 
             service.refreshJitaPrices();
 
-            assertThat(ice.getCurrentJitaBuy()).isEqualTo(77.0);
+            assertThat(ice.getCurrentJitaBuy()).isEqualByComparingTo("77.00");
         }
 
         @Test

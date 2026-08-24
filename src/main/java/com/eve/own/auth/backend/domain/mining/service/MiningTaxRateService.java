@@ -5,6 +5,7 @@ import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
 import com.eve.own.auth.backend.domain.mining.OreCategory;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,9 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class MiningTaxRateService {
 
     /** Neue Saetze starten steuerfrei - ein Director gibt den Prozentwert bewusst vor. */
-    private static final double DEFAULT_TAX_PERCENTAGE = 0.0;
+    private static final BigDecimal DEFAULT_TAX_PERCENTAGE = BigDecimal.ZERO;
 
-    private static final double UNKNOWN_PRICE = 0.0;
+    private static final BigDecimal UNKNOWN_PRICE = BigDecimal.ZERO;
 
     private final MiningTaxRateRepository taxRateRepo;
     private final InvTypeRepository invTypeRepo;
@@ -61,40 +62,13 @@ public class MiningTaxRateService {
 
     /** Setzt denselben Prozentsatz fuer eine ganze Steuerklasse. */
     @Transactional
-    public int updateCategory(String category, Double taxPercentage) {
+    public int updateCategory(String category, BigDecimal taxPercentage) {
         List<MiningTaxRate> rates = taxRateRepo.findAll().stream()
                 .filter(rate -> rate.getCategory() != null && rate.getCategory().equalsIgnoreCase(category))
                 .toList();
         rates.forEach(rate -> rate.setTaxPercentage(taxPercentage));
         taxRateRepo.saveAll(rates);
         return rates.size();
-    }
-
-    /**
-     * Legt einen fehlenden Steuersatz an.
-     *
-     * <p>Noetig, weil in einem Ledger Typen auftauchen koennen, die es beim
-     * letzten Abgleich der Stammdaten noch nicht gab - etwa nach einem
-     * EVE-Update. Sie erscheinen dann steuerfrei in der Liste und ein Director
-     * kann den Satz nachtragen.</p>
-     */
-    @Transactional
-    public MiningTaxRate createMissingRate(Long typeId) {
-        MiningTaxRate rate = new MiningTaxRate();
-        rate.setTypeId(typeId);
-        rate.setTaxPercentage(DEFAULT_TAX_PERCENTAGE);
-        rate.setCurrentJitaBuy(UNKNOWN_PRICE);
-
-        invTypeRepo.findById(typeId).ifPresentOrElse(type -> {
-            rate.setTypeName(type.getTypeName());
-            rate.setCategory(OreCategory.ofGroup(type.getGroupId()).dbValue());
-        }, () -> {
-            rate.setTypeName("Unknown Ore (" + typeId + ")");
-            rate.setCategory(OreCategory.ORE.dbValue());
-        });
-
-        log.info("Steuersatz fuer bislang unbekannten Typ {} angelegt: {}", typeId, rate.getTypeName());
-        return taxRateRepo.save(rate);
     }
 
     /**
@@ -105,6 +79,12 @@ public class MiningTaxRateService {
      * letzte Fall tritt auf, wenn CCP die SDE-Gruppe eines Typs aendert.</p>
      *
      * <p>Die vergebenen Prozentwerte bleiben dabei unangetastet.</p>
+     *
+     * <p>Hier stand daneben ein {@code createMissingRate}, das aus der
+     * Steuerbilanz heraus einen fehlenden Satz anlegte - mitten im Lesepfad
+     * eines {@code GET}. Der Fall, den es abdecken sollte (ein Erz, das die SDE
+     * erst nach dem letzten Abgleich bekommen hat), ist genau der erste Fall
+     * dieser Methode; ein Typ ohne Satz kostet in der Zwischenzeit nichts.</p>
      */
     @Transactional
     public void synchronizeWithSde() {

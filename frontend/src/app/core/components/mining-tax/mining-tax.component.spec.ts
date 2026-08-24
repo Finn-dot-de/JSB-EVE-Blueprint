@@ -6,14 +6,25 @@ import { AuthService } from '../../services/auth.service';
 import { ConfirmService } from '../../services/confirm.service';
 import { MiningService } from '../../services/mining.service';
 import { ToastService } from '../../services/toast.service';
+import { formatIskCents } from '../../shared/eve-format.util';
 
-/** Ein Abrechnungsmonat, wie ihn der Server liefert. */
+/**
+ * Ein Abrechnungsmonat, wie ihn der Server liefert - vollständig überwiesen.
+ *
+ * <p>`creditApplied`, `amountDue` und `isPaid` kommen fertig gerechnet vom
+ * Server; die Tests setzen sie deshalb von Hand statt sie aus den anderen
+ * Feldern abzuleiten. Täten sie das, prüften sie am Ende ihre eigene Ableitung
+ * und nicht mehr das, was die Oberfläche vom Server bekommt.</p>
+ */
 function month(name: string, totalTax = 1000) {
   return {
     month: name,
     totalTax,
     taxPaid: totalTax,
     isPaid: true,
+    creditApplied: 0,
+    appliedCredits: [] as ReturnType<typeof appliedCredit>[],
+    amountDue: 0,
     details: [
       { typeId: 1230, typeName: 'Veldspar', category: 'ORE', quantity: 100, volume: 10, jitaPrice: 5, taxToPay: 50 },
       { typeId: 1228, typeName: 'Scordite', category: 'ORE', quantity: 50, volume: 5, jitaPrice: 8, taxToPay: 40 },
@@ -21,8 +32,64 @@ function month(name: string, totalTax = 1000) {
   };
 }
 
+/**
+ * Der Anteil einer Gutschrift an einem Monat - der Beleg hinter einem
+ * nachgetragenen Monat.
+ *
+ * <p>`applied` und `amount` sind getrennt einstellbar, weil eine Buchung über
+ * mehrere Monate reicht: nur so lässt sich prüfen, dass die Oberfläche einen
+ * Teilanteil auch als Teilanteil ausweist.</p>
+ */
+function appliedCredit(overrides: Record<string, unknown> = {}) {
+  return {
+    creditId: 7,
+    applied: 1000,
+    amount: 1000,
+    actorCharacterId: 99,
+    actorName: 'Director One',
+    reason: 'hatte am 03.01. überwiesen, nicht erkannt',
+    occurredAt: '2026-08-20T10:00:00Z',
+    ...overrides,
+  };
+}
+
 function leaderRow(mainName: string, volume: number, value: number) {
   return { rank: 1, mainId: 1, mainName, portraitUrl: '', volume, value, units: 1, isMe: false };
+}
+
+/** Eine Buchung aus dem Gutschriftenverlauf. */
+function credit(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 7,
+    accountId: 42,
+    accountName: 'Miner Prime',
+    portraitUrl: '',
+    amount: 250_000_000,
+    status: 'ACTIVE',
+    reversalOfCreditId: null,
+    actorCharacterId: 99,
+    actorName: 'Director One',
+    selfGranted: false,
+    reason: 'Moon-Anteil',
+    occurredAt: '2026-08-20T10:00:00Z',
+    ...overrides,
+  };
+}
+
+/** Die Steuerakte, wie sie der Server für eine angeklickte Bilanzzeile liefert. */
+function memberLedger(overrides: Record<string, unknown> = {}) {
+  return {
+    accountId: 42,
+    accountName: 'Miner Prime',
+    portraitUrl: '',
+    totalTax: 2000,
+    totalPaid: 500,
+    totalCredited: 250_000_000,
+    currentBalance: -1500,
+    months: [month('2026-08'), month('2026-07')],
+    credits: [credit()],
+    ...overrides,
+  };
 }
 
 describe('MiningTaxComponent', () => {
@@ -58,6 +125,9 @@ describe('MiningTaxComponent', () => {
       saveTaxRate: vi.fn().mockReturnValue(of(rate)),
       saveBulkTax: vi.fn().mockReturnValue(of(null)),
       deleteTaxRate: vi.fn().mockReturnValue(of(null)),
+      getMemberLedger: vi.fn().mockReturnValue(of(memberLedger())),
+      grantCredit: vi.fn().mockReturnValue(of(credit())),
+      reverseCredit: vi.fn().mockReturnValue(of(credit({ id: 8, amount: -250_000_000, status: 'REVERSAL' }))),
     };
     toastService = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
     confirmService = { ask: vi.fn().mockResolvedValue(true) };
@@ -100,6 +170,115 @@ describe('MiningTaxComponent', () => {
 
     it('summiert das Volumen eines Monats', () => {
       expect(component.getTotalVolume(month('2026-08').details)).toBe(15);
+    });
+
+    it('nennt den fälligen Rest auf den Cent genau, so wie der Server ihn schickt', () => {
+      // Ohne die Nachkommastellen sähe das Mitglied "5.138.868 ISK" und
+      // überwiese das - die Rechnung bliebe mit 32 Cent offen stehen, und
+      // niemand auf dem Bildschirm könnte erklären, warum.
+      const teilweiseBezahlt = {
+        ...month('2026-08', 6_138_868.42),
+        taxPaid: 1_000_000.1,
+        isPaid: false,
+        creditApplied: 0,
+        amountDue: 5_138_868.32,
+      };
+
+      expect(component.needsTransfer(teilweiseBezahlt)).toBe(true);
+      expect(formatIskCents(teilweiseBezahlt.amountDue)).toBe('5.138.868,32 ISK');
+    });
+
+    it('fordert nichts ein, wenn eine Gutschrift den Monat nachträgt', () => {
+      // Der gemeldete Widerspruch: 461 Mio. Guthaben oben, darunter die
+      // Aufforderung, 28,9 Mio. zu überweisen.
+      //
+      // OHNE DIESE REGEL: Früher stand hier die Zusicherung "der Status bleibt
+      // OFFEN". Die galt einer Gutschrift als Zuwendung. Eine Gutschrift ist
+      // aber eine KORREKTUR - das Mitglied hat überwiesen, das Werkzeug hat es
+      // nicht erkannt, und die Buchung trägt genau das nach. Einen so
+      // gedeckten Monat weiter als offen zu führen hiesse, auf einer Schuld zu
+      // bestehen, die jemand ausdrücklich für beglichen erklärt hat.
+      const nachgetragen = {
+        ...month('2026-08', 28_931_067),
+        taxPaid: 0,
+        isPaid: true,
+        creditApplied: 28_931_067,
+        appliedCredits: [appliedCredit({ applied: 28_931_067, amount: 28_931_067 })],
+        amountDue: 0,
+      };
+
+      expect(component.needsTransfer(nachgetragen)).toBe(false);
+      expect(component.hasBackfill(nachgetragen)).toBe(true);
+      expect(nachgetragen.isPaid).toBe(true);
+    });
+
+    it('hält erkannte Überweisung und Nachtrag auseinander', () => {
+      // OHNE DIESE REGEL wäre am Status nicht mehr zu erkennen, ob wirklich
+      // Geld geflossen ist oder ob jemand den Monat per Eintrag geschlossen
+      // hat - beide zeigen BEZAHLT. Die Aufschlüsselung ist die einzige
+      // Stelle, an der die Herkunft noch steht, und der Beleg gehört dazu:
+      // wer hat wann und mit welcher Begründung nachgetragen.
+      const gemischt = {
+        ...month('2026-08', 3000),
+        taxPaid: 1000,
+        isPaid: true,
+        creditApplied: 2000,
+        appliedCredits: [appliedCredit({ applied: 2000, amount: 2000 })],
+        amountDue: 0,
+      };
+
+      expect(component.hasBackfill(gemischt)).toBe(true);
+      expect(formatIskCents(gemischt.taxPaid)).toBe('1.000,00 ISK');
+      expect(formatIskCents(gemischt.creditApplied)).toBe('2.000,00 ISK');
+
+      const beleg = gemischt.appliedCredits[0];
+      expect(beleg.actorName).toBe('Director One');
+      expect(beleg.reason).toBe('hatte am 03.01. überwiesen, nicht erkannt');
+      expect(beleg.occurredAt).toBe('2026-08-20T10:00:00Z');
+    });
+
+    it('fordert bei teilweisem Nachtrag nur den Rest ein, nicht den Monatsbetrag', () => {
+      // 1.000 nachgetragen auf 3.000 Steuer: fällig sind 2.000. Stünde hier
+      // der volle Monatsbetrag, überwiese das Mitglied 1.000 zu viel. Der
+      // Monat bleibt offen, weil die Deckung nicht reicht.
+      const teilweiseNachgetragen = {
+        ...month('2026-08', 3000),
+        taxPaid: 0,
+        isPaid: false,
+        creditApplied: 1000,
+        appliedCredits: [appliedCredit({ applied: 1000, amount: 1000 })],
+        amountDue: 2000,
+      };
+
+      expect(component.needsTransfer(teilweiseNachgetragen)).toBe(true);
+      expect(component.hasBackfill(teilweiseNachgetragen)).toBe(true);
+      expect(formatIskCents(teilweiseNachgetragen.amountDue)).toBe('2.000,00 ISK');
+    });
+
+    it('weist eine über mehrere Monate verteilte Buchung als Teilanteil aus', () => {
+      // OHNE DIESE REGEL läse sich derselbe Beleg in zwei Monaten wie zwei
+      // getrennte Nachträge, und die Summe der Gutschriften schiene doppelt so
+      // hoch wie die eine Buchung, die tatsächlich vorliegt.
+      expect(component.isPartialCredit(appliedCredit({ applied: 400, amount: 1000 }))).toBe(true);
+    });
+
+    it('wiederholt bei einer voll verbrauchten Buchung nicht denselben Betrag', () => {
+      expect(component.isPartialCredit(appliedCredit({ applied: 1000, amount: 1000 }))).toBe(false);
+    });
+
+    it('nennt keinen Nachtrag, wo keiner gebucht wurde', () => {
+      // Sonst stünde bei jedem gewöhnlichen Monat eine Zeile "Nachgetragen:
+      // 0,00 ISK", die nichts erklärt.
+      const ohneNachtrag = { ...month('2026-08', 1000), taxPaid: 0, isPaid: false, amountDue: 1000 };
+
+      expect(component.hasBackfill(ohneNachtrag)).toBe(false);
+      expect(component.needsTransfer(ohneNachtrag)).toBe(true);
+    });
+
+    it('fordert nichts ein, wenn der Monat überwiesen ist', () => {
+      // Der Normalfall: erkannte Überweisung, kein Nachtrag, nichts offen.
+      expect(component.needsTransfer(month('2026-08'))).toBe(false);
+      expect(component.hasBackfill(month('2026-08'))).toBe(false);
     });
 
     it('bleibt bei einem Fehler bedienbar', () => {
@@ -314,6 +493,287 @@ describe('MiningTaxComponent', () => {
 
     it('meldet die Rechte für die Oberfläche', () => {
       expect(component.isLeadership).toBe(true);
+    });
+  });
+
+  describe('Steuerakte eines Members', () => {
+    it('öffnet die Akte beim Klick auf eine Bilanzzeile', () => {
+      component.openMember(42);
+
+      expect(miningService['getMemberLedger']).toHaveBeenCalledWith(42);
+      expect(component.selectedMember()?.accountName).toBe('Miner Prime');
+      expect(component.memberMonthIndex()).toBe(0);
+      expect(component.loadingMember()).toBe(false);
+    });
+
+    it('leert das Betragsfeld beim Wechsel des Members', () => {
+      // Ein stehengebliebener Betrag stünde beim nächsten Klick vor einem
+      // anderen Namen - die Rückfrage nennt zwar den richtigen, aber der
+      // Finger ist schneller als das Lesen.
+      component.openMember(42);
+      component.creditAmount = '999';
+      component.creditReason = 'alter Grund';
+
+      component.openMember(7);
+
+      expect(component.creditAmount).toBe('');
+      expect(component.creditReason).toBe('');
+    });
+
+    it('meldet einen Fehlschlag mit der Begründung des Servers', () => {
+      miningService['getMemberLedger'].mockReturnValue(
+        throwError(() => ({ error: { message: 'Account unbekannt' } })),
+      );
+
+      component.openMember(42);
+
+      expect(toastService['error']).toHaveBeenCalledWith('Account unbekannt');
+      expect(component.loadingMember()).toBe(false);
+    });
+
+    it('meldet einen Fehlschlag auch ohne Begründung', () => {
+      miningService['getMemberLedger'].mockReturnValue(throwError(() => new Error('kaputt')));
+
+      component.openMember(42);
+
+      expect(toastService['error']).toHaveBeenCalledWith(
+        'Die Steuerakte konnte nicht geladen werden.',
+      );
+    });
+
+    it('schließt die Akte wieder', () => {
+      component.openMember(42);
+
+      component.closeMember();
+
+      expect(component.selectedMember()).toBeNull();
+      expect(component.memberMonth()).toBeNull();
+    });
+
+    it('markiert nur die geöffnete Zeile', () => {
+      expect(component.isSelectedMember(42)).toBe(false);
+
+      component.openMember(42);
+
+      expect(component.isSelectedMember(42)).toBe(true);
+      expect(component.isSelectedMember(7)).toBe(false);
+    });
+
+    it('blättert durch die Monate der Akte, ohne über die Grenzen zu laufen', () => {
+      component.openMember(42);
+
+      component.olderMemberMonth();
+      expect(component.memberMonth()?.month).toBe('2026-07');
+
+      component.olderMemberMonth();
+      expect(component.memberMonth()?.month).toBe('2026-07');
+
+      component.newerMemberMonth();
+      expect(component.memberMonth()?.month).toBe('2026-08');
+
+      component.newerMemberMonth();
+      expect(component.memberMonthIndex()).toBe(0);
+    });
+
+    it('blättert ins Leere, solange keine Akte offen ist', () => {
+      component.olderMemberMonth();
+      component.newerMemberMonth();
+
+      expect(component.memberMonthIndex()).toBe(0);
+      expect(component.memberMonth()).toBeNull();
+    });
+
+    it('kommt mit einer Akte ohne Abrechnungsmonat aus', () => {
+      miningService['getMemberLedger'].mockReturnValue(of(memberLedger({ months: [] })));
+
+      component.openMember(42);
+
+      expect(component.memberMonth()).toBeNull();
+    });
+
+    it('rechnet den Anteil eines Erzes an der Monatssteuer aus', () => {
+      const details = month('2026-08').details;
+
+      // 50 von 90 ISK Steuer - das ist die "Zusammensetzung", nach der gefragt war.
+      expect(component.getTotalTaxOfMonth(details)).toBe(90);
+      expect(component.taxShare(details[0], details)).toBe('55.6 %');
+    });
+
+    it('kommt ohne Steuer ohne Division durch null aus', () => {
+      const details = [{ ...month('2026-08').details[0], taxToPay: 0 }];
+
+      expect(component.taxShare(details[0], details)).toBe('0 %');
+    });
+  });
+
+  describe('Gutschriften', () => {
+    beforeEach(() => component.openMember(42));
+
+    it('fragt vor dem Speichern mit BETRAG und NAME zurück', async () => {
+      component.creditAmount = '250000000';
+
+      await component.grantCredit();
+
+      const [, message] = confirmService.ask.mock.calls[0];
+      expect(message).toContain('250000000');
+      expect(message).toContain('Miner Prime');
+      expect(miningService['grantCredit']).toHaveBeenCalledWith(42, '250000000', null);
+    });
+
+    it('nennt in der Rückfrage genau den eingetippten Betrag', async () => {
+      // Nicht einen hier formatierten: die Regeln des Servers ein zweites Mal
+      // aufzuschreiben hiesse, dass der Nutzer irgendwann einen Betrag
+      // bestätigt und der Server einen anderen bucht.
+      component.creditAmount = '  12.500.000,50  ';
+
+      await component.grantCredit();
+
+      expect(confirmService.ask.mock.calls[0][1]).toContain('12.500.000,50');
+      expect(miningService['grantCredit']).toHaveBeenCalledWith(42, '12.500.000,50', null);
+    });
+
+    it('reicht den Grund weiter und leert danach beide Felder', async () => {
+      component.creditAmount = '500';
+      component.creditReason = ' Moon-Anteil ';
+
+      await component.grantCredit();
+
+      expect(miningService['grantCredit']).toHaveBeenCalledWith(42, '500', 'Moon-Anteil');
+      expect(component.creditAmount).toBe('');
+      expect(component.creditReason).toBe('');
+      expect(component.grantingCredit()).toBe(false);
+      expect(toastService['success']).toHaveBeenCalled();
+    });
+
+    it('lädt Akte und Bilanz nach der Buchung neu', () => {
+      // Sonst zeigten zwei Zahlen auf demselben Bildschirm ein
+      // unterschiedliches Guthaben für denselben Account.
+      miningService['getMemberLedger'].mockClear();
+      miningService['getAdminLedgers'].mockClear();
+      component.creditAmount = '500';
+
+      return component.grantCredit().then(() => {
+        expect(miningService['getMemberLedger']).toHaveBeenCalledWith(42);
+        expect(miningService['getAdminLedgers']).toHaveBeenCalled();
+      });
+    });
+
+    it('bucht nichts ohne Betrag', async () => {
+      component.creditAmount = '   ';
+
+      await component.grantCredit();
+
+      expect(confirmService.ask).not.toHaveBeenCalled();
+      expect(miningService['grantCredit']).not.toHaveBeenCalled();
+      expect(toastService['error']).toHaveBeenCalled();
+    });
+
+    it('bucht nichts ohne geöffnete Akte', async () => {
+      component.closeMember();
+      component.creditAmount = '500';
+
+      await component.grantCredit();
+
+      expect(miningService['grantCredit']).not.toHaveBeenCalled();
+    });
+
+    it('bucht nichts, wenn die Rückfrage verneint wird', async () => {
+      confirmService.ask.mockResolvedValue(false);
+      component.creditAmount = '500';
+
+      await component.grantCredit();
+
+      expect(miningService['grantCredit']).not.toHaveBeenCalled();
+      expect(component.creditAmount).toBe('500');
+    });
+
+    it('zeigt die Begründung des Servers, wenn der Betrag abgelehnt wird', async () => {
+      // Dort steht, WARUM - etwa dass "12.500" mehrdeutig ist. Ohne den Text
+      // tippt der Nutzer dasselbe noch einmal.
+      miningService['grantCredit'].mockReturnValue(
+        throwError(() => ({ error: { message: '"12.500" ist mehrdeutig' } })),
+      );
+      component.creditAmount = '12.500';
+
+      await component.grantCredit();
+
+      expect(toastService['error']).toHaveBeenCalledWith('"12.500" ist mehrdeutig');
+      expect(component.grantingCredit()).toBe(false);
+      expect(component.creditAmount).toBe('12.500');
+    });
+
+    it('meldet einen Fehlschlag auch ohne Begründung', async () => {
+      miningService['grantCredit'].mockReturnValue(throwError(() => new Error('kaputt')));
+      component.creditAmount = '500';
+
+      await component.grantCredit();
+
+      expect(toastService['error']).toHaveBeenCalledWith(
+        'Die Gutschrift konnte nicht gebucht werden.',
+      );
+    });
+
+    it('fragt vor der Rücknahme mit BETRAG und NAME zurück', async () => {
+      await component.reverseCredit(credit());
+
+      const [, message] = confirmService.ask.mock.calls[0];
+      expect(message).toContain('250.000.000,00 ISK');
+      expect(message).toContain('Miner Prime');
+      expect(message).toContain('Es wird kein Grund festgehalten.');
+      expect(miningService['reverseCredit']).toHaveBeenCalledWith(7, null);
+      expect(toastService['info']).toHaveBeenCalled();
+    });
+
+    it('nennt einen stehengebliebenen Grund wörtlich in der Rückfrage', async () => {
+      // Sonst klebte ein Text aus dem Vergabeformular unbemerkt an der Rücknahme.
+      component.creditReason = 'doppelt gebucht';
+
+      await component.reverseCredit(credit());
+
+      expect(confirmService.ask.mock.calls[0][1]).toContain('"doppelt gebucht"');
+      expect(miningService['reverseCredit']).toHaveBeenCalledWith(7, 'doppelt gebucht');
+    });
+
+    it('nimmt nichts zurück, wenn die Rückfrage verneint wird', async () => {
+      confirmService.ask.mockResolvedValue(false);
+
+      await component.reverseCredit(credit());
+
+      expect(miningService['reverseCredit']).not.toHaveBeenCalled();
+    });
+
+    it('meldet einen Fehlschlag der Rücknahme', async () => {
+      miningService['reverseCredit'].mockReturnValue(
+        throwError(() => ({ error: { message: 'bereits zurückgenommen' } })),
+      );
+
+      await component.reverseCredit(credit());
+
+      expect(toastService['error']).toHaveBeenCalledWith('bereits zurückgenommen');
+    });
+
+    it('meldet einen Fehlschlag der Rücknahme auch ohne Begründung', async () => {
+      miningService['reverseCredit'].mockReturnValue(throwError(() => new Error('kaputt')));
+
+      await component.reverseCredit(credit());
+
+      expect(toastService['error']).toHaveBeenCalledWith(
+        'Die Gutschrift konnte nicht zurückgenommen werden.',
+      );
+    });
+
+    it('bietet die Rücknahme nur für gültige Buchungen an', () => {
+      // Eine Gegenbuchung gegenzubuchen wäre eine Gutschrift, die niemand
+      // beziffert hat; eine bereits zurückgenommene ist erledigt.
+      expect(component.isReversible(credit())).toBe(true);
+      expect(component.isReversible(credit({ status: 'REVERSED' }))).toBe(false);
+      expect(component.isReversible(credit({ status: 'REVERSAL' }))).toBe(false);
+    });
+
+    it('benennt die drei Zustände einer Buchung', () => {
+      expect(component.creditStatusLabel('ACTIVE')).toBe('gültig');
+      expect(component.creditStatusLabel('REVERSED')).toBe('zurückgenommen');
+      expect(component.creditStatusLabel('REVERSAL')).toBe('Gegenbuchung');
     });
   });
 });

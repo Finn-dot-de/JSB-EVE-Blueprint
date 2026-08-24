@@ -101,7 +101,7 @@ class CharacterActivitySyncServiceTest {
             assertThat(capturedActivities())
                     .filteredOn(activity -> activity.isOfType(ActivityType.MINING_VOLUME))
                     .singleElement()
-                    .satisfies(activity -> assertThat(activity.getValue()).isEqualTo(100.0));
+                    .satisfies(activity -> assertThat(activity.getValue()).isEqualByComparingTo("100.00"));
         }
 
         @Test
@@ -146,10 +146,10 @@ class CharacterActivitySyncServiceTest {
             List<CharacterActivity> activities = capturedActivities();
             assertThat(activities).filteredOn(a -> a.isOfType(ActivityType.PVE_ISK))
                     .singleElement()
-                    .satisfies(a -> assertThat(a.getValue()).isEqualTo(150_000.0));
+                    .satisfies(a -> assertThat(a.getValue()).isEqualByComparingTo("150000.00"));
             assertThat(activities).filteredOn(a -> a.isOfType(ActivityType.RAT_KILLS))
                     .singleElement()
-                    .satisfies(a -> assertThat(a.getValue()).isEqualTo(2.0));
+                    .satisfies(a -> assertThat(a.getValue()).isEqualByComparingTo("2.00"));
         }
 
         @Test
@@ -165,7 +165,7 @@ class CharacterActivitySyncServiceTest {
             assertThat(capturedActivities())
                     .filteredOn(a -> a.isOfType(ActivityType.TAX_PAYMENT))
                     .singleElement()
-                    .satisfies(a -> assertThat(a.getValue()).isEqualTo(5_000_000.0));
+                    .satisfies(a -> assertThat(a.getValue()).isEqualByComparingTo("5000000.00"));
         }
 
         @Test

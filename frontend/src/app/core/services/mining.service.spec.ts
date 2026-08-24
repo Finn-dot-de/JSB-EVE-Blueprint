@@ -82,4 +82,45 @@ describe('MiningService', () => {
 
     httpMock.expectOne(`${apiUrl}/admin/ledgers`).flush([]);
   });
+
+  it('lädt die Steuerakte eines Members über seine Account-ID', () => {
+    service.getMemberLedger(2118431553).subscribe();
+
+    const request = httpMock.expectOne(`${apiUrl}/admin/ledgers/2118431553`);
+    expect(request.request.method).toBe('GET');
+    request.flush({});
+  });
+
+  it('schickt den Gutschriftsbetrag als Zeichenkette', () => {
+    // Der Kern der Sache: als Zahl wäre der Betrag ein double und schon
+    // ungenau, bevor er die Leitung erreicht. Was eingetippt wurde, geht
+    // unverändert hinaus - gelesen wird es genau einmal, auf dem Server.
+    service.grantCredit(2118431553, '12345678901,23', 'Moon-Anteil').subscribe();
+
+    const request = httpMock.expectOne(`${apiUrl}/admin/credits/accounts/2118431553`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ amount: '12345678901,23', reason: 'Moon-Anteil' });
+    expect(typeof request.request.body.amount).toBe('string');
+    request.flush({});
+  });
+
+  it('lässt einen fehlenden Grund als null durchgehen', () => {
+    service.grantCredit(1, '500', null).subscribe();
+
+    const request = httpMock.expectOne(`${apiUrl}/admin/credits/accounts/1`);
+    expect(request.request.body).toEqual({ amount: '500', reason: null });
+    request.flush({});
+  });
+
+  it('nimmt eine Gutschrift per POST zurück, nicht per DELETE', () => {
+    // DELETE würde nahelegen, dass etwas verschwindet. Es entsteht aber eine
+    // Gegenbuchung, und der Grund dafür gehört in den Rumpf statt in die
+    // Adresszeile, wo er in jedem Zugriffsprotokoll landen würde.
+    service.reverseCredit(42, 'doppelt gebucht').subscribe();
+
+    const request = httpMock.expectOne(`${apiUrl}/admin/credits/42/reverse`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ reason: 'doppelt gebucht' });
+    request.flush({});
+  });
 });

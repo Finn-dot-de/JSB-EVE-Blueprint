@@ -5,6 +5,8 @@ import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
 import com.eve.own.auth.backend.esi.EsiService;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +30,9 @@ public class MiningPriceService {
 
     /** Kein Preis ermittelbar - dient zugleich als Untergrenze fuer "brauchbar". */
     private static final double NO_PRICE = 0.0;
+
+    /** ISK hat ingame genau zwei Nachkommastellen - wie ueberall sonst im Steuerwesen. */
+    private static final int ISK_SCALE = 2;
 
     /** Praefixe, unter denen die SDE die komprimierten Varianten fuehrt. */
     private static final List<String> COMPRESSED_PREFIXES = List.of("Compressed ", "Batch Compressed ");
@@ -77,7 +82,7 @@ public class MiningPriceService {
         for (MiningTaxRate rate : rates) {
             double price = referencePrice(prices.get(String.valueOf(rate.getTypeId())));
             if (price > NO_PRICE) {
-                rate.setCurrentJitaBuy(price);
+                rate.setCurrentJitaBuy(isk(price));
             } else {
                 withoutPrice.add(rate);
             }
@@ -114,7 +119,7 @@ public class MiningPriceService {
         for (Map.Entry<Long, MiningTaxRate> entry : rateByCompressedTypeId.entrySet()) {
             double price = referencePrice(prices.get(String.valueOf(entry.getKey())));
             if (price > NO_PRICE) {
-                entry.getValue().setCurrentJitaBuy(price);
+                entry.getValue().setCurrentJitaBuy(isk(price));
                 recovered++;
             }
         }
@@ -139,6 +144,20 @@ public class MiningPriceService {
      * ehrlichere Grundlage fuer eine Abgabe. Erst wenn niemand kauft, dient das
      * Verkaufsangebot als Naeherung.</p>
      */
+    /**
+     * Macht aus der Gleitkommazahl des Marktanbieters einen exakten Preis.
+     *
+     * <p>Hier ist der {@code double} ehrlich: die Preise kommen als JSON-Zahl,
+     * genauer geht die Leitung nicht her. {@link BigDecimal#valueOf(double)}
+     * nimmt die kuerzeste Darstellung, die denselben {@code double} ergibt -
+     * aus einem {@code 12.340000000000001} wird damit wieder {@code 12.34}. Ab
+     * hier wird der Preis mit Mengen im Hunderttausenderbereich multipliziert,
+     * und genau dabei waechst jede Ungenauigkeit mit.</p>
+     */
+    private static BigDecimal isk(double price) {
+        return BigDecimal.valueOf(price).setScale(ISK_SCALE, RoundingMode.HALF_UP);
+    }
+
     private static double referencePrice(EsiService.FuzzworkPrice price) {
         if (price == null) {
             return NO_PRICE;

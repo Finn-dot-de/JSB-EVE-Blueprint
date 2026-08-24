@@ -3,6 +3,7 @@ import {
   barWidth,
   formatCompact,
   formatIsk,
+  formatIskCents,
   formatIskFull,
   formatMonthLabel,
   formatNumber,
@@ -38,17 +39,64 @@ describe('Zahlenformatierung', () => {
   });
 
   describe('formatIskFull', () => {
-    it('zeigt den exakten Betrag mit Tausenderpunkten', () => {
+    it('zeigt den vollen Betrag mit Tausenderpunkten', () => {
       expect(formatIskFull(1_250_000)).toBe('1.250.000 ISK');
     });
 
     it('rundet auf ganze ISK', () => {
+      // Absicht, und deshalb nur noch für geschätzte Besitzwerte: die stammen
+      // aus market_prices und sind dort double. Zwei Nachkommastellen wären
+      // dort behauptete Genauigkeit.
       expect(formatIskFull(1234.56)).toBe('1.235 ISK');
     });
 
     it('behandelt fehlende Werte als null', () => {
       expect(formatIskFull(null)).toBe('0 ISK');
       expect(formatIskFull(NaN)).toBe('0 ISK');
+    });
+  });
+
+  describe('formatIskCents', () => {
+    it('behält beide Nachkommastellen', () => {
+      // Ohne diese Funktion machte formatIskFull aus einer Zusage über 5,50
+      // eine über 6 - eine andere Zahl als die, die jemand versprochen hat.
+      expect(formatIskCents(1_250_000.5)).toBe('1.250.000,50 ISK');
+      expect(formatIskCents(5.5)).toBe('5,50 ISK');
+    });
+
+    it('trägt eine gerechnete Steuer bis in die letzte Stelle', () => {
+      // Der Betrag stammt aus MiningLedgerServiceTest.billionsStayExactToTheIsk:
+      // 87.654 x 210.200,55 x 10 %. Der Server führt ihn als BigDecimal, damit
+      // genau diese 97 Cent nicht verlorengehen - würde die Oberfläche sie hier
+      // wieder wegrunden, wäre die ganze Umstellung im Server folgenlos.
+      expect(formatIskCents(1_842_491_900.97)).toBe('1.842.491.900,97 ISK');
+    });
+
+    it('zeigt eine offene Restschuld unter einer ISK als offen an', () => {
+      // Auf ganze ISK gerundet stünde hier "0 ISK" - der Bildschirm meldete
+      // beglichen, während der Server den Monat offen führt.
+      expect(formatIskCents(0.4)).toBe('0,40 ISK');
+    });
+
+    it('ergänzt fehlende Nachkommastellen', () => {
+      expect(formatIskCents(250_000_000)).toBe('250.000.000,00 ISK');
+    });
+
+    it('zeigt eine Gegenbuchung als negativen Betrag', () => {
+      expect(formatIskCents(-12_500.25)).toBe('-12.500,25 ISK');
+    });
+
+    it('trägt die Obergrenze des Servers ohne Stellenverlust', () => {
+      // 10^12 ist die Grenze je Buchung. Ein double trägt dort noch jeden Cent -
+      // sein Fehler liegt bei rund 0,0002 ISK und damit weit unter dem halben
+      // Cent, ab dem die zweite Nachkommastelle kippen würde.
+      expect(formatIskCents(999_999_999_999.99)).toBe('999.999.999.999,99 ISK');
+    });
+
+    it('behandelt fehlende Werte als null', () => {
+      expect(formatIskCents(null)).toBe('0,00 ISK');
+      expect(formatIskCents(undefined)).toBe('0,00 ISK');
+      expect(formatIskCents(NaN)).toBe('0,00 ISK');
     });
   });
 

@@ -93,7 +93,6 @@ services:
     expose:
       - "80"
 
-  # --- NEU: Der Nginx Proxy Manager ---
   nginx-proxy-manager:
     image: 'jc21/nginx-proxy-manager:latest'
     container_name: nginx-proxy-manager

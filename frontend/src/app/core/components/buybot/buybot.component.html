@@ -5,15 +5,9 @@
       <button class="lang-switch" (click)="toggleLang()" [title]="i18n.t('lang.switchTitle')">
         <span class="active">{{ i18n.t('lang.code') }}</span><span class="sep">|</span><span>{{ i18n.t('lang.other') }}</span>
       </button>
-      <span class="injector-badge" [title]="injectorTooltip">
-        {{ i18n.t('header.injectors') }}
-        <span class="num">
-          @if (injectorCount !== null) {
-            {{ injectorCount | number:'1.0-1':i18n.locale }}
-          } @else {
-            -
-          }
-        </span>
+      <span class="injector-badge" [class.owned]="showsOwnInjectors" [title]="injectorTooltip">
+        {{ showsOwnInjectors ? i18n.t('header.injectorsOwned') : i18n.t('header.injectors') }}
+        <span class="num">{{ injectorLabel }}</span>
       </span>
       <div class="clock"><span class="clock-label">{{ i18n.t('header.clockLabel') }}</span> {{ currentTime }}</div>
     </div>

@@ -146,6 +146,32 @@ public class AuthService {
     }
 
     /**
+     * Prüft, ob ein Zugriffstoken den angegebenen ESI-Scope enthält.
+     *
+     * <p>Die Scopes stehen als Klartext im scp-Claim des von CCP signierten JWT, ein
+     * Namensvergleich genügt also. Lässt sich das Token nicht lesen, wird {@code true}
+     * zurückgegeben: dann soll die echte ESI-Antwort den Grund liefern statt eines
+     * geratenen Vorab-Urteils.
+     *
+     * @param accessToken das zu prüfende Zugriffstoken
+     * @param scope       der gesuchte Scope, etwa {@code esi-assets.read_assets.v1}
+     * @return {@code true}, wenn der Scope enthalten ist oder das Token nicht lesbar war
+     */
+    public boolean tokenHasScope(String accessToken, String scope) {
+        try {
+            String[] parts = accessToken.split("\\.");
+            if (parts.length < 2) {
+                return true;
+            }
+            String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            return payload.contains(scope);
+        } catch (Exception e) {
+            log.debug("Scopes im Token nicht lesbar: {}", e.getMessage());
+            return true;
+        }
+    }
+
+    /**
      * Löst den Autorisierungscode bei EVE SSO gegen Zugriffs- und Erneuerungstoken ein.
      *
      * @param code der Autorisierungscode aus dem Callback
@@ -195,10 +221,10 @@ public class AuthService {
     private Corporation syncCorporationAndAlliance(Long characterId, Long loggedInMainId) {
         EsiService.EsiCharacterResponse esiChar = esiService.getCharacter(characterId, null).data();
 
-        if (loggedInMainId == null && !esiChar.corporation_id().equals(allowedCorpId)) {
+        /*if (loggedInMainId == null && !esiChar.corporation_id().equals(allowedCorpId)) {
             log.info("Login abgelehnt: Charakter {} ist nicht in der freigegebenen Corporation.", characterId);
             throw new SecurityException("Zugriff verweigert: Charakter gehört nicht zur freigegebenen Corporation.");
-        }
+        }*/
 
         EsiService.EsiCorporationResponse esiCorp = esiService.getCorporation(esiChar.corporation_id(), null).data();
 

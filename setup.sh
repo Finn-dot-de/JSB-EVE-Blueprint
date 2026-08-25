@@ -131,7 +131,7 @@ cat > .env <<ENDE
 EVE_CLIENT_ID=${EVE_CLIENT}
 EVE_CLIENT_SECRET=${EVE_SECRET}
 EVE_ESI_BASE_URL=https://esi.evetech.net/latest
-EVE_SCOPES="publicData esi-characters.read_corporation_roles.v1 esi-search.search_structures.v1 esi-universe.read_structures.v1 esi-contracts.read_character_contracts.v1 esi-mail.send_mail.v1"
+EVE_SCOPES="publicData esi-characters.read_corporation_roles.v1 esi-search.search_structures.v1 esi-universe.read_structures.v1 esi-contracts.read_character_contracts.v1 esi-mail.send_mail.v1 esi-assets.read_assets.v1"
 EVE_ALLOWED_CORP=${CORP_ID}
 
 # Wer das Admin-Panel oeffnen darf. Weitere durch Komma trennen,

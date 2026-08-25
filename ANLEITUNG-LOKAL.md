@@ -72,13 +72,13 @@ Seite gibt.
    | Name | `Buybot Test` |
    | Description | `Lokaler Test` |
    | Connection Type | **Authentication & API Access** |
-   | Permissions | die sechs Einträge aus der Liste unten |
+   | Permissions | die sieben Einträge aus der Liste unten |
    | Callback URL | `http://localhost:8080/api/auth/callback` |
 
    Die Callback-Adresse muss **zeichengenau** so lauten. `http`, nicht `https`. Ein
    Tippfehler hier führt später zu einer nichtssagenden EVE-Fehlerseite.
 
-4. Diese sechs Berechtigungen auswählen:
+4. Diese sieben Berechtigungen auswählen:
 
    ```
    publicData
@@ -87,6 +87,7 @@ Seite gibt.
    esi-universe.read_structures.v1
    esi-contracts.read_character_contracts.v1
    esi-mail.send_mail.v1
+   esi-assets.read_assets.v1
    ```
 
 5. **CREATE APPLICATION**, dann die Anwendung anklicken und **VIEW APPLICATION**.

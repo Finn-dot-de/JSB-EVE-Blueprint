@@ -86,14 +86,14 @@ gibt.
    | Name | `Buybot` |
    | Description | `Ankaufsrechner` |
    | Connection Type | **Authentication & API Access** |
-   | Permissions | die sechs Einträge aus der Liste unten |
+   | Permissions | die sieben Einträge aus der Liste unten |
    | Callback URL | `https://DEINE-DOMAIN/api/auth/callback` |
 
    Bei der Callback-Adresse setzt du deine echte Domain ein, also zum Beispiel
    `https://buybot.net/api/auth/callback`. **Zeichengenau und mit `https`** — sonst schlägt
    der Login später mit einer nichtssagenden EVE-Fehlerseite fehl.
 
-4. Diese sechs Berechtigungen auswählen:
+4. Diese sieben Berechtigungen auswählen:
 
    ```
    publicData
@@ -102,6 +102,7 @@ gibt.
    esi-universe.read_structures.v1
    esi-contracts.read_character_contracts.v1
    esi-mail.send_mail.v1
+   esi-assets.read_assets.v1
    ```
 
 5. **CREATE APPLICATION**, dann die Anwendung anklicken und **VIEW APPLICATION**.

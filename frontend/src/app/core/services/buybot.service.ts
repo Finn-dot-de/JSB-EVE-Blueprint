@@ -55,6 +55,14 @@ export interface InjectorPrice {
   price: number;
 }
 
+/** Wie viele Skill Injectors der angemeldete Charakter besitzt. */
+export interface MyInjectors {
+  /** Anzahl im Besitz, null wenn sie nicht ermittelt werden konnte. */
+  quantity: number | null;
+  /** Grund, falls keine Zahl geliefert wurde. */
+  hint?: string;
+}
+
 /** Öffentlicher Teil der Buybot-Konfiguration (ohne Margen/Preisbasis). */
 export interface PublicConfig {
   botEnabled: boolean;
@@ -92,5 +100,13 @@ export class BuybotService {
 
   getInjectorPrice(): Observable<InjectorPrice> {
     return this.http.get<InjectorPrice>(`${environment.apiUrl}/buybot/injector-price`);
+  }
+
+  /**
+   * Eigener Injector-Bestand. Antwortet mit HTTP 401, wenn niemand angemeldet ist -
+   * das wertet der Aufrufer als "nicht angemeldet".
+   */
+  getMyInjectors(): Observable<MyInjectors> {
+    return this.http.get<MyInjectors>(`${environment.apiUrl}/buybot/my-injectors`);
   }
 }

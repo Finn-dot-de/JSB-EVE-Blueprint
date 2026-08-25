@@ -11,9 +11,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.ObjectMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -138,7 +136,7 @@ public class NotificationService {
             return NotifyResult.fail(reason);
         }
 
-        if (!hasScope(token, MAIL_SCOPE)) {
+        if (!authService.tokenHasScope(token, MAIL_SCOPE)) {
             return NotifyResult.fail("Der Token von " + sender.getName() + " enthält den Scope " + MAIL_SCOPE
                     + " nicht. Der Charakter muss sich einmal neu über EVE Login anmelden,"
                     + " oder es wird stattdessen der Discord-Webhook als Meldeweg genutzt.");
@@ -157,24 +155,6 @@ public class NotificationService {
             String reason = "EVE-Mail an " + recipient + " abgelehnt (" + describe(e) + ")";
             log.error(reason);
             return NotifyResult.fail(reason);
-        }
-    }
-
-    /**
-     * Prüft den scp-Claim des ESI-Access-Tokens. Die Scopes stehen als Klartext im
-     * JWT-Payload - ein Namensvergleich genügt hier, der Token ist von CCP signiert.
-     * Kann der Token nicht gelesen werden, wird nicht blockiert: dann soll die
-     * echte ESI-Antwort den Grund liefern.
-     */
-    private boolean hasScope(String accessToken, String scope) {
-        try {
-            String[] parts = accessToken.split("\\.");
-            if (parts.length < 2) return true;
-            String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-            return payload.contains(scope);
-        } catch (Exception e) {
-            log.debug("Scopes im Token nicht lesbar: {}", e.getMessage());
-            return true;
         }
     }
 

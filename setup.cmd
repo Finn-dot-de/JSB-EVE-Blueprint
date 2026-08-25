@@ -240,7 +240,7 @@ REM der Zeile ein, deshalb stoeren auch & < > | im Secret nicht.
 >>".env" echo EVE_CLIENT_ID=!EVE_CLIENT!
 >>".env" echo EVE_CLIENT_SECRET=!EVE_SECRET!
 >>".env" echo EVE_ESI_BASE_URL=https://esi.evetech.net/latest
->>".env" echo EVE_SCOPES="publicData esi-characters.read_corporation_roles.v1 esi-search.search_structures.v1 esi-universe.read_structures.v1 esi-contracts.read_character_contracts.v1 esi-mail.send_mail.v1"
+>>".env" echo EVE_SCOPES="publicData esi-characters.read_corporation_roles.v1 esi-search.search_structures.v1 esi-universe.read_structures.v1 esi-contracts.read_character_contracts.v1 esi-mail.send_mail.v1 esi-assets.read_assets.v1"
 >>".env" echo EVE_ALLOWED_CORP=!CORP_ID!
 >>".env" echo.
 >>".env" echo # Wer das Admin-Panel oeffnen darf. Weitere durch Komma trennen.

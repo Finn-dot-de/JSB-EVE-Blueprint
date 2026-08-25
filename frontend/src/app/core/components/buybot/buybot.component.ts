@@ -6,7 +6,8 @@ import {
   BuybackLocation,
   PublicConfig,
   BotTexts,
-  InjectorPrice
+  InjectorPrice,
+  MyInjectors
 } from '../../services/buybot.service';
 import { DecimalPipe, NgClass } from '@angular/common';
 import { ADMIN_ROLES, AuthService } from '../../services/auth.service';
@@ -46,6 +47,9 @@ export class BuybotComponent implements OnInit, OnDestroy {
 
   // Jita-Preis eines Large Skill Injectors für das Badge in der Kopfzeile
   injector: InjectorPrice | null = null;
+
+  /** Eigener Bestand - nur gefüllt, wenn jemand angemeldet ist. */
+  myInjectors: MyInjectors | null = null;
 
   // State für Uhr und Modals
   currentTime: string = '';
@@ -91,6 +95,7 @@ export class BuybotComponent implements OnInit, OnDestroy {
     });
 
     this.loadInjectorPrice();
+    this.loadMyInjectors();
 
     // Lade die Abgabeorte dynamisch aus der Datenbank
     this.buybotService.getLocations().subscribe({
@@ -141,6 +146,25 @@ export class BuybotComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Holt den eigenen Bestand.
+   *
+   * <p>Wird ohne Rücksicht auf den Anmeldestatus aufgerufen: HTTP 401 heißt schlicht
+   * "nicht angemeldet". So muss nicht darauf gewartet werden, dass die Anmeldeprüfung
+   * fertig ist, bevor die Abfrage überhaupt starten darf.
+   */
+  private loadMyInjectors() {
+    this.buybotService.getMyInjectors().subscribe({
+      next: (bestand) => (this.myInjectors = bestand),
+      error: () => (this.myInjectors = null)
+    });
+  }
+
+  /** True, sobald ein eigener Bestand vorliegt - dann zeigt das Badge diesen an. */
+  get showsOwnInjectors(): boolean {
+    return this.myInjectors !== null && this.myInjectors.quantity !== null;
+  }
+
   /** Wie viele Large Skill Injectors der Ankaufspreis kauft. */
   get injectorCount(): number | null {
     if (!this.injector || this.injector.price <= 0 || this.totalPrice === null) {
@@ -149,7 +173,35 @@ export class BuybotComponent implements OnInit, OnDestroy {
     return this.totalPrice / this.injector.price;
   }
 
+  /**
+   * Beschriftung des Badges.
+   *
+   * Kleinstbetraege werden als "<0,1" gezeigt statt als "0,0" - eine glatte Null sieht
+   * aus, als waere die Anzeige kaputt, dabei ist der Betrag nur klein.
+   */
+  get injectorLabel(): string {
+    // Angemeldet zaehlt der eigene Bestand, sonst die Umrechnung des Ankaufspreises
+    if (this.showsOwnInjectors) {
+      return this.myInjectors!.quantity!.toLocaleString(this.i18n.locale);
+    }
+
+    const anzahl = this.injectorCount;
+    if (anzahl === null) {
+      return '-';
+    }
+    if (anzahl > 0 && anzahl < 0.1) {
+      return '<' + (0.1).toLocaleString(this.i18n.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+    return anzahl.toLocaleString(this.i18n.locale, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+  }
+
   get injectorTooltip(): string {
+    if (this.showsOwnInjectors) {
+      return this.i18n.t('header.injectorOwnedTooltip');
+    }
+    if (this.myInjectors?.hint) {
+      return this.myInjectors.hint;
+    }
     if (!this.injector) {
       return this.i18n.t('header.injectorUnavailable');
     }

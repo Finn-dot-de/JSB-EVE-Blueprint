@@ -173,6 +173,44 @@ public class EsiService {
     }
 
     /**
+     * Holt den gesamten Besitz des Charakters über alle Seiten hinweg.
+     *
+     * <p>ESI liefert bis zu 1000 Positionen je Seite und zählt jeden Hangar, jedes Schiff
+     * und jeden Container einzeln auf - bei gewachsenen Charakteren sind das schnell
+     * mehrere tausend Einträge. Der Aufrufer sollte das Ergebnis deshalb nicht bei jedem
+     * Seitenaufruf neu anfordern.
+     *
+     * @param characterId EVE-Charakter-ID
+     * @param token       dessen Zugriffstoken mit {@code esi-assets.read_assets.v1}
+     * @return alle Positionen des Charakters
+     */
+    public List<EsiAssetResponse> getAllAssets(Long characterId, String token) {
+        List<EsiAssetResponse> all = new ArrayList<>();
+        int page = 1;
+        int maxPages = 1;
+
+        do {
+            ResponseEntity<EsiAssetResponse[]> response = restClient.get()
+                    .uri("/characters/{id}/assets/?page={page}", characterId, page)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .toEntity(EsiAssetResponse[].class);
+
+            if (response.getBody() != null) {
+                all.addAll(List.of(response.getBody()));
+            }
+
+            String xPages = response.getHeaders().getFirst("X-Pages");
+            if (xPages != null) {
+                maxPages = Integer.parseInt(xPages);
+            }
+            page++;
+        } while (page <= maxPages);
+
+        return all;
+    }
+
+    /**
      * Liest die Positionen eines Vertrags.
      *
      * @param characterId Charakter, der den Vertrag sehen darf
@@ -337,6 +375,18 @@ public class EsiService {
                                       Long start_location_id, Long end_location_id,
                                       Instant date_issued, Instant date_expired,
                                       Boolean for_corporation) {}
+
+    /**
+     * Eine Position im Besitz eines Charakters.
+     *
+     * @param item_id      eindeutige ID dieses Stapels
+     * @param type_id      Item-Typ
+     * @param location_id  Hangar, Schiff oder Container, in dem der Stapel liegt
+     * @param quantity     Stückzahl im Stapel
+     * @param is_singleton {@code true} bei unverpackten Einzelstücken
+     */
+    public record EsiAssetResponse(Long item_id, Long type_id, Long location_id,
+                                   Integer quantity, Boolean is_singleton) {}
 
     /**
      * Empfänger einer EVE-Mail.

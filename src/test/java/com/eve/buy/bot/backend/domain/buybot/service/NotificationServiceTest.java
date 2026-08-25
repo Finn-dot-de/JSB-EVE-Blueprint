@@ -13,8 +13,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +36,7 @@ import static org.mockito.Mockito.when;
 class NotificationServiceTest {
 
     private static final long SENDER = 2118431553L;
+    private static final String ACCESS_TOKEN = "zugriffstoken";
 
     @Mock private EsiService esiService;
     @Mock private AuthService authService;
@@ -64,7 +63,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("verschickt die Mail, wenn der Token den Mail-Scope enthält")
     void sendsMailWhenScopeIsPresent() {
-        when(authService.getValidAccessToken(any())).thenReturn(tokenWithScopes(NotificationService.MAIL_SCOPE));
+        givenTokenWithMailScope();
 
         NotificationService.NotifyResult result = service.sendEveMail(SENDER, null, "Betreff", "Text");
 
@@ -76,7 +75,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("nennt den fehlenden Scope, statt ESI erst antworten zu lassen")
     void namesMissingScopeInsteadOfFailingLate() {
-        when(authService.getValidAccessToken(any())).thenReturn(tokenWithScopes("publicData"));
+        givenTokenWithoutMailScope();
 
         NotificationService.NotifyResult result = service.sendEveMail(SENDER, null, "Betreff", "Text");
 
@@ -88,7 +87,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("schickt die Mail an den Prüf-Charakter, wenn kein Empfänger gesetzt ist")
     void fallsBackToSenderAsRecipient() {
-        when(authService.getValidAccessToken(any())).thenReturn(tokenWithScopes(NotificationService.MAIL_SCOPE));
+        givenTokenWithMailScope();
 
         service.sendEveMail(SENDER, 0L, "Betreff", "Text");
 
@@ -101,7 +100,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("wandelt Zeilenumbrüche in das Format der EVE-Mail")
     void convertsLineBreaksForEveMail() {
-        when(authService.getValidAccessToken(any())).thenReturn(tokenWithScopes(NotificationService.MAIL_SCOPE));
+        givenTokenWithMailScope();
 
         service.sendEveMail(SENDER, null, "Betreff", "Zeile 1\nZeile 2");
 
@@ -114,7 +113,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("gibt den Grund zurück, wenn ESI die Mail ablehnt")
     void returnsReasonWhenEsiRejectsTheMail() {
-        when(authService.getValidAccessToken(any())).thenReturn(tokenWithScopes(NotificationService.MAIL_SCOPE));
+        givenTokenWithMailScope();
         doThrow(new IllegalStateException("ESI sagt nein")).when(esiService).sendMail(anyLong(), anyString(), any());
 
         NotificationService.NotifyResult result = service.sendEveMail(SENDER, null, "Betreff", "Text");
@@ -144,16 +143,20 @@ class NotificationServiceTest {
         assertThat(result.error()).contains("Webhook-URL");
     }
 
+    /** Stellt einen Token bereit, den der AuthService als mail-berechtigt meldet. */
+    private void givenTokenWithMailScope() {
+        when(authService.getValidAccessToken(any())).thenReturn(ACCESS_TOKEN);
+        when(authService.tokenHasScope(ACCESS_TOKEN, NotificationService.MAIL_SCOPE)).thenReturn(true);
+    }
+
     /**
-     * Baut ein Token, dessen Nutzdaten die angegebenen Scopes enthalten.
+     * Stellt einen Token bereit, dem der Mail-Scope fehlt.
      *
-     * @param scopes die zu hinterlegenden Scopes
-     * @return ein Token in der Form header.payload.signature
+     * <p>Wie ein Token gelesen wird, prüft {@code AuthServiceTest} - hier zählt nur, wie
+     * der Meldeweg auf das Urteil reagiert.
      */
-    private String tokenWithScopes(String... scopes) {
-        String payload = "{\"scp\":[\"" + String.join("\",\"", scopes) + "\"],\"sub\":\"CHARACTER:EVE:1\"}";
-        String encoded = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(payload.getBytes(StandardCharsets.UTF_8));
-        return "header." + encoded + ".signature";
+    private void givenTokenWithoutMailScope() {
+        when(authService.getValidAccessToken(any())).thenReturn(ACCESS_TOKEN);
+        when(authService.tokenHasScope(ACCESS_TOKEN, NotificationService.MAIL_SCOPE)).thenReturn(false);
     }
 }

@@ -12,6 +12,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'lang.switchTitle': 'Auf Englisch umschalten',
 
     'header.injectors': 'SKILL-INJEKTOREN',
+    'header.injectorsOwned': 'DEINE INJEKTOREN',
+    'header.injectorOwnedTooltip': 'So viele Large Skill Injectors liegen gerade in deinem Besitz.',
     'header.injectorTooltip': 'Der Ankaufspreis in {0} umgerechnet (Jita Sell: {1} ISK pro Stück).',
     'header.injectorUnavailable': 'Injector-Preis gerade nicht verfügbar.',
     'header.clockLabel': 'EVE-ZEIT',
@@ -135,6 +137,8 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     'lang.switchTitle': 'Switch to German',
 
     'header.injectors': 'SKILL INJECTORS',
+    'header.injectorsOwned': 'YOUR INJECTORS',
+    'header.injectorOwnedTooltip': 'That many Large Skill Injectors are currently in your possession.',
     'header.injectorTooltip': 'The buyback price converted into {0} (Jita sell: {1} ISK each).',
     'header.injectorUnavailable': 'Injector price currently unavailable.',
     'header.clockLabel': 'EVE TIME',

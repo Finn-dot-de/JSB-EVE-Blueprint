@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { BuybotComponent } from './buybot.component';
-import { ParsedItemDto, PublicConfig } from '../../services/buybot.service';
+import { MyInjectors, ParsedItemDto, PublicConfig } from '../../services/buybot.service';
 import { environment } from '../../../../environments/environment';
 
 /**
@@ -16,8 +16,14 @@ describe('BuybotComponent', () => {
   let component: BuybotComponent;
   let httpMock: HttpTestingController;
 
-  /** Beantwortet die Anfragen, die beim Start von selbst losgehen. */
-  function answerStartupRequests(config?: Partial<PublicConfig>) {
+  /**
+   * Beantwortet die Anfragen, die beim Start von selbst losgehen.
+   *
+   * @param config    abweichende oeffentliche Konfiguration
+   * @param bestand   eigener Injector-Bestand; ohne Angabe antwortet der Server mit
+   *                  HTTP 401, also "nicht angemeldet"
+   */
+  function answerStartupRequests(config?: Partial<PublicConfig>, bestand?: MyInjectors) {
     // Der AuthService fragt beim Erzeugen, ob jemand angemeldet ist - hier niemand.
     httpMock.expectOne(`${environment.apiUrl}/auth/me`).flush(null, { status: 401, statusText: 'Unauthorized' });
     httpMock.expectOne(`${environment.apiUrl}/buybot/config`).flush({
@@ -26,6 +32,12 @@ describe('BuybotComponent', () => {
     });
     httpMock.expectOne(`${environment.apiUrl}/buybot/injector-price`)
       .flush({ typeId: 40520, name: 'Large Skill Injector', price: 750_000_000 });
+    const bestandRequest = httpMock.expectOne(`${environment.apiUrl}/buybot/my-injectors`);
+    if (bestand) {
+      bestandRequest.flush(bestand);
+    } else {
+      bestandRequest.flush(null, { status: 401, statusText: 'Unauthorized' });
+    }
     httpMock.expectOne(`${environment.apiUrl}/buybot/locations`)
       .flush([{ id: 7, name: 'Teststation', transportFee: 0, securityFee: 0, stationId: 60003760 }]);
   }
@@ -100,10 +112,70 @@ describe('BuybotComponent', () => {
     expect(component.injectorCount).toBe(2);
   });
 
+  it('zeigt Kleinstbeträge als "<0,1" statt als glatte Null', () => {
+    answerStartupRequests();
+    // 696.000 ISK bei 750 Mio je Injector - gerundet waere das 0,0 und saehe kaputt aus
+    component.totalPrice = 696_000;
+
+    expect(component.injectorLabel).toBe('<0,1');
+  });
+
+  it('zeigt ab einem Zehntel die gerundete Zahl', () => {
+    answerStartupRequests();
+    component.totalPrice = 1_500_000_000;
+
+    expect(component.injectorLabel).toBe('2');
+  });
+
+  it('zeigt einen Strich, solange nichts berechnet wurde', () => {
+    answerStartupRequests();
+
+    expect(component.injectorLabel).toBe('-');
+  });
+
   it('zeigt keine Injector-Zahl, solange nichts berechnet wurde', () => {
     answerStartupRequests();
 
     expect(component.injectorCount).toBeNull();
+  });
+
+  it('zeigt angemeldet den eigenen Bestand statt der Umrechnung', () => {
+    answerStartupRequests(undefined, { quantity: 42 });
+    // Trotz berechnetem Preis hat der eigene Bestand Vorrang
+    component.totalPrice = 1_500_000_000;
+
+    expect(component.showsOwnInjectors).toBe(true);
+    expect(component.injectorLabel).toBe('42');
+  });
+
+  it('zeigt auch einen Bestand von null als Zahl, nicht als Strich', () => {
+    // Sonst saehe "keine Injektoren im Hangar" aus wie "konnte nicht geladen werden"
+    answerStartupRequests(undefined, { quantity: 0 });
+
+    expect(component.showsOwnInjectors).toBe(true);
+    expect(component.injectorLabel).toBe('0');
+  });
+
+  it('faellt ohne Anmeldung auf die Umrechnung des Ankaufspreises zurueck', () => {
+    answerStartupRequests();
+    component.totalPrice = 1_500_000_000;
+
+    expect(component.showsOwnInjectors).toBe(false);
+    expect(component.injectorLabel).toBe('2');
+  });
+
+  it('zeigt den Grund als Tooltip, wenn der Bestand nicht ermittelbar war', () => {
+    const grund = 'Der Zugriff auf die Besitzliste fehlt.';
+    answerStartupRequests(undefined, { quantity: null, hint: grund });
+
+    expect(component.showsOwnInjectors).toBe(false);
+    expect(component.injectorTooltip).toBe(grund);
+  });
+
+  it('erklaert im Tooltip, dass die Zahl der eigene Bestand ist', () => {
+    answerStartupRequests(undefined, { quantity: 7 });
+
+    expect(component.injectorTooltip).toBe(component.i18n.t('header.injectorOwnedTooltip'));
   });
 
   it('erkennt den Wartungsmodus und übernimmt den hinterlegten Text', () => {

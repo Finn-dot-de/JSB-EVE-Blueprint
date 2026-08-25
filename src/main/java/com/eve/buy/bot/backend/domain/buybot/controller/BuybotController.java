@@ -11,10 +11,13 @@ import com.eve.buy.bot.backend.domain.buybot.repository.BuybackConfigRepository;
 import com.eve.buy.bot.backend.domain.buybot.repository.BuybackLocationRepository;
 import com.eve.buy.bot.backend.domain.buybot.service.BuybackCalculationService;
 import com.eve.buy.bot.backend.domain.buybot.service.EvePasteParserService;
+import com.eve.buy.bot.backend.domain.buybot.service.InjectorInventoryService;
 import com.eve.buy.bot.backend.domain.buybot.service.MarketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,8 +29,10 @@ import java.util.List;
 /**
  * Öffentliche Schnittstelle des Buybots.
  *
- * <p>Alle Endpunkte hier sind ohne Anmeldung erreichbar: Spieler sollen einen Preis
- * ausrechnen können, ohne sich vorher mit EVE SSO anzumelden.
+ * <p>Preisberechnung, Abgabeorte und Konfiguration sind bewusst ohne Anmeldung erreichbar:
+ * Spieler sollen einen Preis ausrechnen können, ohne sich vorher mit EVE SSO anzumelden.
+ * Einzige Ausnahme ist {@link #getMyInjectors()} - der eigene Besitz setzt eine Sitzung
+ * voraus.
  */
 @RestController
 @RequestMapping("/api/buybot")
@@ -40,6 +45,7 @@ public class BuybotController {
     private final BuybackConfigRepository configRepo;
     private final MarketService marketService;
     private final AuditService auditService;
+    private final InjectorInventoryService injectorInventory;
 
     /**
      * Anfrage zur Preisberechnung.
@@ -110,6 +116,34 @@ public class BuybotController {
                 MarketService.LARGE_SKILL_INJECTOR_TYPE_ID,
                 "Large Skill Injector",
                 marketService.getSkillInjectorPrice()));
+    }
+
+    /**
+     * Bestand an Skill Injectors des angemeldeten Charakters.
+     *
+     * @param quantity Anzahl im Besitz, {@code null} wenn nicht ermittelbar
+     * @param hint     Grund, falls keine Zahl geliefert werden konnte
+     */
+    public record MyInjectorsDto(Long quantity, String hint) {}
+
+    /**
+     * Liefert, wie viele Skill Injectors der angemeldete Charakter besitzt.
+     *
+     * <p>Nur mit Anmeldung erreichbar - ohne Sitzung greift die Sicherheitsregel und der
+     * Aufruf endet mit HTTP 401. Das Frontend wertet das als "nicht angemeldet" und zeigt
+     * stattdessen die Umrechnung des Ankaufspreises.
+     *
+     * @return Anzahl im Besitz oder ein Hinweis, warum sie fehlt
+     */
+    @GetMapping("/my-injectors")
+    public ResponseEntity<MyInjectorsDto> getMyInjectors() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof Long characterId)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        InjectorInventoryService.InjectorStock stock = injectorInventory.getStock(characterId);
+        return ResponseEntity.ok(new MyInjectorsDto(stock.quantity(), stock.hint()));
     }
 
     /**

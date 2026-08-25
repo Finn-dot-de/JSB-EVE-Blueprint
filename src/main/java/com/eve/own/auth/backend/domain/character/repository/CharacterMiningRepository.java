@@ -34,6 +34,13 @@ public interface CharacterMiningRepository extends JpaRepository<CharacterMining
      * demselben Topf, aus dem sich auch die Steuerberechnung bedient - damit
      * passen Rangliste und Abrechnung zusammen. Erze ohne hinterlegten Preis
      * fliessen mit 0 ISK ein, zaehlen beim Volumen aber normal mit.</p>
+     *
+     * <p>Das {@code COALESCE(..., 0)} ist hier vertretbar und bleibt deshalb
+     * stehen. Es geht um eine Rueckschau auf bereits Abgebautes, nicht um eine
+     * Kaufentscheidung: ein unbewertetes Erz macht die Rangliste zu niedrig,
+     * aber es verleitet niemanden zu einem Kauf. Ausserdem steht in
+     * {@code current_jita_buy} nie eine 0 - {@code MiningPriceService} schreibt
+     * nur Preise groesser null und laesst die Spalte sonst leer.</p>
      */
     @Query(value = """
             SELECT COALESCE(c.main_character_id, c.character_id)     AS main_id,

@@ -59,7 +59,12 @@ func main() {
 	for {
 		log.Println("Starte neuen Token-Refresh-Durchlauf...")
 
-		rows, err := db.Query(`SELECT character_id, name, refresh_token FROM characters WHERE refresh_token IS NOT NULL`)
+		rows, err := db.Query(`
+			SELECT character_id, name, refresh_token
+			FROM characters
+			WHERE refresh_token IS NOT NULL
+			  AND (token_expiry IS NULL OR token_expiry < now() + interval '10 minutes')
+			ORDER BY token_expiry ASC NULLS FIRST`)
 		if err != nil {
 			log.Printf("Konnte Charaktere nicht laden (DB noch nicht bereit?): %v\n", err)
 			time.Sleep(30 * time.Second)
@@ -77,8 +82,12 @@ func main() {
 		}
 		rows.Close()
 
+		if len(characters) == 0 {
+			log.Println("Kein Token laeuft demnaechst ab - nichts zu tun.")
+		}
+
 		if len(characters) > 0 {
-			log.Printf("%d Charaktere gefunden. Starte Worker Pool mit %d Workern...\n", len(characters), workerCount)
+			log.Printf("%d Token laufen demnaechst ab. Starte Worker Pool mit %d Workern...\n", len(characters), workerCount)
 
 			jobs := make(chan Character, len(characters))
 			var wg sync.WaitGroup

@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.industry.service;
 
+import com.eve.own.auth.backend.common.MarketPriceRules;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryQueryRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryQueryRepository.BlueprintInfo;
 import java.util.HashMap;
@@ -99,9 +100,18 @@ public class BuildVsBuyService {
         return ergebnis;
     }
 
-    /** Was ein Stueck fertig gekauft kostet, an den Bauort geliefert. */
+    /**
+     * Was ein Stueck fertig gekauft kostet, an den Bauort geliefert.
+     *
+     * <p>Ein Preis von 0 gilt als <em>kein</em> Preis. Das ist an dieser Stelle
+     * die gefaehrlichste Null im ganzen Assistenten: sie laesst den Fertigkauf
+     * fast nichts kosten und gewinnt damit den Vergleich gegen jeden Bauweg.
+     * Die Voreinstellung "Moeglichst guenstig" haette dann bei einer gestoerten
+     * Preisquelle ausnahmslos "Kaufen" empfohlen - und zwar mit derselben
+     * Bestimmtheit wie bei einer echten Rechnung.</p>
+     */
     private Double kaufenJeStueck(long typeId, double freightPerCubicMeter) {
-        Double preis = queryRepo.jitaSell(typeId);
+        Double preis = MarketPriceRules.usable(queryRepo.jitaSell(typeId));
         if (preis == null) {
             return null;
         }
@@ -159,7 +169,10 @@ public class BuildVsBuyService {
      */
     @Transactional(readOnly = true)
     public Verdict compare(Long characterId, long typeId, long quantity) {
-        Double kaufen = queryRepo.jitaSell(typeId);
+        // Ein Preis von 0 ist kein Kaufpreis. Er machte den Fertigkauf kostenlos
+        // und liesse jede Zeile auf "Kaufen" fallen, statt "kein Marktpreis" zu
+        // melden.
+        Double kaufen = MarketPriceRules.usable(queryRepo.jitaSell(typeId));
         Double kaufenGesamt = kaufen == null ? null : kaufen * quantity;
 
         BlueprintInfo bp = queryRepo.blueprintFor(typeId);
@@ -179,11 +192,12 @@ public class BuildVsBuyService {
             long grundmenge = kind.quantityPerRun();
             long menge = IndustryMath.materialForJob(laeufe, grundmenge, ctx);
 
-            Double preis = queryRepo.jitaSell(kind.typeId());
+            Double preis = MarketPriceRules.usable(queryRepo.jitaSell(kind.typeId()));
             if (preis == null) {
                 // Ein Bauteil mit unbekanntem Materialpreis laesst sich nicht
                 // vergleichen. Es mit null zu bewerten liesse Bauen kuenstlich
                 // guenstig aussehen - genau die Richtung, in der ein Fehler teuer wird.
+                // Deshalb zaehlt auch eine gespeicherte 0 hier als "fehlt".
                 preisFehlt = true;
                 continue;
             }
@@ -238,9 +252,13 @@ public class BuildVsBuyService {
      * Nebenposten, fuer den man sie haelt: fertig gekauft fuellen sie fuenf
      * Sprungfrachterladungen, ihre Zutaten eine.</p>
      *
-     * <p>Laesst sich die Rechnung nicht anstellen - etwa weil ein Preis fehlt -
-     * wird gekauft: die sichere Wahl, denn sie braucht weder Blaupause noch
-     * Jobslot.</p>
+     * <p>Laesst sich der <b>Bauweg</b> nicht beziffern - etwa weil einer Zutat
+     * der Marktpreis fehlt - wird gekauft: die sichere Wahl, denn sie braucht
+     * weder Blaupause noch Jobslot. Fehlt dagegen der <b>Kaufpreis des fertigen
+     * Teils</b>, wird gebaut, denn dann ist Bauen der einzige bezifferte Weg.
+     * Wichtig ist, dass "fehlt" auch eine gespeicherte 0 einschliesst: sonst
+     * faellt die Entscheidung bei gestoerter Preisquelle stets auf Kaufen, weil
+     * ein Kaufpreis von 0 jeden Bauweg unterbietet.</p>
      *
      * @param freightPerCubicMeter Frachtsatz zum Bauort in ISK je Kubikmeter
      */

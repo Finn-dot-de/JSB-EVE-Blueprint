@@ -67,10 +67,12 @@ public class AssetPriceScheduler {
                     var data = prices.get(String.valueOf(typeId));
                     if (data == null) continue;
 
+                    Double buy = data.buy() == null ? null : data.buy().max();
+                    Double sell = data.sell() == null ? null : data.sell().min();
                     MarketPrice price = priceRepo.findById(typeId).orElseGet(MarketPrice::new);
                     price.setTypeId(typeId);
-                    price.setJitaBuy(data.buy() != null ? data.buy().max() : null);
-                    price.setJitaSell(data.sell() != null ? data.sell().min() : null);
+                    price.setJitaBuy(buy != null ? buy : price.getJitaBuy());
+                    price.setJitaSell(sell != null ? sell : price.getJitaSell());
                     price.setUpdatedAt(Instant.now());
                     toSave.add(price);
                 }
@@ -81,8 +83,15 @@ public class AssetPriceScheduler {
         }
 
         priceRepo.saveAll(toSave);
-        log.info("Jita-Preise aktualisiert: {} Typen gespeichert, {} Batches fehlgeschlagen.",
-                toSave.size(), failedBatches);
+        if (failedBatches > 0) {
+            // Als Warnung. Ein Batch ohne einen einzigen brauchbaren Preis ist ein
+            // Ausfall der Quelle und keine Randnotiz - zuvor las sich genau dieser
+            // Fall als "2165 Typen gespeichert, 0 Batches fehlgeschlagen".
+            log.warn("Jita-Preise: nur {} Typen aktualisiert, {} Batches ohne brauchbaren "
+                    + "Preis. Die Preisquelle ist gestoert.", toSave.size(), failedBatches);
+        } else {
+            log.info("Jita-Preise aktualisiert: {} Typen gespeichert.", toSave.size());
+        }
     }
 
     /** Alle 30 Minuten: Namen fuer neu aufgetauchte Stationen / Strukturen nachziehen. */

@@ -395,6 +395,33 @@ export class IndustryComponent {
     return value.toFixed(0);
   }
 
+  /**
+   * Beschriftung einer Kostenkachel, samt Vorbehalt.
+   *
+   * Die Kacheln bleiben stehen, auch wenn die Liste darunter zugeklappt ist —
+   * sie sind die Antwort. Dann steht dort aber eine Summe ohne den Hinweis, der
+   * nur zur Liste gehört, und sie liest sich vollständig. Bei einem Ausfall der
+   * Preisquelle war genau das der Schaden: "zusammen" nannte den Frachtpreis
+   * und sah aus wie das Budget.
+   *
+   * Der Vorbehalt gehört deshalb an die Zahl selbst, nicht in eine Fußnote.
+   */
+  kostenLabel(basis: string, ohnePreis: number): string {
+    return ohnePreis > 0 ? `${basis} · unvollständig` : basis;
+  }
+
+  /**
+   * Ob zu einer Zeile kein Marktpreis vorliegt.
+   *
+   * Gelesen, nicht gerechnet: der Server lässt `totalCost` leer, wenn er den
+   * Preis nicht kennt, und genau das ist die Auskunft. Eine eigene Prüfung auf
+   * 0 wäre hier falsch am Platz - die Regel, dass 0 ISK kein Preis ist, gehört
+   * dorthin, wo die Preise herkommen, und ist dort auch getroffen.
+   */
+  hatKeinenPreis(line: { totalCost: number | null }): boolean {
+    return line.totalCost === null || line.totalCost === undefined;
+  }
+
   trackByLine = (_: number, row: { typeId: number }) => row.typeId;
 
   /**

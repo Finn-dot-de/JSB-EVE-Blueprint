@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.industry.service;
 
+import com.eve.own.auth.backend.common.MarketPriceRules;
 import com.eve.own.auth.backend.domain.industry.dto.IndustryDtos;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryQueryRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryQueryRepository.OreSource;
@@ -200,7 +201,10 @@ public class ProcurementService {
             if (r.missing() <= 0 || "BUILD".equals(r.decision()) || !queryRepo.isMineral(r.typeId())) {
                 continue;
             }
-            Double preis = queryRepo.jitaSell(r.typeId());
+            // Ohne brauchbaren Preis laesst sich nicht sagen, was ein Erz einspart.
+            // Eine 0 waere hier besonders tueckisch: sie schriebe der Ersparnis
+            // den Wert null zu und liesse jedes Erz aussichtslos aussehen.
+            Double preis = MarketPriceRules.usable(queryRepo.jitaSell(r.typeId()));
             if (preis == null) {
                 continue;
             }
@@ -217,7 +221,9 @@ public class ProcurementService {
         double besterFaktor = 0;
         for (Long mineral : offen.keySet()) {
             for (OreSource erz : queryRepo.compressedOreSourcesFor(mineral)) {
-                if (erz.jitaSell() == null || erz.jitaSell() <= 0) {
+                // Ein Erz ohne brauchbaren Preis darf nicht mitspielen: mit 0
+                // bewertet waere es umsonst und gewaenne jeden Vergleich.
+                if (!MarketPriceRules.isUsable(erz.jitaSell())) {
                     continue;
                 }
                 double faktor = portionFactor(erz, offen, geliefertPreis, transport, characterIds);
@@ -284,7 +290,12 @@ public class ProcurementService {
                                                            Transport transport,
                                                            Set<Long> characterIds) {
         long menge = bedarf.missing();
-        Double stueckpreis = queryRepo.jitaSell(bedarf.typeId());
+        // Hier faellt die Entscheidung, hier gilt die Regel: ein Preis von 0 ist
+        // keine Auskunft, sondern eine fehlende. Ohne diese Umdeutung wird aus
+        // "kein Marktpreis" ein Warenwert von 0, die Zeile bekommt eine
+        // Gesamtsumme aus reiner Fracht, und der Hinweis auf fehlende Preise
+        // springt nicht an - genau das war auf dem Bildschirm zu sehen.
+        Double stueckpreis = MarketPriceRules.usable(queryRepo.jitaSell(bedarf.typeId()));
 
         double direktVolumen = bedarf.packagedVolume() * (double) menge;
         Double direktWare = stueckpreis == null ? null : stueckpreis * menge;
@@ -331,7 +342,7 @@ public class ProcurementService {
         OreOption bestes = null;
 
         for (OreSource erz : queryRepo.compressedOreSourcesFor(mineralTypeId)) {
-            if (erz.jitaSell() == null || erz.jitaSell() <= 0) {
+            if (!MarketPriceRules.isUsable(erz.jitaSell())) {
                 // Ohne Preis laesst sich nichts vergleichen - stillschweigend mit
                 // null zu rechnen waere schlimmer als das Erz wegzulassen.
                 continue;

@@ -22,9 +22,24 @@ public class AssetQueryRepository {
      * BPCs teilen sich die type_id mit dem Original, der Marktpreis gehoert aber
      * fast immer zur BPO. Ohne echte Bewertungsgrundlage fuer Copies fliessen sie
      * mit 0 in die Auswertung ein, statt faelschlich den BPO-Preis zu erben.
+     *
+     * <p>Das abschliessende {@code , 0)} bleibt hier bewusst stehen, anders als
+     * bei den Kaufentscheidungen im Industriezweig. Dies ist eine
+     * <em>Bestandsbewertung</em>: sie summiert, was da ist, und niemand kauft
+     * danach ein. Ein unbewerteter Posten macht die Summe zu niedrig - erkennbar
+     * eine Summe, nur eben eine vorsichtige. Sie ganz zu verweigern, weil ein
+     * einzelner Typ keinen Preis hat, waere die schlechtere Auskunft.</p>
+     *
+     * <p>Die beiden {@code NULLIF} sind dagegen eine Korrektur. Der {@code
+     * COALESCE} soll von "Kaufgebot" auf "Verkaufsangebot" zurueckfallen, wenn
+     * das Kaufgebot fehlt. Seit die Preisquelle Nullen statt {@code NULL}
+     * schreibt, war das Kaufgebot nie mehr "fehlend": es stand auf 0, die
+     * Rueckfallebene griff nie, und ein Bestand mit gueltigem Verkaufspreis wurde
+     * trotzdem mit null ISK bewertet.</p>
      */
     private static final String UNIT_PRICE_EXPR =
-            "(CASE WHEN a.is_blueprint_copy IS TRUE THEN 0 ELSE COALESCE(p.jita_buy, p.jita_sell, 0) END)";
+            "(CASE WHEN a.is_blueprint_copy IS TRUE THEN 0 "
+            + "ELSE COALESCE(NULLIF(p.jita_buy, 0), NULLIF(p.jita_sell, 0), 0) END)";
 
     private static final String VALUE_EXPR =
             "(" + UNIT_PRICE_EXPR + " * a.quantity)";
@@ -364,7 +379,10 @@ public class AssetQueryRepository {
                 SELECT t."typeID" AS "typeId",
                        t."typeName" AS "typeName",
                        g."groupName" AS "groupName",
-                       COALESCE(p.jita_buy, p.jita_sell, 0) AS "unitPrice"
+                       -- Wie UNIT_PRICE_EXPR: die NULLIF halten die Rueckfallebene
+                       -- vom Kaufgebot auf das Verkaufsangebot am Leben, die eine
+                       -- gespeicherte 0 sonst ueberspringt.
+                       COALESCE(NULLIF(p.jita_buy, 0), NULLIF(p.jita_sell, 0), 0) AS "unitPrice"
                 FROM evesde."invTypes" t
                 LEFT JOIN evesde."invGroups" g ON g."groupID" = t."groupID"
                 LEFT JOIN market_prices p ON p.type_id = t."typeID"

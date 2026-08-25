@@ -1,11 +1,13 @@
 package com.eve.own.auth.backend.esi;
 
+import com.eve.own.auth.backend.common.MarketPriceRules;
 import com.eve.own.auth.backend.esi.client.EsiRequestExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -86,6 +88,34 @@ public class EsiService {
 
     public EsiResponse<EsiOnlineResponse> getCharacterOnlineStatus(Long characterId, String token) {
         return executor.get("/characters/{id}/online/", new Object[]{characterId}, token, EsiOnlineResponse.class);
+    }
+
+    /**
+     * Die <em>echten</em> Ingame-Corp-Rollen eines Charakters.
+     *
+     * <p>Scope: {@code esi-characters.read_corporation_roles.v1}. Eine
+     * Ingame-Rolle braucht der Aufruf nicht - jeder darf seine eigenen Rollen
+     * lesen. Genau das macht ihn wertvoll: er <em>kann</em> nicht an einer
+     * fehlenden Rolle scheitern. Antwortet er mit 200 und ohne "Director", ist
+     * das die belastbare Verneinung und kein Fehlerfall; antwortet er mit 403,
+     * liegt es am Scope oder am falschen Charakter.</p>
+     *
+     * <p>Wozu es ihn hier braucht: {@code ROLE_DIRECTOR} in dieser Anwendung
+     * stammt aus einem Ingame-<em>Titel</em>, nicht aus der Ingame-Rolle. Wer
+     * den Titel traegt, muss die Rolle nicht haben - und ESI verlangt fuer die
+     * Corp-Endpunkte die Rolle. Ohne diesen Aufruf gab es keine Moeglichkeit,
+     * "traegt den Titel" von "hat die Rolle" zu unterscheiden, und jede
+     * Fehlermeldung war geraten.</p>
+     *
+     * <p><b>Nur der eigene Charakter.</b> ESI prueft, ob die {@code character_id}
+     * im Pfad zum Token gehoert, und antwortet sonst mit 403 ("Character ID
+     * mismatch between request path and auth token"). Es gibt also keinen
+     * Sammelaufruf: jeder Kandidat muss mit <em>seinem eigenen</em> Token
+     * gefragt werden.</p>
+     */
+    public EsiResponse<EsiCharacterRolesResponse> getCharacterRoles(Long characterId, String token) {
+        return executor.get("/characters/{id}/roles/", new Object[]{characterId}, token,
+                EsiCharacterRolesResponse.class);
     }
 
     /** Paginierter Endpunkt: jede Seite wird einzeln per ETag geprueft. */
@@ -304,13 +334,30 @@ public class EsiService {
     // Marktpreise (Fremdanbieter, nicht ESI)
     // ==================================================================
 
+    /**
+     * Jita-Preise vom Marktanbieter, bereits von Nullen bereinigt.
+     *
+     * <p>Der Rueckgabewert enthaelt nur brauchbare Preise. Wo der Anbieter 0
+     * meldet, steht {@code null} - siehe {@link MarketPriceRules}. Damit greift
+     * bei jedem Aufrufer die vorhandene Verteidigung "kein Wert, also alten Wert
+     * behalten" von selbst, statt eine Null als Preis durchzureichen.</p>
+     *
+     * <p>Ein Block, in dem <em>kein einziger</em> Preis brauchbar ist, wird als
+     * Ausfall der Quelle behandelt und leer zurueckgegeben. Das ist die ehrliche
+     * Uebersetzung: eine Antwort, in der jede Zahl 0 ist, traegt keine
+     * Preisauskunft. Ohne diese Umdeutung war ein Totalausfall vom Erfolg nicht
+     * zu unterscheiden - die Fehlerzaehler der Aufrufer zaehlen leere Antworten,
+     * und eine Antwort voller Nullen war eben nicht leer. Genau so lief der
+     * Abgleich einen Tag lang stuendlich durch und meldete jedes Mal Erfolg.</p>
+     */
     public Map<String, FuzzworkPrice> getFuzzworkPrices(List<Long> typeIds) {
         if (typeIds == null || typeIds.isEmpty()) {
             return Map.of();
         }
         String typesParam = typeIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+        Map<String, FuzzworkPrice> roh;
         try {
-            return marketClient.get()
+            roh = marketClient.get()
                     .uri(FUZZWORK_AGGREGATES_URL + typesParam)
                     .retrieve()
                     .body(new ParameterizedTypeReference<Map<String, FuzzworkPrice>>() {});
@@ -318,6 +365,42 @@ public class EsiService {
             log.warn("Fuzzwork-Preise nicht abrufbar: {}", e.getMessage());
             return Map.of();
         }
+        return sanitizeFuzzwork(roh, typeIds.size());
+    }
+
+    /**
+     * Streicht Nullpreise und erkennt daran den Ausfall der Quelle.
+     *
+     * @param angefragt wie viele Typen angefragt wurden - nur fuer die Meldung
+     */
+    static Map<String, FuzzworkPrice> sanitizeFuzzwork(Map<String, FuzzworkPrice> roh, int angefragt) {
+        if (roh == null || roh.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, FuzzworkPrice> sauber = new LinkedHashMap<>();
+        for (Map.Entry<String, FuzzworkPrice> e : roh.entrySet()) {
+            FuzzworkPrice p = e.getValue();
+            if (p == null) {
+                continue;
+            }
+            Double kauf = p.buy() == null ? null : MarketPriceRules.usable(p.buy().max());
+            Double verkauf = p.sell() == null ? null : MarketPriceRules.usable(p.sell().min());
+            if (kauf == null && verkauf == null) {
+                // Kein brauchbarer Preis. Der Eintrag faellt ganz weg, statt als
+                // Huelle mit Nullen weiterzureisen - sonst prueft der Aufrufer
+                // wieder nur, ob die Huelle da ist.
+                continue;
+            }
+            sauber.put(e.getKey(), new FuzzworkPrice(
+                    kauf == null ? null : new FuzzworkBuy(kauf),
+                    verkauf == null ? null : new FuzzworkSell(verkauf)));
+        }
+        if (sauber.isEmpty()) {
+            log.warn("Marktquelle antwortet ohne einen einzigen brauchbaren Preis "
+                    + "({} Typen angefragt, {} Eintraege, alle 0) - Ausfall der Preisquelle.",
+                    angefragt, roh.size());
+        }
+        return sauber;
     }
 
     // ==================================================================
@@ -378,6 +461,14 @@ public class EsiService {
 
     public record EsiStructureService(String name, String state) {}
 
+    /**
+     * Ein Marktpreis des Fremdanbieters.
+     *
+     * <p>Aus {@link #getFuzzworkPrices} kommen {@code buy} und {@code sell} nur
+     * dann als Objekt, wenn dahinter auch ein Preis groesser null steht. Fehlt
+     * er, ist die Seite {@code null} - das ist der Unterschied zwischen "niemand
+     * kauft" und "kostet nichts", und er darf nicht verlorengehen.</p>
+     */
     public record FuzzworkPrice(FuzzworkBuy buy, FuzzworkSell sell) {}
     public record FuzzworkBuy(Double max) {}
     public record FuzzworkSell(Double min) {}
@@ -385,6 +476,41 @@ public class EsiService {
     public record EsiOnlineResponse(Boolean online, String last_login, String last_logout, Integer logins) {}
     public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}
     public record EsiFleetMemberResponse(Long character_id, Instant join_time, String role, Long ship_type_id, Long solar_system_id) {}
+    /**
+     * Die Ingame-Corp-Rollen eines Charakters.
+     *
+     * <p>Alle vier Felder sind laut ESI-Definition optional - die Antwort eines
+     * Charakters ohne jede Rolle ist schlicht {@code {}}. Deshalb muss jedes
+     * Feld {@code null} sein duerfen.</p>
+     *
+     * <p>Fuer die Frage "ist das ein Director" zaehlt allein {@code roles}. Die
+     * drei Felder mit Ortsbezug tragen Hangar- und Kontorechte an einem
+     * bestimmten Ort, nicht die corpweite Rolle.</p>
+     */
+    public record EsiCharacterRolesResponse(String[] roles, String[] roles_at_hq,
+                                            String[] roles_at_base, String[] roles_at_other) {
+
+        /**
+         * Ob die corpweite Rollenliste diese Rolle enthaelt.
+         *
+         * <p>Vergleich exakt und ohne Ignorieren der Gross-/Kleinschreibung: die
+         * Bezeichner sind ein festes Enum von CCP. Der Director heisst dort
+         * {@code "Director"} - einteilig, ohne Unterstrich, anders als die
+         * meisten Nachbarn ({@code Personnel_Manager}, {@code Station_Manager}).</p>
+         */
+        public boolean hasCorporationRole(String roleName) {
+            if (roles == null) {
+                return false;
+            }
+            for (String role : roles) {
+                if (roleName.equals(role)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     public record EsiCorpTitleResponse(Long title_id, String name) {}
     public record EsiTitleResponse(Long title_id, String name) {}
     public record EsiMiningResponse(String date, Long quantity, Long solar_system_id, Long type_id) {}

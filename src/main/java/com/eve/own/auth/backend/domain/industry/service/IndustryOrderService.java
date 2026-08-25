@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.industry.service;
 
+import com.eve.own.auth.backend.common.MarketPriceRules;
 import com.eve.own.auth.backend.domain.assets.service.MyAssetService;
 import com.eve.own.auth.backend.domain.industry.IndustryActivity;
 import com.eve.own.auth.backend.domain.industry.dto.IndustryDtos;
@@ -1109,7 +1110,11 @@ public class IndustryOrderService {
         Map<Long, Double> volumen = queryRepo.packagedVolumes(typen);
         for (IndustryOrderRequirement r : zeilen) {
             r.setPackagedVolume(volumen.getOrDefault(r.getTypeId(), 0.0));
-            Double preis = queryRepo.jitaSell(r.getTypeId());
+            // Eine 0 wird als fehlender Preis gefuehrt, nicht als Preis. Sonst
+            // traegt die Zeile einen Stueckpreis von null ISK, {@code priceMissing}
+            // bleibt falsch, und die Oberflaeche zeigt eine Zahl, wo eine Warnung
+            // stehen muesste.
+            Double preis = MarketPriceRules.usable(queryRepo.jitaSell(r.getTypeId()));
             r.setUnitPrice(preis);
             r.setPriceMissing(preis == null);
         }

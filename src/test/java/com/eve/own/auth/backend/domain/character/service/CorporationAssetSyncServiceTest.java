@@ -58,8 +58,12 @@ class CorporationAssetSyncServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CorporationAssetSyncService(authService, esiService, characterRepo,
-                corpAssetRepo, assetSyncService, assetNameResolver, assetMapper);
+        // Der Token-Geber wird echt verdrahtet statt gemockt: die Zusicherungen
+        // dieses Tests - Rangfolge, uebersprungene Kandidaten, 420 nach oben -
+        // liegen jetzt in ihm. Als Mock waeren sie hier nicht mehr gemessen.
+        service = new CorporationAssetSyncService(
+                new DirectorTokenProvider(authService, characterRepo, esiService),
+                esiService, corpAssetRepo, assetSyncService, assetNameResolver, assetMapper);
 
         when(authService.getValidAccessToken(any())).thenReturn("token");
         when(assetNameResolver.resolve(anyList(), anyString(), any())).thenReturn(Map.of());

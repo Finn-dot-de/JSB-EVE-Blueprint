@@ -757,4 +757,40 @@ describe('IndustryComponent · Multibuy', () => {
   it('liefert leeren Text, solange keine Liste da ist', () => {
     expect(build().multibuyText()).toBe('');
   });
+
+});
+
+describe('IndustryComponent · Fehlende Preise', () => {
+  it('nimmt den Vorbehalt an die Zahl, wenn Preise fehlen', () => {
+    // Die Kostenkacheln bleiben stehen, auch wenn die Liste zugeklappt ist —
+    // der Hinweis darunter ist dann nicht zu sehen. Ohne den Vorbehalt an der
+    // Zahl selbst liest sich "zusammen" wie ein vollständiges Budget, obwohl
+    // dort bei einem Ausfall der Preisquelle nur die Fracht stand.
+    const c = build();
+
+    expect(c.kostenLabel('zusammen', 0)).toBe('zusammen');
+    expect(c.kostenLabel('zusammen', 3)).toBe('zusammen · unvollständig');
+    expect(c.kostenLabel('Ware', 1)).toBe('Ware · unvollständig');
+  });
+
+  it('erkennt eine Zeile ohne Marktpreis an der leeren Summe', () => {
+    // Der Server lässt totalCost leer, wenn er den Preis nicht kennt. Ohne
+    // diese Unterscheidung stünde in der Kostenspalte derselbe Strich wie in
+    // der Ersparnisspalte nebenan - und der bedeutet dort "nichts gespart",
+    // also ein Ergebnis statt einer fehlenden Auskunft.
+    const c = build();
+
+    expect(c.hatKeinenPreis({ totalCost: null })).toBe(true);
+    expect(c.hatKeinenPreis({ totalCost: undefined as unknown as null })).toBe(true);
+  });
+
+  it('hält eine bezifferte Zeile für beziffert - auch bei 0', () => {
+    // Die Regel "0 ISK ist kein Preis" gehört dorthin, wo die Preise herkommen,
+    // und ist dort getroffen: was hier als 0 ankommt, ist eine echte 0 und darf
+    // nicht ein zweites Mal umgedeutet werden.
+    const c = build();
+
+    expect(c.hatKeinenPreis({ totalCost: 4_500_000 })).toBe(false);
+    expect(c.hatKeinenPreis({ totalCost: 0 })).toBe(false);
+  });
 });

@@ -301,12 +301,23 @@ public class IndustrySyncService {
                 for (Long typeId : block) {
                     var daten = preise.get(String.valueOf(typeId));
                     if (daten == null) {
+                        // Kein brauchbarer Preis - die Quelle hat den Typ entweder
+                        // nicht gemeldet oder nur mit 0. Der alte Wert bleibt
+                        // stehen; ihn zu ueberschreiben waere ein Rueckschritt von
+                        // "alt" auf "falsch".
                         continue;
                     }
+                    // Die Werte kommen bereits bereinigt (siehe MarketPriceRules):
+                    // eine Seite ist nur dann besetzt, wenn ein Preis groesser null
+                    // dahintersteht. Frueher wurde hier nur die Huelle geprueft -
+                    // deshalb schrieb ein Ausfall der Quelle Nullen in die Tabelle,
+                    // statt den letzten bekannten Preis stehenzulassen.
+                    Double kauf = daten.buy() == null ? null : daten.buy().max();
+                    Double verkauf = daten.sell() == null ? null : daten.sell().min();
                     MarketPrice zeile = priceRepo.findById(typeId).orElseGet(MarketPrice::new);
                     zeile.setTypeId(typeId);
-                    zeile.setJitaBuy(daten.buy() != null ? daten.buy().max() : zeile.getJitaBuy());
-                    zeile.setJitaSell(daten.sell() != null ? daten.sell().min() : zeile.getJitaSell());
+                    zeile.setJitaBuy(kauf != null ? kauf : zeile.getJitaBuy());
+                    zeile.setJitaSell(verkauf != null ? verkauf : zeile.getJitaSell());
                     zeile.setUpdatedAt(jetzt);
                     zuSpeichern.add(zeile);
                 }
@@ -317,8 +328,17 @@ public class IndustrySyncService {
         }
 
         priceRepo.saveAll(zuSpeichern);
-        log.info("Industriepreise: {} von {} Typen aktualisiert, {} Blöcke fehlgeschlagen.",
-                zuSpeichern.size(), typen.size(), fehlgeschlagen);
+        if (fehlgeschlagen > 0) {
+            // Als Warnung, nicht als Erfolgsmeldung. Zuvor stand hier nur eine
+            // INFO-Zeile mit der Zahl der geschriebenen Zeilen - und die las sich
+            // bei einem Totalausfall der Quelle genauso wie ein geglueckter Lauf.
+            log.warn("Industriepreise: nur {} von {} Typen aktualisiert, {} Blöcke ohne "
+                            + "brauchbaren Preis. Die Preisquelle ist gestoert.",
+                    zuSpeichern.size(), typen.size(), fehlgeschlagen);
+        } else {
+            log.info("Industriepreise: {} von {} Typen aktualisiert.",
+                    zuSpeichern.size(), typen.size());
+        }
         return zuSpeichern.size();
     }
 

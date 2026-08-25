@@ -253,6 +253,45 @@ class BuildVsBuyServiceTest {
     }
 
     @Test
+    @DisplayName("fällt bei einem Kaufpreis von 0 nicht automatisch auf Kaufen")
+    void nullpreisEntscheidetNichtFuerKaufen() {
+        // Der gefährlichste Fall des gemeldeten Ausfalls. Steht der Kaufpreis
+        // des fertigen Teils auf 0, kostet der Fertigkauf scheinbar nichts und
+        // unterbietet jeden Bauweg - "Möglichst günstig" empfiehlt dann
+        // ausnahmslos Kaufen, und zwar mit derselben Bestimmtheit wie bei einer
+        // echten Rechnung. Ohne diese Regel schlüge die Zusicherung um: statt
+        // "Bauen ist der einzige bezifferte Weg" käme "Kaufen ist billiger".
+        mitMaterialeffizienz(10);
+        when(queryRepo.jitaSell(KOMPONENTE)).thenReturn(0.0);
+        when(queryRepo.packagedVolumes(any())).thenReturn(java.util.Map.of());
+
+        assertThat(service.shouldBuild(1L, KOMPONENTE, 1, "BUILDABLE",
+                BuildStrategy.COST_EFFICIENT)).isTrue();
+
+        // Und die Einzelzeile meldet den fehlenden Preis, statt eine 0 zu zeigen.
+        var urteil = service.compare(1L, KOMPONENTE, 1);
+        assertThat(urteil.buyCost()).isNull();
+        assertThat(urteil.reason()).contains("Kein Marktpreis");
+    }
+
+    @Test
+    @DisplayName("lässt ein Material mit Preis 0 den Bauweg nicht verbilligen")
+    void nullpreisBeimMaterialVerhindertDenVergleich() {
+        // Die Gegenrichtung: ein Material zu 0 ISK machte das Selbstbauen
+        // künstlich billig. Ohne die Regel käme hier ein Baupreis heraus, in
+        // dem 111 Millionen ISK Material schlicht fehlen - und "Bauen lohnt
+        // sich" wäre das Ergebnis eines Quellenausfalls, nicht einer Rechnung.
+        mitMaterialeffizienz(10);
+        when(queryRepo.jitaSell(REGULATOR)).thenReturn(0.0);
+
+        var urteil = service.compare(1L, KOMPONENTE, 1);
+
+        assertThat(urteil.buildCost()).isNull();
+        assertThat(urteil.buildCheaper()).isFalse();
+        assertThat(urteil.reason()).contains("Marktpreis");
+    }
+
+    @Test
     @DisplayName("fällt bei unbekannter Voreinstellung auf Kaufen zurück")
     void unbekannteVoreinstellung() {
         // Eine veraltete Oberfläche soll den Auftrag nicht unbrauchbar machen.

@@ -508,20 +508,40 @@
 
       <div class="einkauf-kopf">
         <div class="einkauf-zahl">
-          <strong>{{ isk(p.goodsCost) }}</strong><span>Ware</span>
+          <strong>{{ isk(p.goodsCost) }}</strong>
+          <span>{{ kostenLabel('Ware', p.withoutPrice) }}</span>
         </div>
         <div class="einkauf-zahl">
           <strong>{{ isk(p.freightCost) }}</strong>
           <span>{{ p.transportLabel }} · {{ p.freightPerCubicMeter }} ISK/m³</span>
         </div>
         <div class="einkauf-zahl gesamt">
-          <strong>{{ isk(p.totalCost) }}</strong><span>zusammen</span>
+          <strong>{{ isk(p.totalCost) }}</strong>
+          <span>{{ kostenLabel('zusammen', p.withoutPrice) }}</span>
         </div>
         <div class="einkauf-zahl">
           <strong>{{ p.loads }} {{ p.loads === 1 ? 'Ladung' : 'Ladungen' }}</strong>
           <span>{{ amount(p.volume) }} m³ bei {{ amount(p.loadCapacity) }} m³ je Fahrt</span>
         </div>
       </div>
+
+      <!-- Der Vorbehalt steht bewusst außerhalb des zuklappbaren Teils: die
+           Kacheln darüber bleiben immer sichtbar, der Hinweis stand aber nur in
+           der Liste. Wer zuklappt, sah damit eine Summe ohne jeden Vorbehalt —
+           und genau in dieser Ansicht wurde auf eine Zahl budgetiert, die bei
+           gestörter Preisquelle nur die Fracht enthielt. -->
+      @if (p.withoutPrice > 0) {
+        <p class="hinweis warnung">
+          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+          <span>
+            Für {{ p.withoutPrice }}
+            {{ p.withoutPrice === 1 ? 'Position' : 'Positionen' }} liegt kein
+            Marktpreis vor —
+            {{ p.withoutPrice === 1 ? 'sie fehlt' : 'sie fehlen' }} in den Zahlen
+            oben. Ware, Fracht und Ladungen sind damit Mindestwerte.
+          </span>
+        </p>
+      }
 
       @if (panelOffen('einkauf')) {
       <p class="einkauf-weg">
@@ -536,15 +556,6 @@
           {{ p.jumpsFromJita }} Sprünge von Jita.
         }
       </p>
-
-      @if (p.withoutPrice > 0) {
-        <p class="hinweis warnung">
-          <i class="fa-solid fa-triangle-exclamation"></i>
-          Für {{ p.withoutPrice }}
-          {{ p.withoutPrice === 1 ? 'Position liegt' : 'Positionen liegen' }} kein Marktpreis vor.
-          Die Summe ist also unvollständig.
-        </p>
-      }
 
       <!-- Warum kein Erz auf der Liste steht. Ohne diesen Satz trifft der
            Assistent die Entscheidung unsichtbar, und wer Erz erwartet, hält das
@@ -575,7 +586,14 @@
                 <td [class.erz]="line.source === 'ORE'">{{ sourceLabelFor(line) }}</td>
                 <td class="zahl">{{ amount(line.buyQuantity) }}</td>
                 <td class="zahl">{{ amount(line.volume) }} m³</td>
-                <td class="zahl">{{ isk(line.totalCost) }}</td>
+                <!-- Ein Strich reicht hier nicht: er steht in der Spalte
+                     nebenan für "keine Ersparnis", also für ein Ergebnis. Die
+                     fehlende Auskunft muss davon zu unterscheiden sein - sonst
+                     liest sich die Zeile wie eine, die nichts kostet. -->
+                <td class="zahl" [class.kein-preis]="hatKeinenPreis(line)">
+                  @if (hatKeinenPreis(line)) { kein Preis }
+                  @else { {{ isk(line.totalCost) }} }
+                </td>
                 <td class="zahl">
                   @if (line.saving > 0) {
                     <span class="spart">−{{ isk(line.saving) }}</span>

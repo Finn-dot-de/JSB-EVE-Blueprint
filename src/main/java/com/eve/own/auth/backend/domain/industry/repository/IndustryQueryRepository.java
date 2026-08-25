@@ -1,5 +1,6 @@
 package com.eve.own.auth.backend.domain.industry.repository;
 
+import com.eve.own.auth.backend.common.MarketPriceRules;
 import com.eve.own.auth.backend.domain.industry.IndustryActivity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -487,7 +488,11 @@ public class IndustryQueryRepository {
      * vorschlaegt, verteuert den Transport auf das Hundertfache.</p>
      *
      * <p>Ohne Marktpreis wird ein Erz mitgeliefert, aber mit {@code jitaSell = null} -
-     * der Aufrufer soll es dann sichtbar weglassen statt es mit null ISK zu bewerten.</p>
+     * der Aufrufer soll es dann sichtbar weglassen statt es mit null ISK zu bewerten.
+     * Das gilt ausdruecklich auch fuer eine gespeicherte 0: sie ist kein Preis,
+     * sondern das Ergebnis einer gestoerten Preisquelle. Ohne diese Umdeutung
+     * bricht das Versprechen dieses Absatzes, und ein Erz ohne Preis erschiene
+     * als geschenkt.</p>
      */
     public List<OreSource> compressedOreSourcesFor(long mineralTypeId) {
         Query query = em.createNativeQuery("""
@@ -520,7 +525,8 @@ public class IndustryQueryRepository {
                         num(r, "type_id"), str(r, "type_name"),
                         num(r, "portion_size"), num(r, "mineral_per_batch"),
                         ((Number) r.get("volume_per_unit")).doubleValue(),
-                        r.get("jita_sell") == null ? null : ((Number) r.get("jita_sell")).doubleValue(),
+                        r.get("jita_sell") == null ? null
+                                : MarketPriceRules.usable(((Number) r.get("jita_sell")).doubleValue()),
                         (int) num(r, "mineral_count")))
                 .toList();
     }
@@ -626,13 +632,24 @@ public class IndustryQueryRepository {
         return !query.getResultList().isEmpty();
     }
 
-    /** Der Jita-Verkaufspreis eines Typs, oder {@code null}. */
+    /**
+     * Der Jita-Verkaufspreis eines Typs, oder {@code null}.
+     *
+     * <p>Die Bedingung lautet {@code > 0} und nicht {@code IS NOT NULL}. Zuvor
+     * wurde nur auf {@code NULL} gefiltert, und eine gestoerte Preisquelle
+     * schrieb Nullen statt gar nichts - Tritanium stand auf 0 ISK. Jeder
+     * Aufrufer hier ist eine Kaufentscheidung oder ein Vergleich, und dort ist
+     * eine Null kein billiger Preis, sondern gar keiner: sie macht den Kauf
+     * scheinbar kostenlos und gewinnt damit jeden Vergleich, den sie eigentlich
+     * gar nicht antreten duerfte. Siehe {@link MarketPriceRules}.</p>
+     */
     public Double jitaSell(long typeId) {
         Query query = em.createNativeQuery(
-                "SELECT jita_sell FROM market_prices WHERE type_id = :typeId AND jita_sell IS NOT NULL");
+                "SELECT jita_sell FROM market_prices WHERE type_id = :typeId AND jita_sell > 0");
         query.setParameter("typeId", typeId);
         List<?> rows = query.getResultList();
-        return rows.isEmpty() ? null : ((Number) rows.getFirst()).doubleValue();
+        return rows.isEmpty() ? null
+                : MarketPriceRules.usable(((Number) rows.getFirst()).doubleValue());
     }
 
     // ===========================================================

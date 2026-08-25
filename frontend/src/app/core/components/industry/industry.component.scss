@@ -583,6 +583,20 @@
 
   .spart { color: var(--success-color); font-weight: 600; }
 
+  /* "kein Preis" statt einer Zahl: muss sich vom Strich in der Spalte daneben
+     unterscheiden, denn der steht dort für "nichts gespart" - also für ein
+     Ergebnis. Gedämpft und ohne Fettung, weil es ein Vorbehalt ist und kein
+     Fehler: die Zeile bleibt eine gültige Position der Einkaufsliste. */
+  .kein-preis {
+    color: var(--warning-color);
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  /* Bei zugeklappter Liste ist der Preishinweis das letzte Element - ohne das
+     hier hinge unter dem Panel ein Leerraum. */
+  .hinweis:last-child { margin-bottom: 0; }
+
   tr.notiz td {
     border-bottom: none;
     padding-top: 0;

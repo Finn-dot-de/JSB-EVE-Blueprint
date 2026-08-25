@@ -289,6 +289,73 @@ class ProcurementServiceTest {
     }
 
     @Test
+    @DisplayName("behandelt einen Preis von 0 als unbekannt, nicht als kostenlos")
+    void preisNullIstKeinPreis() {
+        // Der gemeldete Fall: die Preisquelle antwortete mit HTTP 200 und
+        // lauter Nullen, in market_prices stand für Tritanium jita_sell = 0.
+        //
+        // Ohne diese Regel rechnet der Dienst mit einem Warenwert von 0 weiter:
+        // die Zeile bekommt eine Gesamtsumme, die ausschließlich aus Fracht
+        // besteht (1000 * 0,01 m³ * 120 ISK/m³ = 1200), zählt NICHT als "ohne
+        // Preis", und der Nutzer budgetiert auf eine Zahl, in der die Ware
+        // fehlt. Genau das stand auf dem Bildschirm.
+        when(queryRepo.jitaSell(TRITANIUM)).thenReturn(0.0);
+        when(queryRepo.compressedOreSourcesFor(TRITANIUM)).thenReturn(List.of());
+
+        var plan = service.plan(List.of(tritanium(1000)), PERIMETER, 0.9);
+
+        var zeile = plan.lines().getFirst();
+        assertThat(zeile.totalCost()).isNull();
+        assertThat(zeile.purchaseCost()).isNull();
+        assertThat(zeile.note()).contains("Kein Marktpreis");
+        // Die Zahl "ohne Preis" muss mit der Wirklichkeit übereinstimmen -
+        // sonst behauptet die Oberfläche Vollständigkeit, die es nicht gibt.
+        assertThat(plan.withoutPrice()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("behauptet keine Vollständigkeit, wenn ein Preis fehlt")
+    void summeBehauptetKeineVollstaendigkeit() {
+        // Zwei Positionen, eine davon mit Nullpreis. Ohne die Regel stünde die
+        // fehlende Position mit 0 ISK Ware und voller Fracht in der Summe, und
+        // "ohne Preis" bliebe bei 0: die Summe läse sich vollständig, obwohl
+        // der halbe Warenwert fehlt.
+        long morphit = 11_399L;
+        when(queryRepo.isMineral(morphit)).thenReturn(false);
+        when(queryRepo.jitaSell(morphit)).thenReturn(0.0);
+        when(queryRepo.compressedOreSourcesFor(TRITANIUM)).thenReturn(List.of());
+
+        var ohnePreis = new IndustryDtos.RequirementDto(
+                morphit, "Morphite", 100, 0, 0, 100,
+                "MINERAL", false, "BUY", 1, 0, null, null, false, 0.01, 0, 0);
+
+        var plan = service.plan(List.of(tritanium(1000), ohnePreis), PERIMETER, 0.9);
+
+        assertThat(plan.withoutPrice()).isEqualTo(1);
+        // Nur die bezifferte Zeile geht in die Summe ein - weder ihr Warenwert
+        // noch ihr Volumen werden erfunden.
+        assertThat(plan.goodsCost()).isCloseTo(1000 * 3.97,
+                org.assertj.core.data.Offset.offset(1.0));
+        assertThat(plan.volume()).isEqualTo(Math.round(1000 * 0.01));
+    }
+
+    @Test
+    @DisplayName("verschenkt kein Erz, dessen Preis auf 0 steht")
+    void erzMitPreisNullGiltAlsPreislos() {
+        // Ein Erz zu 0 ISK wäre umsonst und gewänne jeden Vergleich - der
+        // Direktkauf verlöre systematisch gegen ein Erz, über dessen Preis
+        // nichts bekannt ist. Es muss wegfallen, nicht gewinnen.
+        when(queryRepo.compressedOreSourcesFor(TRITANIUM)).thenReturn(List.of(
+                new OreSource(COMP_VELDSPAR, "Compressed Veldspar", 100, 400, 0.001, 0.0, 1)));
+
+        var plan = service.plan(List.of(tritanium(5_200_000)), NULLSEC, -0.3);
+
+        assertThat(plan.lines()).singleElement()
+                .satisfies(z -> assertThat(z.source()).isEqualTo("DIRECT"));
+        assertThat(plan.oreVerdict()).contains("kein");
+    }
+
+    @Test
     @DisplayName("wählt in Highsec den Frachter und rechnet dessen Satz")
     void highsecFaehrtGuenstiger() {
         var plan = service.plan(List.of(tritanium(1_000_000)), PERIMETER, 0.9);

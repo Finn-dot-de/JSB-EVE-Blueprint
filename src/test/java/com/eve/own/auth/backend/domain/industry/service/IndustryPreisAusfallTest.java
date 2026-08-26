@@ -2,7 +2,6 @@ package com.eve.own.auth.backend.domain.industry.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 
 import com.eve.own.auth.backend.domain.assets.entity.MarketPrice;
@@ -12,10 +11,10 @@ import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.industry.repository.CharacterBlueprintRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryJobRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryQueryRepository;
+import com.eve.own.auth.backend.domain.market.MarketSnapshot;
+import com.eve.own.auth.backend.domain.market.StationPrice;
 import com.eve.own.auth.backend.esi.EsiService;
-import com.eve.own.auth.backend.esi.EsiService.FuzzworkBuy;
-import com.eve.own.auth.backend.esi.EsiService.FuzzworkPrice;
-import com.eve.own.auth.backend.esi.EsiService.FuzzworkSell;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,31 +31,39 @@ import org.mockito.Mockito;
  * ein falscher ist gefaehrlich - und eine 0 ist der falscheste, den es gibt,
  * weil sie den Kauf kostenlos macht.</p>
  *
- * <p>Die Antworten kommen hier bereits so, wie {@code getFuzzworkPrices} sie
- * liefert: von Nullen bereinigt. Ein Typ ohne brauchbaren Preis fehlt in der
- * Karte, eine Antwort ganz ohne Preis ist leer. Getestet wird also der
- * Schreibvorgang gegen diesen Vertrag - dass die Bereinigung selbst greift,
- * steht in {@code FuzzworkNullpreisTest}.</p>
+ * <p>Die Preise kommen hier als fertiger Marktabzug herein, so wie
+ * {@code MarketSnapshotService} ihn liefert: ein Typ ohne Order an der Station
+ * fehlt in der Karte, eine Seite ohne Angebot ist {@code null}. Getestet wird
+ * also der Schreibvorgang gegen diesen Vertrag - dass der Abzug selbst richtig
+ * gebildet wird, steht in {@code MarketSnapshotServiceTest}.</p>
+ *
+ * <p><b>Was sich gegenueber der Fuzzwork-Fassung geaendert hat:</b> nur die
+ * Quelle der Preise. Die vier Zusicherungen betreffen den Schreibvorgang und
+ * gelten unveraendert weiter - deshalb sind sie Wort fuer Wort dieselben
+ * geblieben. Weggefallen ist allein der Fall "die Quelle liefert einen ganzen
+ * Block nicht": Bloecke gibt es nicht mehr, weil der Abzug in einem Stueck
+ * kommt. An seine Stelle tritt der Fall "der Abzug entsteht gar nicht erst",
+ * und der wird eine Ebene hoeher geprueft, im {@code MarketPriceScheduler} -
+ * dort kommt diese Methode dann naemlich ueberhaupt nicht mehr zum Zug.</p>
  */
 class IndustryPreisAusfallTest {
 
     private static final long TRITANIUM = 34L;
     private static final long PYERITE = 35L;
+    private static final long JITA_44 = 60_003_760L;
 
     private MarketPriceRepository priceRepo;
     private IndustryQueryRepository queryRepo;
-    private EsiService esiService;
     private IndustrySyncService service;
 
     @BeforeEach
     void setUp() {
         priceRepo = Mockito.mock(MarketPriceRepository.class);
         queryRepo = Mockito.mock(IndustryQueryRepository.class);
-        esiService = Mockito.mock(EsiService.class);
         service = new IndustrySyncService(
                 Mockito.mock(CharacterRepository.class),
                 Mockito.mock(AuthService.class),
-                esiService,
+                Mockito.mock(EsiService.class),
                 Mockito.mock(IndustryJobRepository.class),
                 Mockito.mock(CharacterBlueprintRepository.class),
                 priceRepo,
@@ -64,6 +71,10 @@ class IndustryPreisAusfallTest {
                 queryRepo);
 
         when(queryRepo.priceRelevantTypeIds()).thenReturn(List.of(TRITANIUM));
+    }
+
+    private static MarketSnapshot abzug(Map<Long, StationPrice> preise) {
+        return new MarketSnapshot(preise, JITA_44, Instant.now());
     }
 
     /** Der Preis von gestern, der schon in der Tabelle steht. */
@@ -89,9 +100,7 @@ class IndustryPreisAusfallTest {
         MarketPrice alt = bestehend();
         // Der beobachtete Ausfall: die Quelle antwortet, aber jede Zahl ist 0 -
         // bereinigt bleibt davon nichts übrig.
-        when(esiService.getFuzzworkPrices(anyList())).thenReturn(Map.of());
-
-        int geschrieben = service.syncIndustryPrices();
+        int geschrieben = service.syncIndustryPrices(abzug(Map.of()));
 
         // Nichts geschrieben, alter Wert unangetastet. Ohne diese Regel landete
         // die Null in der Tabelle: die frühere Verteidigung prüfte nur, ob die
@@ -106,11 +115,9 @@ class IndustryPreisAusfallTest {
     @DisplayName("schreibt einen echten Preis weiterhin")
     void echterPreisWirdGeschrieben() {
         MarketPrice alt = bestehend();
-        when(esiService.getFuzzworkPrices(anyList())).thenReturn(Map.of(
-                String.valueOf(TRITANIUM),
-                new FuzzworkPrice(new FuzzworkBuy(4.10), new FuzzworkSell(4.25))));
 
-        int geschrieben = service.syncIndustryPrices();
+        int geschrieben = service.syncIndustryPrices(
+                abzug(Map.of(TRITANIUM, new StationPrice(4.10, 4.25))));
 
         // Die Regel darf nur die Null fangen. Fängt sie mehr, friert der
         // Abgleich ein und niemand merkt es - derselbe Schaden, andere Richtung.
@@ -126,11 +133,7 @@ class IndustryPreisAusfallTest {
         MarketPrice alt = bestehend();
         // Niemand bietet mehr, aber es gibt ein Verkaufsangebot. Das ist eine
         // echte Auskunft und kommt bei dünn gehandelten Typen laufend vor.
-        when(esiService.getFuzzworkPrices(anyList())).thenReturn(Map.of(
-                String.valueOf(TRITANIUM),
-                new FuzzworkPrice(null, new FuzzworkSell(4.25))));
-
-        service.syncIndustryPrices();
+        service.syncIndustryPrices(abzug(Map.of(TRITANIUM, new StationPrice(null, 4.25))));
 
         // Der Verkaufspreis ist neu, das Kaufgebot bleibt das alte - statt auf
         // 0 zu fallen und damit jeden Bestand wertlos zu rechnen.
@@ -143,13 +146,9 @@ class IndustryPreisAusfallTest {
     void keineNullzeileFuerNeueTypen() {
         when(queryRepo.priceRelevantTypeIds()).thenReturn(List.of(TRITANIUM, PYERITE));
         when(priceRepo.findById(any())).thenReturn(Optional.empty());
-        // Nur Pyerit hat einen Preis; Tritanium fehlt in der Antwort, weil die
-        // Quelle dafür nur eine 0 hergab.
-        when(esiService.getFuzzworkPrices(anyList())).thenReturn(Map.of(
-                String.valueOf(PYERITE),
-                new FuzzworkPrice(new FuzzworkBuy(12.0), new FuzzworkSell(12.5))));
-
-        service.syncIndustryPrices();
+        // Nur Pyerit hat einen Preis; Tritanium fehlt im Abzug, weil es an der
+        // Station keine Order dafür gibt.
+        service.syncIndustryPrices(abzug(Map.of(PYERITE, new StationPrice(12.0, 12.5))));
 
         // Ohne diese Regel entstünde für Tritanium eine Zeile mit jita_sell = 0.
         // Die ist schlimmer als gar keine: "kein Preis vorhanden" ist eine

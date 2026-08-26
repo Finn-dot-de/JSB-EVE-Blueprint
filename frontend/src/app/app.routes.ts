@@ -85,4 +85,9 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/groups-board/groups-board.component').then(m => m.GroupsBoardComponent)
   },
+  {
+    path: 'academy',
+    canActivate: [authGuard],
+    loadComponent: () => import('./core/components/academy/academy.component').then(m => m.AcademyComponent)
+  },
 ];

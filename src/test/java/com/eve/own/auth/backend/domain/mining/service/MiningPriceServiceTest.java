@@ -10,10 +10,12 @@ import static org.mockito.Mockito.when;
 
 import com.eve.own.auth.backend.domain.eve.entity.InvType;
 import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
+import com.eve.own.auth.backend.domain.market.MarketSnapshot;
+import com.eve.own.auth.backend.domain.market.StationPrice;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
-import com.eve.own.auth.backend.esi.EsiService;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +29,23 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+/**
+ * Abgleich der Jita-Referenzpreise.
+ *
+ * <p><b>Was sich gegenueber der Fuzzwork-Fassung geaendert hat:</b> die Preise
+ * werden nicht mehr geholt, sondern gereicht. Alle Aussagen ueber die
+ * <em>Preiswahl</em> und die <em>Rueckfallebene</em> gelten unveraendert und
+ * stehen deshalb Wort fuer Wort noch hier. Eine Aussage gilt nicht mehr: "holt
+ * die Preise gar nicht erst, wenn keine Steuersaetze hinterlegt sind" - es gibt
+ * keinen Abruf mehr, den man unterlassen koennte. Uebrig bleibt davon der Teil,
+ * der weiterhin zaehlt: dann wird auch nichts gespeichert.</p>
+ *
+ * <p>Eine Aussage hat sich geschaerft: der Fall "Kaufgebot 0, also
+ * Verkaufsangebot nehmen" kann so gar nicht mehr auftreten, weil der Abzug
+ * Nullen bereits an der Quelle streicht. Die Regel dahinter - kein Kaufgebot,
+ * also das Verkaufsangebot - gilt weiter und wird jetzt mit {@code null}
+ * geprueft statt mit 0. Das ist genau der Unterschied, um den es geht.</p>
+ */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("Abgleich der Jita-Referenzpreise")
@@ -34,8 +53,8 @@ class MiningPriceServiceTest {
 
     private static final Long VELDSPAR = 1230L;
     private static final Long COMPRESSED_VELDSPAR = 28430L;
+    private static final long JITA_44 = 60_003_760L;
 
-    @Mock private EsiService esiService;
     @Mock private MiningTaxRateRepository taxRateRepo;
     @Mock private InvTypeRepository invTypeRepo;
 
@@ -43,7 +62,7 @@ class MiningPriceServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new MiningPriceService(esiService, taxRateRepo, invTypeRepo);
+        service = new MiningPriceService(taxRateRepo, invTypeRepo);
         when(invTypeRepo.findByTypeNameIgnoreCase(anyString())).thenReturn(Optional.empty());
     }
 
@@ -55,9 +74,12 @@ class MiningPriceServiceTest {
         return rate;
     }
 
-    private static EsiService.FuzzworkPrice price(Double buyMax, Double sellMin) {
-        return new EsiService.FuzzworkPrice(
-                new EsiService.FuzzworkBuy(buyMax), new EsiService.FuzzworkSell(sellMin));
+    private static MarketSnapshot abzug(Map<Long, StationPrice> preise) {
+        return new MarketSnapshot(preise, JITA_44, Instant.now());
+    }
+
+    private static MarketSnapshot leererAbzug() {
+        return abzug(Map.of());
     }
 
     @Nested
@@ -69,11 +91,12 @@ class MiningPriceServiceTest {
         void prefersBuyOrder() {
             MiningTaxRate veldspar = rate(VELDSPAR, "Veldspar");
             when(taxRateRepo.findAll()).thenReturn(List.of(veldspar));
-            when(esiService.getFuzzworkPrices(anyList()))
-                    .thenReturn(Map.of(String.valueOf(VELDSPAR), price(12.0, 20.0)));
 
-            service.refreshJitaPrices();
+            service.refreshJitaPrices(abzug(Map.of(VELDSPAR, new StationPrice(12.0, 20.0))));
 
+            // Das Kaufgebot ist der Betrag, den ein Spieler sofort erloesen
+            // kann. Ohne diese Reihenfolge waere die Abgabe auf einen Preis
+            // bemessen, den niemand zahlt.
             assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("12.00");
         }
 
@@ -82,10 +105,11 @@ class MiningPriceServiceTest {
         void fallsBackToSellOrder() {
             MiningTaxRate veldspar = rate(VELDSPAR, "Veldspar");
             when(taxRateRepo.findAll()).thenReturn(List.of(veldspar));
-            when(esiService.getFuzzworkPrices(anyList()))
-                    .thenReturn(Map.of(String.valueOf(VELDSPAR), price(0.0, 20.0)));
 
-            service.refreshJitaPrices();
+            // Kein Kaufgebot, also null - nicht 0. Der Abzug streicht Nullen
+            // schon an der Quelle; genau das ist der Unterschied zwischen
+            // "niemand bietet" und "ist nichts wert".
+            service.refreshJitaPrices(abzug(Map.of(VELDSPAR, new StationPrice(null, 20.0))));
 
             assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("20.00");
         }
@@ -96,11 +120,11 @@ class MiningPriceServiceTest {
             MiningTaxRate veldspar = rate(VELDSPAR, "Veldspar");
             veldspar.setCurrentJitaBuy(new BigDecimal("99.00"));
             when(taxRateRepo.findAll()).thenReturn(List.of(veldspar));
-            when(esiService.getFuzzworkPrices(anyList()))
-                    .thenReturn(Map.of(String.valueOf(VELDSPAR), price(null, null)));
 
-            service.refreshJitaPrices();
+            service.refreshJitaPrices(leererAbzug());
 
+            // Ohne diese Zeile faellt der Steuersatz auf 0 - und damit waere
+            // jede Menge Erz steuerfrei, ohne dass es jemandem auffiele.
             assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("99.00");
         }
     }
@@ -114,17 +138,15 @@ class MiningPriceServiceTest {
         void usesCompressedPrice() {
             MiningTaxRate veldspar = rate(VELDSPAR, "Veldspar");
             when(taxRateRepo.findAll()).thenReturn(List.of(veldspar));
-            when(esiService.getFuzzworkPrices(List.of(VELDSPAR)))
-                    .thenReturn(Map.of(String.valueOf(VELDSPAR), price(0.0, 0.0)));
 
             InvType compressed = new InvType();
             compressed.setTypeId(COMPRESSED_VELDSPAR);
             when(invTypeRepo.findByTypeNameIgnoreCase("Compressed Veldspar"))
                     .thenReturn(Optional.of(compressed));
-            when(esiService.getFuzzworkPrices(List.of(COMPRESSED_VELDSPAR)))
-                    .thenReturn(Map.of(String.valueOf(COMPRESSED_VELDSPAR), price(55.0, null)));
 
-            service.refreshJitaPrices();
+            // Veldspar selbst wird in Jita nicht gehandelt und fehlt deshalb im
+            // Abzug; die komprimierte Form steht drin.
+            service.refreshJitaPrices(abzug(Map.of(COMPRESSED_VELDSPAR, new StationPrice(55.0, null))));
 
             assertThat(veldspar.getCurrentJitaBuy()).isEqualByComparingTo("55.00");
         }
@@ -134,17 +156,16 @@ class MiningPriceServiceTest {
         void findsBatchCompressedVariant() {
             MiningTaxRate ice = rate(VELDSPAR, "White Glaze");
             when(taxRateRepo.findAll()).thenReturn(List.of(ice));
-            when(esiService.getFuzzworkPrices(List.of(VELDSPAR))).thenReturn(Map.of());
 
             InvType compressed = new InvType();
             compressed.setTypeId(COMPRESSED_VELDSPAR);
             when(invTypeRepo.findByTypeNameIgnoreCase("Batch Compressed White Glaze"))
                     .thenReturn(Optional.of(compressed));
-            when(esiService.getFuzzworkPrices(List.of(COMPRESSED_VELDSPAR)))
-                    .thenReturn(Map.of(String.valueOf(COMPRESSED_VELDSPAR), price(77.0, null)));
 
-            service.refreshJitaPrices();
+            service.refreshJitaPrices(abzug(Map.of(COMPRESSED_VELDSPAR, new StationPrice(77.0, null))));
 
+            // Ohne den zweiten Praefix bekaeme das ganze Eis keinen Preis - die
+            // SDE fuehrt es nur unter "Batch Compressed".
             assertThat(ice.getCurrentJitaBuy()).isEqualByComparingTo("77.00");
         }
 
@@ -153,9 +174,8 @@ class MiningPriceServiceTest {
         void survivesMissingCompressedVariant() {
             MiningTaxRate exotic = rate(VELDSPAR, "Exotisches Erz");
             when(taxRateRepo.findAll()).thenReturn(List.of(exotic));
-            when(esiService.getFuzzworkPrices(anyList())).thenReturn(Map.of());
 
-            service.refreshJitaPrices();
+            service.refreshJitaPrices(leererAbzug());
 
             assertThat(exotic.getCurrentJitaBuy()).isZero();
             verify(taxRateRepo).saveAll(anyList());
@@ -166,10 +186,11 @@ class MiningPriceServiceTest {
         void skipsRateWithoutTypeName() {
             MiningTaxRate nameless = rate(VELDSPAR, null);
             when(taxRateRepo.findAll()).thenReturn(List.of(nameless));
-            when(esiService.getFuzzworkPrices(anyList())).thenReturn(Map.of());
 
-            service.refreshJitaPrices();
+            service.refreshJitaPrices(leererAbzug());
 
+            // Ohne die Namenspruefung sucht die Rueckfallebene nach
+            // "Compressed null" - eine sinnlose Abfrage je Steuersatz.
             verify(invTypeRepo, never()).findByTypeNameIgnoreCase(any());
         }
     }
@@ -179,9 +200,8 @@ class MiningPriceServiceTest {
     void doesNothingWithoutRates() {
         when(taxRateRepo.findAll()).thenReturn(List.of());
 
-        service.refreshJitaPrices();
+        service.refreshJitaPrices(leererAbzug());
 
-        verify(esiService, never()).getFuzzworkPrices(anyList());
         verify(taxRateRepo, never()).saveAll(anyList());
     }
 
@@ -189,9 +209,8 @@ class MiningPriceServiceTest {
     @DisplayName("speichert alle Saetze, auch die unveraenderten")
     void savesAllRates() {
         when(taxRateRepo.findAll()).thenReturn(List.of(rate(VELDSPAR, "Veldspar")));
-        when(esiService.getFuzzworkPrices(anyList())).thenReturn(null);
 
-        service.refreshJitaPrices();
+        service.refreshJitaPrices(leererAbzug());
 
         verify(taxRateRepo).saveAll(anyList());
     }

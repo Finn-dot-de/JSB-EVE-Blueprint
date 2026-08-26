@@ -38,6 +38,17 @@ public class EsiRequestExecutor {
 
     private static final String HEADER_PAGES = "X-Pages";
 
+    /**
+     * Das gruppenbasierte Kontingent, das CCP auf neueren Routen fuehrt.
+     * Gemessen an {@code /markets/{region}/orders/}: {@code X-Ratelimit-Group: market-order},
+     * {@code X-Ratelimit-Limit: 12000/15m}, und {@code X-Ratelimit-Used} steigt
+     * um 2 je 2xx, um 1 je 304 und um 5 je 4xx.
+     */
+    private static final String HEADER_RATE_LIMIT_REMAINING = "X-Ratelimit-Remaining";
+
+    /** Das aeltere Fehlerkontingent. Nicht jede Route schickt es mit. */
+    private static final String HEADER_ERROR_LIMIT_REMAIN = "X-Esi-Error-Limit-Remain";
+
     private final RestClient restClient;
     private final EsiEtagStore etagStore;
     private final ObjectMapper objectMapper;
@@ -116,6 +127,52 @@ public class EsiRequestExecutor {
         return everythingUnchanged
                 ? EsiResponse.unchanged(collected, null, null)
                 : EsiResponse.changed(collected, null, null);
+    }
+
+    // ==================================================================
+    // Einzelne Seite, bewusst ohne ETag-Cache
+    // ==================================================================
+
+    /**
+     * Eine Antwortseite samt der Kopfzeilen, auf die der Aufrufer reagieren muss.
+     *
+     * @param items                 die deserialisierten Eintraege, {@code null} wenn der Body unlesbar war
+     * @param totalPages            {@code X-Pages}, 1 wenn der Endpunkt nicht paginiert
+     * @param rateLimitRemaining    {@code X-Ratelimit-Remaining} oder {@code null}, wenn die Route
+     *                              nicht im gruppenbasierten Verfahren laeuft
+     * @param errorLimitRemaining   {@code X-Esi-Error-Limit-Remain} oder {@code null}
+     */
+    public record UncachedPage<T>(T[] items, int totalPages,
+                                  Integer rateLimitRemaining, Integer errorLimitRemaining) {}
+
+    /**
+     * Holt genau eine Seite - ohne konditionalen Request und ohne den Body zu speichern.
+     *
+     * <p><b>Warum ohne ETag-Cache.</b> {@link #getAllPages} legt jeden Body in
+     * {@code esi_etags.payload} ab. Fuer die ueblichen Endpunkte ist das richtig;
+     * fuer den Marktabzug waere es ruinoes. Gemessen am 26.08.: eine Seite von
+     * {@code /markets/10000002/orders/} ist 237.388 Bytes gross, es sind 411
+     * Seiten - also rund 95 MB, die stuendlich in eine {@code text}-Spalte
+     * geschrieben und wieder gelesen wuerden. Dazu kaeme nichts: der Endpunkt
+     * puffert genau 300 Sekunden ({@code Expires} minus {@code Last-Modified},
+     * in jeder Stichprobe exakt 300), der Abzug laeuft stuendlich - beim
+     * naechsten Lauf ist jede Seite laengst neu, ein 304 kommt praktisch nie.
+     * Und 237.388 Bytes liegen nur 9 % unter der Cache-Obergrenze von 262.144
+     * ({@code esi.etag.max-payload-bytes}); waechst der Markt, kippen Seiten
+     * unbemerkt in den Zweig "zu gross" und werden jedes Mal doppelt geholt.</p>
+     *
+     * <p>Fehler werden hier <em>nicht</em> geschluckt. Ein 420 (Fehler-Budget
+     * voll) oder ein 5xx muss den Aufrufer erreichen, damit er abbrechen kann,
+     * statt mit einem halben Ergebnis weiterzuarbeiten.</p>
+     */
+    public <T> UncachedPage<T> getUncachedPage(String uriTemplate, Object[] uriVariables, Class<T[]> arrayType) {
+        ResponseEntity<String> response = send(uriTemplate, uriVariables, null, null);
+        HttpHeaders headers = response.getHeaders();
+        return new UncachedPage<>(
+                deserialize(response.getBody(), arrayType),
+                pagesOf(headers, null),
+                intHeader(headers, HEADER_RATE_LIMIT_REMAINING),
+                intHeader(headers, HEADER_ERROR_LIMIT_REMAIN));
     }
 
     // ==================================================================
@@ -226,6 +283,20 @@ public class EsiRequestExecutor {
             }
         }
         return cached != null && cached.getPageCount() != null ? cached.getPageCount() : 1;
+    }
+
+    /** Eine Zahl aus einer Kopfzeile, oder {@code null} wenn sie fehlt oder Unsinn traegt. */
+    private Integer intHeader(HttpHeaders headers, String name) {
+        String header = headers.getFirst(name);
+        if (header == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(header.trim());
+        } catch (NumberFormatException e) {
+            log.debug("Unlesbare Kopfzeile {}: {}", name, header);
+            return null;
+        }
     }
 
     private Instant readExpires(HttpHeaders headers) {

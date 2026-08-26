@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,10 +14,18 @@ import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
 import com.eve.own.auth.backend.domain.character.service.CharacterSyncService;
 import com.eve.own.auth.backend.domain.character.service.CorporationAssetSyncService;
-import com.eve.own.auth.backend.domain.mining.scheduler.MiningPriceScheduler;
+import com.eve.own.auth.backend.domain.assets.scheduler.AssetPriceScheduler;
+import com.eve.own.auth.backend.domain.industry.service.IndustrySyncService;
+import com.eve.own.auth.backend.domain.market.MarketPriceScheduler;
+import com.eve.own.auth.backend.domain.market.MarketSnapshot;
+import com.eve.own.auth.backend.domain.market.MarketSnapshotService;
+import com.eve.own.auth.backend.domain.market.MarketSnapshotUnavailableException;
+import com.eve.own.auth.backend.domain.market.StationPrice;
 import com.eve.own.auth.backend.domain.mining.service.MiningPriceService;
 import com.eve.own.auth.backend.esi.EsiHttpStatus;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -173,28 +182,72 @@ class SchedulerTest {
         }
     }
 
+    /**
+     * Der Zeitgeber der Jita-Preise. Frueher gab es hier drei - einen fuer die
+     * Asset-Preise, einen fuer die Industriepreise, einen fuer die
+     * Mining-Steuersaetze, jeder mit eigenem Weg ans Netz. Seit der Umstellung
+     * auf den Regionsabzug ist es einer: 411 Seiten, die dreimal zu holen
+     * niemandem genuetzt haette.
+     */
     @Nested
     @DisplayName("Jita-Preise")
-    class MiningPrices {
+    class MarketPrices {
 
-        @Mock private MiningPriceService priceService;
+        @Mock private MarketSnapshotService snapshotService;
+        @Mock private AssetPriceScheduler assetPrices;
+        @Mock private IndustrySyncService industrySync;
+        @Mock private MiningPriceService miningPrices;
+
+        private MarketPriceScheduler scheduler() {
+            return new MarketPriceScheduler(snapshotService, assetPrices, industrySync, miningPrices);
+        }
+
+        private MarketSnapshot abzug() {
+            return new MarketSnapshot(Map.of(34L, new StationPrice(3.77, 3.85)),
+                    60_003_760L, Instant.now());
+        }
 
         @Test
         @DisplayName("stoesst den Preisabgleich an")
         void triggersPriceRefresh() {
-            new MiningPriceScheduler(priceService).refreshJitaPrices();
+            MarketSnapshot abzug = abzug();
+            when(snapshotService.pull()).thenReturn(abzug);
 
-            verify(priceService).refreshJitaPrices();
+            scheduler().refreshMarketPrices();
+
+            // Ein Abzug, drei Verbraucher - und alle bekommen DENSELBEN. Holte
+            // sich hier noch jemand seine Preise selbst, waeren es 1.233 statt
+            // 411 Seiten je Stunde.
+            verify(snapshotService, times(1)).pull();
+            verify(assetPrices).updateAssetPrices(abzug);
+            verify(industrySync).syncIndustryPrices(abzug);
+            verify(miningPrices).refreshJitaPrices(abzug);
         }
 
         @Test
         @DisplayName("faengt einen Fehlschlag ab, damit der Zeitgeber weiterlaeuft")
         void survivesFailure() {
-            doThrow(new RuntimeException("Markt weg")).when(priceService).refreshJitaPrices();
+            when(snapshotService.pull()).thenThrow(new RuntimeException("Markt weg"));
 
-            new MiningPriceScheduler(priceService).refreshJitaPrices();
+            scheduler().refreshMarketPrices();
 
-            verify(priceService).refreshJitaPrices();
+            verify(snapshotService).pull();
+        }
+
+        @Test
+        @DisplayName("schreibt nichts, wenn der Abzug abgebrochen ist")
+        void abgebrochenerAbzugSchreibtNichts() {
+            when(snapshotService.pull())
+                    .thenThrow(new MarketSnapshotUnavailableException("Seite 250 von 411 nicht abrufbar"));
+
+            scheduler().refreshMarketPrices();
+
+            // Ohne diese Zeile schriebe ein halber Markt die alten Preise
+            // ueber: die fehlenden Seiten saehen aus wie Typen ohne Angebot.
+            // Ein halber Markt ist schlimmer als ein alter.
+            verify(assetPrices, never()).updateAssetPrices(any());
+            verify(industrySync, never()).syncIndustryPrices(any());
+            verify(miningPrices, never()).refreshJitaPrices(any());
         }
     }
 }

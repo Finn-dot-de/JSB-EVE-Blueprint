@@ -11,8 +11,12 @@ import java.time.Instant;
 
 /**
  * Jita-Preis-Cache fuer ALLE Typen, die irgendwo in den Assets auftauchen.
- * Wird stuendlich vom {@link com.eve.own.auth.backend.domain.assets.scheduler.AssetPriceScheduler}
- * ueber die Fuzzwork-Aggregates befuellt.
+ *
+ * <p>{@code jita_buy} und {@code jita_sell} stammen aus dem stuendlichen
+ * Marktabzug ({@link com.eve.own.auth.backend.domain.market.MarketPriceScheduler}):
+ * ein Durchlauf durch das Orderbuch der Region, gefiltert auf die Zielstation.
+ * Sie duerfen {@code null} sein und sind niemals 0 - ein Typ ohne Order an der
+ * Station hat keinen Preis, nicht den Preis null.</p>
  */
 @Entity
 @Table(name = "market_prices")

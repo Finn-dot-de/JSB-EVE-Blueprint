@@ -38,6 +38,23 @@ public final class AccessRules {
     public static final String FLEET_STAFF_OR_LEADERSHIP =
             "hasAnyRole('ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_IT_ADMIN', 'ROLE_A38')";
 
+    /**
+     * Wer Lehrplaene der Academy schreibt, aendert und loescht.
+     *
+     * <p>Es gibt keine bestehende Regel mit genau diesen fuenf Rollen:
+     * {@link #FLEET_STAFF_OR_LEADERSHIP} laesst {@code ROLE_69} aus,
+     * {@link #FLEET_VIEWERS} nimmt {@code ROLE_1337} zusaetzlich hinein. Eine
+     * der beiden zu verbiegen haette den Kreis eines fremden Endpunkts
+     * mitverschoben - deshalb eine eigene Konstante und keine neue Rolle.</p>
+     *
+     * <p>Derselbe Kreis darf auch die Namen der Interessenten sehen, dort
+     * zusaetzlich zu den am Thema hinterlegten Ausbilderrollen. Weil dieser
+     * zweite Teil aus geladenen Daten folgt, steht die eigentliche Pruefung im
+     * {@code AcademyService}; diese Konstante deckt nur den festen Anteil ab.</p>
+     */
+    public static final String ACADEMY_AUTHORS =
+            "hasAnyRole('ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_IT_ADMIN', 'ROLE_A38', 'ROLE_69')";
+
     /** Der weiteste Kreis mit Einblick in Flottendaten. */
     public static final String FLEET_VIEWERS =
             "hasAnyRole('ROLE_69', 'ROLE_1337', 'ROLE_A38', 'ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN')";

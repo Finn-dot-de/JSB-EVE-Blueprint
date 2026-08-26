@@ -1,0 +1,526 @@
+<div class="academy">
+  <div class="page-head">
+    <h2><i class="fa-solid fa-graduation-cap"></i> Academy</h2>
+    <p class="lead">
+      Sag, was du lernen willst und wann du kannst. Ab drei Leuten lohnt sich ein Termin - und
+      genau das steht dann auf der Karte. Alle Zeiten sind EVE-Zeit (UTC).
+    </p>
+  </div>
+
+  <!-- Reiter: String-Union im Signal, Knopfleiste, @if - das projektweite Muster.
+       Die Bedingung steht zweimal, am Knopf und am Inhaltsblock. -->
+  <div class="tabs">
+    <button class="tab-btn" [class.active]="activeTab() === 'TOPICS'" (click)="setTab('TOPICS')">
+      <i class="fa-solid fa-list"></i> Themen
+    </button>
+    @if (canManage()) {
+      <button class="tab-btn" [class.active]="activeTab() === 'MANAGE'" (click)="setTab('MANAGE')">
+        <i class="fa-solid fa-pen-to-square"></i> Verwaltung
+        @if (adminTopics().length > 0) {
+          <span class="tab-badge">{{ adminTopics().length }}</span>
+        }
+      </button>
+    }
+  </div>
+
+  <!-- ========================================================
+       REITER: Themen
+       ======================================================== -->
+  @if (activeTab() === 'TOPICS') {
+    <!-- "Mein Interesse" ist ein Filter und kein dritter Reiter: es sind
+         dieselben Karten, und eine zweite Liste derselben Karten wäre
+         Verschwendung. -->
+    <div class="filterleiste">
+      <button
+        type="button"
+        class="chip"
+        [class.aktiv]="!nurMeine()"
+        [attr.aria-pressed]="!nurMeine()"
+        (click)="nurMeine.set(false)"
+      >
+        Alle {{ topics().length }}
+      </button>
+      <button
+        type="button"
+        class="chip"
+        [class.aktiv]="nurMeine()"
+        [attr.aria-pressed]="nurMeine()"
+        (click)="nurMeine.set(true)"
+      >
+        Mein Interesse {{ meineAnzahl() }}
+      </button>
+    </div>
+
+    @if (loading()) {
+      <div class="loading-container"><div class="loading-spinner"></div></div>
+    } @else if (sichtbareThemen().length === 0) {
+      <div class="empty-hint">
+        <i class="fa-solid fa-circle-info"></i>
+        @if (nurMeine()) {
+          Du hast noch nirgends Interesse bekundet. Klapp ein Thema auf und sag, wann du kannst.
+        } @else {
+          Noch keine Themen. Die Ausbilder legen sie unter "Verwaltung" an.
+        }
+      </div>
+    } @else {
+      @for (topic of sichtbareThemen(); track topic.id) {
+        <div
+          class="surface-panel topic-card"
+          [class.is-expanded]="isExpanded(topic)"
+          [class.ist-meins]="cardState(topic) === 'MINE'"
+          [class.ist-inaktiv]="cardState(topic) === 'INACTIVE'"
+        >
+          <div
+            class="clickable-header"
+            role="button"
+            tabindex="0"
+            [attr.aria-expanded]="isExpanded(topic)"
+            (click)="toggleTopic(topic)"
+            (keydown.enter)="toggleTopic(topic)"
+            (keydown.space)="$event.preventDefault(); toggleTopic(topic)"
+          >
+            <div class="topic-titel">
+              <h3>
+                {{ topic.title }}
+                @switch (cardState(topic)) {
+                  @case ('MINE') { <span class="chip chip-still">du bist dabei</span> }
+                  @case ('INACTIVE') { <span class="chip chip-still">inaktiv</span> }
+                }
+              </h3>
+              <p class="topic-summary">{{ topic.summary }}</p>
+            </div>
+            <span class="tab-badge zaehler" [attr.aria-label]="'Interessierte'">
+              {{ topic.interestCount }}
+            </span>
+            <i
+              class="fa-solid fa-chevron-down expand-icon"
+              [class.rotated]="isExpanded(topic)"
+            ></i>
+          </div>
+
+          <!-- Der Satz ist der eigentliche Ertrag der Seite: ein Balkenbild muss
+               gelesen werden, ein Satz wird verstanden. Deshalb steht er als
+               Überschrift der Nachfrage und nicht als Zahl am Rand. -->
+          <p class="nachfrage">{{ nachfrageSatz(topic) }}</p>
+
+          @if (hatVerteilung(topic)) {
+            <div class="verteilung">
+              <!-- Immer alle sieben Tage, auch die mit null: nur die belegten zu
+                   zeigen macht zwei Karten unvergleichbar, und das Auge soll das
+                   Muster über Karten hinweg erkennen. -->
+              <div class="tagesstreifen">
+                @for (tag of WOCHENTAGE; track tag.key) {
+                  <div class="tagesspalte" [title]="tag.lang">
+                    <div class="saeule">
+                      <span
+                        class="saeulen-fuellung"
+                        [style.height.%]="anteil(topic, topic.weekdayCounts, tag.key)"
+                      ></span>
+                    </div>
+                    <span class="tagesname">{{ tag.kurz }}</span>
+                    <span class="tageszahl">{{ zaehler(topic.weekdayCounts, tag.key) }}</span>
+                  </div>
+                }
+              </div>
+
+              <div class="fensterliste">
+                @for (fenster of ZEITFENSTER; track fenster.key) {
+                  <div class="fensterzeile">
+                    <span class="fenstername">{{ fenster.lang }}</span>
+                    <span class="fortschritt">
+                      <span
+                        class="fortschritt-fuellung"
+                        [style.width.%]="anteil(topic, topic.windowCounts, fenster.key)"
+                      ></span>
+                    </span>
+                    <span class="fensterzahl">{{ zaehler(topic.windowCounts, fenster.key) }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          @if (topic.hasMyInterest) {
+            <p class="meine-zeile">
+              <i class="fa-solid fa-circle-check"></i>
+              Du bist dabei:
+              @for (tag of meineTage(topic); track tag) {
+                <span class="chip chip-still">{{ tag }}</span>
+              }
+              @for (fenster of meineFenster(topic); track fenster) {
+                <span class="chip chip-still">{{ fenster }}</span>
+              }
+            </p>
+          }
+
+          @if (isExpanded(topic)) {
+            <div class="expanded-section">
+              @if (loadingDetailFor() === topic.id) {
+                <div class="loading-container small"><div class="loading-spinner"></div></div>
+              } @else if (lehrplan(topic)) {
+                <!-- Dieselbe Komponente wie die Vorschau im Editor. Kein zweiter
+                     Anzeigepfad - der zweite wäre der ohne Prüfung. -->
+                <app-markdown-view [source]="lehrplan(topic)" />
+              } @else {
+                <p class="hinweis leise">
+                  <i class="fa-solid fa-circle-info"></i>
+                  Für dieses Thema steht noch kein Lehrplan.
+                </p>
+              }
+
+              @if (topic.teacherRoleNames.length > 0) {
+                <p class="halten">
+                  Kann gehalten werden von:
+                  @for (rolle of topic.teacherRoleNames; track rolle) {
+                    <span class="chip chip-still">{{ rolle }}</span>
+                  }
+                </p>
+              }
+
+              <!-- ===== Interesse bekunden ===== -->
+              @if (entwurf(); as entwurfWert) {
+                <div class="bekundung">
+                  <h4>Wann kannst du?</h4>
+
+                  <!-- Chips und keine Kästchen: der Nutzer will klicken, nicht
+                       tippen - und ein Chip zeigt seinen Zustand aus zwei Metern
+                       Entfernung. -->
+                  <div class="chip-reihe">
+                    @for (tag of WOCHENTAGE; track tag.key) {
+                      <button
+                        type="button"
+                        class="chip auswahl-chip"
+                        [class.aktiv]="istTagGewaehlt(tag.key)"
+                        [attr.aria-pressed]="istTagGewaehlt(tag.key)"
+                        [title]="tag.lang"
+                        (click)="toggleTag(tag.key)"
+                      >
+                        {{ tag.kurz }}
+                      </button>
+                    }
+                  </div>
+
+                  <div class="chip-reihe">
+                    @for (fenster of ZEITFENSTER; track fenster.key) {
+                      <button
+                        type="button"
+                        class="chip auswahl-chip"
+                        [class.aktiv]="istFensterGewaehlt(fenster.key)"
+                        [attr.aria-pressed]="istFensterGewaehlt(fenster.key)"
+                        (click)="toggleFenster(fenster.key)"
+                      >
+                        {{ fenster.lang }}
+                      </button>
+                    }
+                  </div>
+
+                  <label class="feld">
+                    <span>Notiz, optional</span>
+                    <input
+                      type="text"
+                      [ngModel]="entwurfWert.note ?? ''"
+                      (ngModelChange)="updateEntwurf({ note: $event })"
+                      [maxlength]="MAX_NOTIZ"
+                      placeholder="z.B. hab noch nie gejammt"
+                      autocomplete="off"
+                    />
+                  </label>
+
+                  <div class="bekundung-knoepfe">
+                    <button
+                      class="btn-primary"
+                      [disabled]="savingInterest()"
+                      (click)="saveInterest(topic)"
+                    >
+                      <i class="fa-solid fa-hand"></i>
+                      {{ topic.hasMyInterest ? 'Interesse ändern' : 'Interesse bekunden' }}
+                    </button>
+                    <!-- Zurücknehmen ist ein sichtbarer eigener Knopf und kein
+                         verstecktes Umschalten: wer aussteigen will, soll das
+                         sehen und nicht raten, ob nochmal Klicken es rückgängig
+                         macht. -->
+                    @if (topic.hasMyInterest) {
+                      <button class="btn-secondary" (click)="withdrawInterest(topic)">
+                        <i class="fa-solid fa-xmark"></i> Zurückziehen
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- ===== Nur für den Sichtkreis: die Namen ===== -->
+              @if (topic.canViewInterest) {
+                <div class="namensliste">
+                  <div class="section-divider">Interessiert ({{ topic.interestCount }})</div>
+
+                  @if (loadingInterestedFor() === topic.id) {
+                    <div class="loading-container small"><div class="loading-spinner"></div></div>
+                  } @else if (interessenten(topic).length === 0) {
+                    <div class="empty-hint">
+                      <i class="fa-solid fa-circle-info"></i>
+                      Noch niemand. Ein Anstoß in Discord wirkt hier mehr als jede Zahl.
+                    </div>
+                  } @else {
+                    <div class="surface-panel table-panel">
+                      <table class="eve-table">
+                        <thead>
+                          <tr>
+                            <th>Charakter</th>
+                            <th>Tage</th>
+                            <th>Zeitfenster</th>
+                            <th>Notiz</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (person of interessenten(topic); track person.accountId) {
+                            <tr>
+                              <td>{{ person.characterName }}</td>
+                              <td>
+                                @for (tag of person.weekdays; track tag) {
+                                  <span class="chip chip-still">{{ label(WOCHENTAGE, tag) }}</span>
+                                }
+                              </td>
+                              <td>
+                                @for (fenster of person.timeWindows; track fenster) {
+                                  <span class="chip chip-still">{{
+                                    label(ZEITFENSTER, fenster)
+                                  }}</span>
+                                }
+                              </td>
+                              <td class="notiz">{{ person.note }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    }
+  }
+
+  <!-- ========================================================
+       REITER: Verwaltung - dieselbe Bedingung wie am Knopf
+       ======================================================== -->
+  @if (activeTab() === 'MANAGE' && canManage()) {
+    <div class="toolbar">
+      <button class="btn-primary" (click)="newTopic()">
+        <i class="fa-solid fa-plus"></i> Neues Thema
+      </button>
+    </div>
+
+    @if (loadingAdmin()) {
+      <div class="loading-container"><div class="loading-spinner"></div></div>
+    } @else if (adminTopics().length === 0) {
+      <div class="empty-hint">
+        <i class="fa-solid fa-circle-info"></i>
+        Noch kein Thema angelegt. Acht bis zehn Themen vor dem Freischalten sparen dir das tote
+        Board - niemand ist gern der Erste auf einer leeren Seite.
+      </div>
+    } @else {
+      <div class="surface-panel table-panel">
+        <table class="eve-table">
+          <thead>
+            <tr>
+              <th>Thema</th>
+              <th>Kurzzeile</th>
+              <th>Halten dürfen</th>
+              <th class="rechts">Interesse</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (topic of adminTopics(); track topic.id) {
+              <tr [class.zeile-inaktiv]="!topic.active">
+                <td>{{ topic.title }}</td>
+                <td class="kurzzeile">{{ topic.summary }}</td>
+                <td>
+                  @if (topic.teacherRoleNames.length === 0) {
+                    <span class="leise">nur der Autorenkreis</span>
+                  } @else {
+                    @for (rolle of topic.teacherRoleNames; track rolle) {
+                      <span class="chip chip-still">{{ rolle }}</span>
+                    }
+                  }
+                </td>
+                <td class="rechts">{{ topic.interestCount }}</td>
+                <td>
+                  @if (topic.active) {
+                    <span class="chip chip-still">aktiv</span>
+                  } @else {
+                    <span class="chip chip-still">inaktiv</span>
+                  }
+                </td>
+                <td class="rechts">
+                  <button class="btn-secondary" (click)="editTopic(topic)">
+                    <i class="fa-solid fa-pen"></i> Bearbeiten
+                  </button>
+                  <button class="btn-secondary gefahr" (click)="deleteTopic(topic)">
+                    <i class="fa-solid fa-trash"></i> Löschen
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>
+
+<!-- ========================================================
+     MODAL: Thema anlegen und bearbeiten
+     ======================================================== -->
+@if (editingTopic(); as topic) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="surface-panel modal-content" (click)="$event.stopPropagation()">
+      <h3 class="modal-title">{{ topic.id ? 'Thema bearbeiten' : 'Neues Thema' }}</h3>
+
+      <div class="form-grid">
+        <label class="feld feld-breit">
+          <span>Titel <em class="zaehlwerk">{{ topic.title.length }}/{{ MAX_TITEL }}</em></span>
+          <input
+            type="text"
+            [ngModel]="topic.title"
+            (ngModelChange)="updateTopic({ title: $event })"
+            [maxlength]="MAX_TITEL"
+            placeholder="z.B. EWar Grundlagen"
+            autocomplete="off"
+          />
+        </label>
+
+        <label class="feld feld-breit">
+          <span>
+            Kurzzeile
+            <em class="zaehlwerk" [class.knapp]="istKnapp(topic.summary.length, MAX_KURZZEILE)">
+              {{ topic.summary.length }}/{{ MAX_KURZZEILE }}
+            </em>
+          </span>
+          <input
+            type="text"
+            [ngModel]="topic.summary"
+            (ngModelChange)="updateTopic({ summary: $event })"
+            [maxlength]="MAX_KURZZEILE"
+            placeholder="Der eine Satz, der auf der Karte steht"
+            autocomplete="off"
+          />
+        </label>
+      </div>
+
+      <label class="schalter">
+        <input
+          type="checkbox"
+          [ngModel]="topic.active"
+          (ngModelChange)="updateTopic({ active: $event })"
+        />
+        <span>Aktiv - abgeschaltete Themen sehen nur die Autoren</span>
+      </label>
+
+      <!-- Dieselbe Chip-Mechanik wie die Wochentage, nicht zwei verschiedene
+           Mehrfachauswahlen im selben Formular. -->
+      <div class="feld-block">
+        <span class="feld-beschriftung">Halten dürfen</span>
+
+        @if (teacherRoleChoices().length === 0) {
+          <div class="empty-hint">
+            <i class="fa-solid fa-circle-info"></i>
+            Kein Rollenkatalog geladen - den holen nur Direktoren, CEO und IT. Ohne ihn bleibt es
+            bei den bereits eingetragenen Rollen; leer heißt: nur der Autorenkreis sieht die Namen.
+          </div>
+        } @else {
+          <div class="chip-reihe">
+            @for (rolle of teacherRoleChoices(); track rolle) {
+              <button
+                type="button"
+                class="chip auswahl-chip"
+                [class.aktiv]="istAusbilderrolle(rolle)"
+                [attr.aria-pressed]="istAusbilderrolle(rolle)"
+                (click)="toggleAusbilderrolle(rolle)"
+              >
+                {{ rolle }}
+              </button>
+            }
+          </div>
+        }
+
+        <span class="feld-hinweis">
+          @if (topic.teacherRoleNames.length === 0) {
+            Nichts gewählt: die Namen der Interessenten sehen nur Ausbilder, Führung und IT.
+          } @else {
+            Wer eine dieser Rollen trägt, darf das Thema halten und sieht die Namen der
+            Interessenten.
+          }
+        </span>
+      </div>
+
+      <!-- ===== Lehrplan: Bearbeiten / Vorschau ===== -->
+      <div class="editor">
+        <div class="editor-kopf">
+          <div class="tabs">
+            <button
+              class="tab-btn"
+              [class.active]="editorMode() === 'EDIT'"
+              (click)="editorMode.set('EDIT')"
+            >
+              <i class="fa-solid fa-pen"></i> Bearbeiten
+            </button>
+            <button
+              class="tab-btn"
+              [class.active]="editorMode() === 'PREVIEW'"
+              (click)="editorMode.set('PREVIEW')"
+            >
+              <i class="fa-solid fa-eye"></i> Vorschau
+            </button>
+          </div>
+          <span class="zaehlwerk" [class.knapp]="istKnapp(lehrplanLaenge(), MAX_LEHRPLAN)">
+            {{ lehrplanLaenge() }}/{{ MAX_LEHRPLAN }}
+          </span>
+        </div>
+
+        @if (editorMode() === 'EDIT') {
+          <textarea
+            class="lehrplan-feld"
+            [ngModel]="topic.description ?? ''"
+            (ngModelChange)="updateTopic({ description: $event })"
+            [maxlength]="MAX_LEHRPLAN"
+            [placeholder]="LEHRPLAN_VORLAGE"
+            spellcheck="false"
+          ></textarea>
+        } @else {
+          <!-- Dieselbe Komponente wie die aufgeklappte Karte. Die Vorschau zeigt
+               ungespeicherten Text - ein eigener Anzeigepfad wäre genau der ohne
+               Prüfung. Gleiche Mindesthöhe wie das Textfeld, sonst hüpft das
+               Modal beim Umschalten und die Umschaltung fühlt sich kaputt an. -->
+          <div class="lehrplan-vorschau">
+            <app-markdown-view [source]="topic.description" />
+          </div>
+        }
+
+        <p class="feld-hinweis">
+          Unterstützt werden Überschriften, <strong>fett</strong>, <em>kursiv</em>, Code, Zitate,
+          Trennlinien, Links, Bilder und <b>eine</b> Listenebene. Keine verschachtelten Listen,
+          keine Tabellen, kein rohes HTML - was hier nicht steht, erscheint als Text.
+          <br />
+          Bilder nur von: <code>{{ bildHosts }}</code>. Andere Quellen weist der Server beim
+          Speichern ab und die Anzeige zeigt an ihrer Stelle einen Hinweis.
+        </p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" (click)="closeModal()">Abbrechen</button>
+        <button
+          class="btn-primary"
+          (click)="saveTopic()"
+          [disabled]="saving() || !topic.title.trim() || !topic.summary.trim()"
+        >
+          <i class="fa-solid fa-floppy-disk"></i> Speichern
+        </button>
+      </div>
+    </div>
+  </div>
+}

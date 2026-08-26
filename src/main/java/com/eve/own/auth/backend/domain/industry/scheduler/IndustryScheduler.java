@@ -28,6 +28,14 @@ import org.springframework.stereotype.Component;
  *       aber die Uhrzeit ist nicht zugesagt.</li>
  * </ul>
  *
+ * <p>Die <em>Jita</em>-Preise stehen bewusst nicht mehr hier. Sie kommen aus
+ * dem Marktabzug, den
+ * {@link com.eve.own.auth.backend.domain.market.MarketPriceScheduler} einmal
+ * holt und an alle Verbraucher verteilt - ein eigener Zeitgeber an dieser
+ * Stelle wuerde dieselben 411 Seiten ein zweites Mal ziehen.
+ * {@code adjusted_price} bleibt davon unberuehrt: das ist ein eigener
+ * Referenzwert von CCP aus {@code /markets/prices/} und kein Marktpreis.</p>
+ *
  * <p>Die Anfangsverzoegerungen sind gestaffelt, damit nicht alle drei Laeufe
  * gleichzeitig mit dem uebrigen Start um Verbindungen konkurrieren.</p>
  */
@@ -90,19 +98,6 @@ public class IndustryScheduler {
     @Scheduled(fixedRate = ONE_HOUR, initialDelay = 360_000)
     public void syncAdjustedPrices() {
         syncService.syncAdjustedPrices();
-    }
-
-    /**
-     * Die Jita-Preise fuer Erze, Komponenten und Reaktionsprodukte.
-     *
-     * <p>Getrennt vom Referenzpreis-Lauf, weil es eine andere Quelle ist und
-     * deutlich mehr Abfragen kostet - rund 27 Bloecke zu je 200 Typen. Der
-     * Abstand von einer Stunde reicht: Marktpreise schwanken, aber nicht im
-     * Minutentakt, und eine Beschaffungsrechnung ist ohnehin eine Schaetzung.</p>
-     */
-    @Scheduled(fixedRate = ONE_HOUR, initialDelay = 480_000)
-    public void syncIndustryPrices() {
-        syncService.syncIndustryPrices();
     }
 
     /**

@@ -84,8 +84,8 @@ public class CharacterActivity {
     /**
      * Baut einen automatisch erhobenen Messwert aus einer Gleitkommazahl.
      *
-     * <p>Die Quelle ist hier tatsaechlich ein {@code double} - ESI und Fuzzwork
-     * liefern JSON-Zahlen, und JSON kennt nichts Genaueres. Der Weg ueber
+     * <p>Die Quelle ist hier tatsaechlich ein {@code double} - ESI liefert
+     * JSON-Zahlen, und JSON kennt nichts Genaueres. Der Weg ueber
      * {@link BigDecimal#valueOf(double)} nimmt die kuerzeste Darstellung, die
      * denselben {@code double} ergibt: aus {@code 1319981075.6900005} wird damit
      * wieder {@code 1319981075.69}. Was hier ankommt, ist also so genau wie die

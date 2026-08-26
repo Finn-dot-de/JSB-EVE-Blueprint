@@ -1,10 +1,12 @@
 package com.eve.own.auth.backend.domain.mining.service;
 
+import com.eve.own.auth.backend.common.MarketPriceRules;
 import com.eve.own.auth.backend.domain.eve.entity.InvType;
 import com.eve.own.auth.backend.domain.eve.repository.InvTypeRepository;
+import com.eve.own.auth.backend.domain.market.MarketSnapshot;
+import com.eve.own.auth.backend.domain.market.StationPrice;
 import com.eve.own.auth.backend.domain.mining.entity.MiningTaxRate;
 import com.eve.own.auth.backend.domain.mining.repository.MiningTaxRateRepository;
-import com.eve.own.auth.backend.esi.EsiService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -23,13 +25,15 @@ import org.springframework.transaction.annotation.Transactional;
  * Rohstoffe existiert dort aber schlicht kein Markt - gehandelt wird die
  * komprimierte Variante. Fuer diese Faelle greift die Rueckfallebene: der Preis
  * der komprimierten Form wird 1:1 uebernommen.</p>
+ *
+ * <p>Die Preise kommen als fertiger Marktabzug herein und werden nicht selbst
+ * geholt. Frueher waren es zwei eigene Netzaufrufe je Lauf - beim Regionsabzug
+ * waeren daraus 822 Seiten geworden, fuer 266 Steuersaetze, die im Abzug
+ * ohnehin schon drinstehen.</p>
  */
 @Slf4j
 @Service
 public class MiningPriceService {
-
-    /** Kein Preis ermittelbar - dient zugleich als Untergrenze fuer "brauchbar". */
-    private static final double NO_PRICE = 0.0;
 
     /** ISK hat ingame genau zwei Nachkommastellen - wie ueberall sonst im Steuerwesen. */
     private static final int ISK_SCALE = 2;
@@ -37,32 +41,30 @@ public class MiningPriceService {
     /** Praefixe, unter denen die SDE die komprimierten Varianten fuehrt. */
     private static final List<String> COMPRESSED_PREFIXES = List.of("Compressed ", "Batch Compressed ");
 
-    private final EsiService esiService;
     private final MiningTaxRateRepository taxRateRepo;
     private final InvTypeRepository invTypeRepo;
 
-    public MiningPriceService(EsiService esiService,
-                              MiningTaxRateRepository taxRateRepo,
+    public MiningPriceService(MiningTaxRateRepository taxRateRepo,
                               InvTypeRepository invTypeRepo) {
-        this.esiService = esiService;
         this.taxRateRepo = taxRateRepo;
         this.invTypeRepo = invTypeRepo;
     }
 
     @Transactional
-    public void refreshJitaPrices() {
+    public void refreshJitaPrices(MarketSnapshot abzug) {
         List<MiningTaxRate> rates = taxRateRepo.findAll();
         if (rates.isEmpty()) {
             log.debug("Keine Steuersaetze hinterlegt, Preisabgleich entfaellt.");
             return;
         }
 
-        List<MiningTaxRate> withoutPrice = applyDirectPrices(rates);
-        int recovered = applyCompressedFallback(withoutPrice);
+        List<MiningTaxRate> withoutPrice = applyDirectPrices(rates, abzug);
+        int recovered = applyCompressedFallback(withoutPrice, abzug);
 
         taxRateRepo.saveAll(rates);
-        log.info("Jita-Preise abgeglichen: {} Steuersaetze, davon {} ueber die komprimierte Variante.",
-                rates.size(), recovered);
+        log.info("Jita-Preise abgeglichen: {} von {} Steuersaetzen mit brauchbarem Preis, "
+                        + "davon {} ueber die komprimierte Variante.",
+                rates.size() - withoutPrice.size() + recovered, rates.size(), recovered);
     }
 
     /**
@@ -70,20 +72,15 @@ public class MiningPriceService {
      *
      * @return die Saetze, fuer die kein Preis zu bekommen war
      */
-    private List<MiningTaxRate> applyDirectPrices(List<MiningTaxRate> rates) {
-        Map<String, EsiService.FuzzworkPrice> prices =
-                esiService.getFuzzworkPrices(rates.stream().map(MiningTaxRate::getTypeId).toList());
-
-        if (prices == null || prices.isEmpty()) {
-            return new ArrayList<>(rates);
-        }
-
+    private List<MiningTaxRate> applyDirectPrices(List<MiningTaxRate> rates, MarketSnapshot abzug) {
         List<MiningTaxRate> withoutPrice = new ArrayList<>();
         for (MiningTaxRate rate : rates) {
-            double price = referencePrice(prices.get(String.valueOf(rate.getTypeId())));
-            if (price > NO_PRICE) {
+            Double price = referencePrice(abzug.price(rate.getTypeId()));
+            if (price != null) {
                 rate.setCurrentJitaBuy(isk(price));
             } else {
+                // Kein Preis, also auch keine 0: der zuletzt bekannte Satz bleibt
+                // stehen. Eine 0 hier hiesse "diese Menge Erz ist steuerfrei".
                 withoutPrice.add(rate);
             }
         }
@@ -95,7 +92,7 @@ public class MiningPriceService {
      *
      * @return wie viele Saetze dadurch doch noch einen Preis bekommen haben
      */
-    private int applyCompressedFallback(List<MiningTaxRate> withoutPrice) {
+    private int applyCompressedFallback(List<MiningTaxRate> withoutPrice, MarketSnapshot abzug) {
         if (withoutPrice.isEmpty()) {
             return 0;
         }
@@ -109,16 +106,10 @@ public class MiningPriceService {
             return 0;
         }
 
-        Map<String, EsiService.FuzzworkPrice> prices =
-                esiService.getFuzzworkPrices(List.copyOf(rateByCompressedTypeId.keySet()));
-        if (prices == null || prices.isEmpty()) {
-            return 0;
-        }
-
         int recovered = 0;
         for (Map.Entry<Long, MiningTaxRate> entry : rateByCompressedTypeId.entrySet()) {
-            double price = referencePrice(prices.get(String.valueOf(entry.getKey())));
-            if (price > NO_PRICE) {
+            Double price = referencePrice(abzug.price(entry.getKey()));
+            if (price != null) {
                 entry.getValue().setCurrentJitaBuy(isk(price));
                 recovered++;
             }
@@ -137,14 +128,6 @@ public class MiningPriceService {
     }
 
     /**
-     * Der Preis, mit dem gerechnet wird: bevorzugt das hoechste Kaufgebot, sonst
-     * das guenstigste Verkaufsangebot.
-     *
-     * <p>Das Kaufgebot ist der Betrag, den ein Spieler sofort erloesen kann - die
-     * ehrlichere Grundlage fuer eine Abgabe. Erst wenn niemand kauft, dient das
-     * Verkaufsangebot als Naeherung.</p>
-     */
-    /**
      * Macht aus der Gleitkommazahl des Marktanbieters einen exakten Preis.
      *
      * <p>Hier ist der {@code double} ehrlich: die Preise kommen als JSON-Zahl,
@@ -158,16 +141,25 @@ public class MiningPriceService {
         return BigDecimal.valueOf(price).setScale(ISK_SCALE, RoundingMode.HALF_UP);
     }
 
-    private static double referencePrice(EsiService.FuzzworkPrice price) {
+    /**
+     * Der Preis, mit dem gerechnet wird: bevorzugt das hoechste Kaufgebot, sonst
+     * das guenstigste Verkaufsangebot.
+     *
+     * <p>Das Kaufgebot ist der Betrag, den ein Spieler sofort erloesen kann - die
+     * ehrlichere Grundlage fuer eine Abgabe. Erst wenn niemand kauft, dient das
+     * Verkaufsangebot als Naeherung.</p>
+     *
+     * <p>Der Abzug liefert schon nur brauchbare Werte; {@link MarketPriceRules}
+     * steht hier trotzdem noch einmal - Guertel und Hosentraeger. Nachgebaut
+     * wird die Regel dabei nicht, sie wird benutzt.</p>
+     *
+     * @return der Preis, oder {@code null} wenn der Markt nichts hergibt
+     */
+    private static Double referencePrice(StationPrice price) {
         if (price == null) {
-            return NO_PRICE;
+            return null;
         }
-        if (price.buy() != null && price.buy().max() != null && price.buy().max() > NO_PRICE) {
-            return price.buy().max();
-        }
-        if (price.sell() != null && price.sell().min() != null && price.sell().min() > NO_PRICE) {
-            return price.sell().min();
-        }
-        return NO_PRICE;
+        Double kauf = MarketPriceRules.usable(price.buy());
+        return kauf != null ? kauf : MarketPriceRules.usable(price.sell());
     }
 }

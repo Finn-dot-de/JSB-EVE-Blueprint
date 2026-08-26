@@ -11,6 +11,8 @@ import com.eve.own.auth.backend.domain.industry.entity.IndustryJob;
 import com.eve.own.auth.backend.domain.industry.repository.CharacterBlueprintRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryJobRepository;
 import com.eve.own.auth.backend.domain.industry.repository.IndustryQueryRepository;
+import com.eve.own.auth.backend.domain.market.MarketSnapshot;
+import com.eve.own.auth.backend.domain.market.StationPrice;
 import com.eve.own.auth.backend.esi.EsiService;
 import com.eve.own.auth.backend.esi.EsiResponse;
 import com.eve.own.auth.backend.esi.EsiService.EsiBlueprintResponse;
@@ -45,15 +47,6 @@ public class IndustrySyncService {
 
     /** Status, bei denen ein Job als abgeschlossen und geliefert gilt. */
     private static final String STATUS_DELIVERED = "delivered";
-
-    /**
-     * Wie viele Typen je Preisabfrage.
-     *
-     * <p>Fuzzwork vertraegt grosse Listen, aber die Typen stehen in der URL -
-     * und die ist irgendwann zu lang. Derselbe Wert wie im bestehenden
-     * Preisabgleich.</p>
-     */
-    private static final int PRICE_BATCH_SIZE = 200;
 
     private final CharacterRepository characterRepo;
     private final AuthService authService;
@@ -264,81 +257,61 @@ public class IndustrySyncService {
     }
 
     /**
-     * Holt Jita-Preise fuer alles, was der Assistent bewerten muss.
+     * Schreibt Jita-Preise fuer alles, was der Assistent bewerten muss.
      *
-     * <p>Der bestehende Preisabgleich holt nur, was in den Hangars liegt. Fuer
-     * die Bestandsbewertung genuegt das, fuer eine Beschaffungsfrage nicht:
+     * <p>Der Asset-Preislauf schreibt nur, was in den Hangars liegt. Fuer die
+     * Bestandsbewertung genuegt das, fuer eine Beschaffungsfrage nicht:
      * ausgerechnet die Dinge, die man kaufen soll, liegen ja gerade <em>nicht</em>
      * im Hangar. Nachgezaehlt: von 186 komprimierten Erzen hatten zehn einen
      * Preis - und ohne den laesst sich nicht sagen, ob Erz oder Mineral
      * guenstiger ist.</p>
      *
-     * <p>Fehlgeschlagene Bloecke werden gezaehlt, aber nicht wiederholt. Ein
-     * Preis, der eine Stunde alt wird, ist unangenehm; ein Abgleich, der sich in
-     * Wiederholungen festfrisst, ist schlimmer.</p>
+     * <p>Der Abzug kommt fertig herein und wird nicht selbst geholt: derselbe
+     * Durchlauf bedient auch den Asset-Preislauf und die Mining-Steuersaetze.
+     * Er ist an dieser Stelle zwangslaeufig vollstaendig - ein abgebrochener
+     * Durchlauf erreicht diese Methode gar nicht, weil dann kein Abzug
+     * entsteht.</p>
      *
-     * @return wie viele Preise geschrieben wurden
+     * @return wie viele Typen einen brauchbaren Preis bekommen haben
      */
     @Transactional
-    public int syncIndustryPrices() {
+    public int syncIndustryPrices(MarketSnapshot abzug) {
         List<Long> typen = queryRepo.priceRelevantTypeIds();
         if (typen.isEmpty()) {
             return 0;
         }
 
         List<MarketPrice> zuSpeichern = new ArrayList<>();
-        int fehlgeschlagen = 0;
+        int ohneOrder = 0;
         Instant jetzt = Instant.now();
 
-        for (int i = 0; i < typen.size(); i += PRICE_BATCH_SIZE) {
-            List<Long> block = typen.subList(i, Math.min(i + PRICE_BATCH_SIZE, typen.size()));
-            try {
-                var preise = esiService.getFuzzworkPrices(block);
-                if (preise == null || preise.isEmpty()) {
-                    fehlgeschlagen++;
-                    continue;
-                }
-                for (Long typeId : block) {
-                    var daten = preise.get(String.valueOf(typeId));
-                    if (daten == null) {
-                        // Kein brauchbarer Preis - die Quelle hat den Typ entweder
-                        // nicht gemeldet oder nur mit 0. Der alte Wert bleibt
-                        // stehen; ihn zu ueberschreiben waere ein Rueckschritt von
-                        // "alt" auf "falsch".
-                        continue;
-                    }
-                    // Die Werte kommen bereits bereinigt (siehe MarketPriceRules):
-                    // eine Seite ist nur dann besetzt, wenn ein Preis groesser null
-                    // dahintersteht. Frueher wurde hier nur die Huelle geprueft -
-                    // deshalb schrieb ein Ausfall der Quelle Nullen in die Tabelle,
-                    // statt den letzten bekannten Preis stehenzulassen.
-                    Double kauf = daten.buy() == null ? null : daten.buy().max();
-                    Double verkauf = daten.sell() == null ? null : daten.sell().min();
-                    MarketPrice zeile = priceRepo.findById(typeId).orElseGet(MarketPrice::new);
-                    zeile.setTypeId(typeId);
-                    zeile.setJitaBuy(kauf != null ? kauf : zeile.getJitaBuy());
-                    zeile.setJitaSell(verkauf != null ? verkauf : zeile.getJitaSell());
-                    zeile.setUpdatedAt(jetzt);
-                    zuSpeichern.add(zeile);
-                }
-            } catch (RuntimeException e) {
-                fehlgeschlagen++;
-                log.warn("Preisblock ab {} fehlgeschlagen: {}", i, e.getMessage());
+        for (Long typeId : typen) {
+            StationPrice preis = abzug.price(typeId);
+            if (preis == null) {
+                // Kein Angebot an der Station. Der alte Wert bleibt stehen; ihn
+                // zu ueberschreiben waere ein Rueckschritt von "alt" auf "falsch".
+                ohneOrder++;
+                continue;
             }
+            // Die Werte kommen bereits bereinigt (siehe MarketPriceRules): eine
+            // Seite ist nur dann besetzt, wenn ein Preis groesser null
+            // dahintersteht. Frueher wurde hier nur die Huelle geprueft -
+            // deshalb schrieb ein Ausfall der Quelle Nullen in die Tabelle,
+            // statt den letzten bekannten Preis stehenzulassen.
+            MarketPrice zeile = priceRepo.findById(typeId).orElseGet(MarketPrice::new);
+            zeile.setTypeId(typeId);
+            zeile.setJitaBuy(preis.buy() != null ? preis.buy() : zeile.getJitaBuy());
+            zeile.setJitaSell(preis.sell() != null ? preis.sell() : zeile.getJitaSell());
+            zeile.setUpdatedAt(jetzt);
+            zuSpeichern.add(zeile);
         }
 
         priceRepo.saveAll(zuSpeichern);
-        if (fehlgeschlagen > 0) {
-            // Als Warnung, nicht als Erfolgsmeldung. Zuvor stand hier nur eine
-            // INFO-Zeile mit der Zahl der geschriebenen Zeilen - und die las sich
-            // bei einem Totalausfall der Quelle genauso wie ein geglueckter Lauf.
-            log.warn("Industriepreise: nur {} von {} Typen aktualisiert, {} Blöcke ohne "
-                            + "brauchbaren Preis. Die Preisquelle ist gestoert.",
-                    zuSpeichern.size(), typen.size(), fehlgeschlagen);
-        } else {
-            log.info("Industriepreise: {} von {} Typen aktualisiert.",
-                    zuSpeichern.size(), typen.size());
-        }
+        // Gezaehlt werden Typen mit brauchbarem Preis, nicht geschriebene Zeilen.
+        // Der Ausfall selbst wird eine Ebene hoeher gemeldet, im Marktabzug: dort
+        // ist er sichtbar, hier waere er nur zu erraten.
+        log.info("Industriepreise: {} von {} Typen mit brauchbarem Jita-Preis, {} ohne Order an der Station.",
+                zuSpeichern.size(), typen.size(), ohneOrder);
         return zuSpeichern.size();
     }
 

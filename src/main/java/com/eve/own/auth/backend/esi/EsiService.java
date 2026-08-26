@@ -1,16 +1,10 @@
 package com.eve.own.auth.backend.esi;
 
-import com.eve.own.auth.backend.common.MarketPriceRules;
 import com.eve.own.auth.backend.esi.client.EsiRequestExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import java.time.Instant;
 
 /**
@@ -25,16 +19,10 @@ import java.time.Instant;
 @Service
 public class EsiService {
 
-    private static final String JITA_TRADE_HUB_STATION = "60003760";
-    private static final String FUZZWORK_AGGREGATES_URL =
-            "https://market.fuzzwork.co.uk/aggregates/?station=" + JITA_TRADE_HUB_STATION + "&types=";
-
     private final EsiRequestExecutor executor;
-    private final RestClient marketClient;
 
     public EsiService(EsiRequestExecutor executor) {
         this.executor = executor;
-        this.marketClient = RestClient.create();
     }
 
     // ==================================================================
@@ -331,76 +319,32 @@ public class EsiService {
     }
 
     // ==================================================================
-    // Marktpreise (Fremdanbieter, nicht ESI)
+    // Marktorders
     // ==================================================================
 
     /**
-     * Jita-Preise vom Marktanbieter, bereits von Nullen bereinigt.
+     * Eine Seite des oeffentlichen Orderbuchs einer Region.
      *
-     * <p>Der Rueckgabewert enthaelt nur brauchbare Preise. Wo der Anbieter 0
-     * meldet, steht {@code null} - siehe {@link MarketPriceRules}. Damit greift
-     * bei jedem Aufrufer die vorhandene Verteidigung "kein Wert, also alten Wert
-     * behalten" von selbst, statt eine Null als Preis durchzureichen.</p>
+     * <p><b>Kein Token, kein Scope.</b> Der Endpunkt traegt in der OpenAPI-Spez
+     * keinen {@code security}-Knoten, und die Spez hat auch keine globale
+     * Vorgabe. Selbst nachgeprueft: ein Aufruf ganz ohne
+     * {@code Authorization}-Kopfzeile antwortet mit 200. An
+     * {@code eve.sso.scopes} ist deshalb nichts zu aendern.</p>
      *
-     * <p>Ein Block, in dem <em>kein einziger</em> Preis brauchbar ist, wird als
-     * Ausfall der Quelle behandelt und leer zurueckgegeben. Das ist die ehrliche
-     * Uebersetzung: eine Antwort, in der jede Zahl 0 ist, traegt keine
-     * Preisauskunft. Ohne diese Umdeutung war ein Totalausfall vom Erfolg nicht
-     * zu unterscheiden - die Fehlerzaehler der Aufrufer zaehlen leere Antworten,
-     * und eine Antwort voller Nullen war eben nicht leer. Genau so lief der
-     * Abgleich einen Tag lang stuendlich durch und meldete jedes Mal Erfolg.</p>
+     * <p>{@code order_type=all} liefert Kauf- und Verkaufsorders in einem Zug.
+     * Gemessen am 26.08.: {@code all} = 411 Seiten, {@code sell} = 279,
+     * {@code buy} = 132 - 279 + 132 = 411, es kostet also nichts, beide Seiten
+     * zusammen zu holen. Der Beschreibungstext der Spez behauptet, ohne
+     * {@code type_id} kaemen ohnehin immer beide Richtungen; das ist nachweislich
+     * falsch, der Filter greift sehr wohl. Deshalb steht der Parameter hier
+     * ausdruecklich.</p>
+     *
+     * <p>Bewusst ohne den ETag-Cache - die Begruendung steht bei
+     * {@link EsiRequestExecutor#getUncachedPage}.</p>
      */
-    public Map<String, FuzzworkPrice> getFuzzworkPrices(List<Long> typeIds) {
-        if (typeIds == null || typeIds.isEmpty()) {
-            return Map.of();
-        }
-        String typesParam = typeIds.stream().map(String::valueOf).collect(Collectors.joining(","));
-        Map<String, FuzzworkPrice> roh;
-        try {
-            roh = marketClient.get()
-                    .uri(FUZZWORK_AGGREGATES_URL + typesParam)
-                    .retrieve()
-                    .body(new ParameterizedTypeReference<Map<String, FuzzworkPrice>>() {});
-        } catch (Exception e) {
-            log.warn("Fuzzwork-Preise nicht abrufbar: {}", e.getMessage());
-            return Map.of();
-        }
-        return sanitizeFuzzwork(roh, typeIds.size());
-    }
-
-    /**
-     * Streicht Nullpreise und erkennt daran den Ausfall der Quelle.
-     *
-     * @param angefragt wie viele Typen angefragt wurden - nur fuer die Meldung
-     */
-    static Map<String, FuzzworkPrice> sanitizeFuzzwork(Map<String, FuzzworkPrice> roh, int angefragt) {
-        if (roh == null || roh.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, FuzzworkPrice> sauber = new LinkedHashMap<>();
-        for (Map.Entry<String, FuzzworkPrice> e : roh.entrySet()) {
-            FuzzworkPrice p = e.getValue();
-            if (p == null) {
-                continue;
-            }
-            Double kauf = p.buy() == null ? null : MarketPriceRules.usable(p.buy().max());
-            Double verkauf = p.sell() == null ? null : MarketPriceRules.usable(p.sell().min());
-            if (kauf == null && verkauf == null) {
-                // Kein brauchbarer Preis. Der Eintrag faellt ganz weg, statt als
-                // Huelle mit Nullen weiterzureisen - sonst prueft der Aufrufer
-                // wieder nur, ob die Huelle da ist.
-                continue;
-            }
-            sauber.put(e.getKey(), new FuzzworkPrice(
-                    kauf == null ? null : new FuzzworkBuy(kauf),
-                    verkauf == null ? null : new FuzzworkSell(verkauf)));
-        }
-        if (sauber.isEmpty()) {
-            log.warn("Marktquelle antwortet ohne einen einzigen brauchbaren Preis "
-                    + "({} Typen angefragt, {} Eintraege, alle 0) - Ausfall der Preisquelle.",
-                    angefragt, roh.size());
-        }
-        return sauber;
+    public EsiRequestExecutor.UncachedPage<EsiMarketOrder> getMarketOrdersPage(long regionId, int page) {
+        return executor.getUncachedPage("/markets/{region}/orders/?order_type=all&page={page}",
+                new Object[]{regionId, page}, EsiMarketOrder[].class);
     }
 
     // ==================================================================
@@ -462,16 +406,25 @@ public class EsiService {
     public record EsiStructureService(String name, String state) {}
 
     /**
-     * Ein Marktpreis des Fremdanbieters.
+     * Eine einzelne Order aus dem oeffentlichen Orderbuch.
      *
-     * <p>Aus {@link #getFuzzworkPrices} kommen {@code buy} und {@code sell} nur
-     * dann als Objekt, wenn dahinter auch ein Preis groesser null steht. Fehlt
-     * er, ist die Seite {@code null} - das ist der Unterschied zwischen "niemand
-     * kauft" und "kostet nichts", und er darf nicht verlorengehen.</p>
+     * <p>Alle zwoelf Felder sind in der Spez {@code required}; sie stehen hier
+     * vollstaendig, damit kein Feld als "unbekannt" durchlaufen muss.</p>
+     *
+     * <p><b>{@code location_id} muss {@code Long} sein.</b> Die Spez nennt
+     * int64, und das wird gebraucht: in The Forge kam
+     * {@code 1044752365771} vor - eine Spielerstruktur. Ein {@code Integer}
+     * bricht dort.</p>
+     *
+     * <p><b>{@code range} ist ein String, keine Zahl.</b> Das Enum mischt
+     * Woerter und Ziffern: {@code station}, {@code region},
+     * {@code solarsystem}, {@code 1} bis {@code 40}.</p>
      */
-    public record FuzzworkPrice(FuzzworkBuy buy, FuzzworkSell sell) {}
-    public record FuzzworkBuy(Double max) {}
-    public record FuzzworkSell(Double min) {}
+    public record EsiMarketOrder(
+            Long order_id, Long type_id, Long location_id, Long system_id,
+            Long volume_total, Long volume_remain, Long min_volume, Long duration,
+            Double price, Boolean is_buy_order, String range, Instant issued) {}
+
     public record EsiIdName(Long id, String name, String category) {}
     public record EsiOnlineResponse(Boolean online, String last_login, String last_logout, Integer logins) {}
     public record EsiCharacterFleetResponse(Long fleet_id, Long character_id, String role) {}

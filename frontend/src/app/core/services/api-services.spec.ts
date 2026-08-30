@@ -245,6 +245,49 @@ describe('HTTP-Dienste', () => {
       expect(request.request.body).toEqual({ unauthedCharId: 2002, mainId: 1001 });
       request.flush({});
     });
+
+    it('holt die Gruppen Unregistrierter per GET', () => {
+      service.getAltGroups().subscribe();
+
+      const request = httpMock.expectOne(`${apiUrl}/alt-groups`);
+      expect(request.request.method).toBe('GET');
+      request.flush([]);
+    });
+
+    it('holt die Kalibrierung per GET und ohne limit, wenn keines gesetzt ist', () => {
+      // Ohne Parameter entscheidet der Server ueber die Vorgabe
+      // (eve.alt-detection.calibration-default-limit). Schickte die Oberflaeche
+      // hier still eine eigene Zahl mit, gaebe es zwei Wahrheiten - und die
+      // Stellschraube im Server waere wirkungslos, ohne dass es auffiele.
+      service.getAltCalibration().subscribe();
+
+      const request = httpMock.expectOne(
+        (req) => req.url === `${apiUrl}/alt-suggestions/calibration`,
+      );
+      expect(request.request.method).toBe('GET');
+      expect(request.request.params.has('limit')).toBe(false);
+      request.flush({});
+    });
+
+    it('reicht ein gesetztes limit als Parameter durch', () => {
+      service.getAltCalibration(50).subscribe();
+
+      const request = httpMock.expectOne(
+        (req) => req.url === `${apiUrl}/alt-suggestions/calibration`,
+      );
+      expect(request.request.params.get('limit')).toBe('50');
+      request.flush({});
+    });
+
+    it('hat keinen Weg, aus der Kalibrierung heraus zu bestaetigen', () => {
+      // Gaebe es hier einen, liesse sich ueber die Kalibrierung genau die
+      // Schwelle aushebeln, die sie sichtbar machen soll: sie liefert
+      // ausdruecklich auch die Paare DARUNTER.
+      const bestaetigend = Object.getOwnPropertyNames(Object.getPrototypeOf(service)).filter(
+        (name) => /calibration/i.test(name) && !/^get/.test(name),
+      );
+      expect(bestaetigend).toEqual([]);
+    });
   });
 
   describe('DoctrineService', () => {

@@ -34,11 +34,21 @@ import java.util.Locale;
  * Normalfall bei Spionage- und Handels-Alts -, ist hier nicht zu finden. Kein
  * hoher Wert ist dann ein Beweis, und ein niedriger Wert ist kein Freispruch;
  * er heisst nur, dass dieses eine Muster nicht greift.</p>
+ *
+ * <p><b>Warum keine Utility-Klasse mehr:</b> drei der Punktwerte hier sind
+ * Stellschrauben und liegen seit der Umstellung in
+ * {@link AltDetectionProperties}, also erst zur Laufzeit fest. Statische
+ * Methoden muessten sie sich aus einem statischen Feld holen - und ein
+ * statischer Zustand, den Spring befuellt, ist genau die Konstruktion, die in
+ * Tests einmal gesetzt bleibt und danach in den naechsten Test hineinwirkt. Ein
+ * Objekt mit seiner Konfiguration im Konstruktor hat das Problem nicht.</p>
  */
 public final class NameSimilarity {
 
-    private NameSimilarity() {
-        throw new AssertionError("Utility-Klasse, nicht instanziierbar.");
+    private final AltDetectionProperties props;
+
+    public NameSimilarity(AltDetectionProperties props) {
+        this.props = props;
     }
 
     /**
@@ -48,7 +58,7 @@ public final class NameSimilarity {
      *     gemessene Unaehnlichkeit, aber der Aufrufer behandelt den Namen ohnehin
      *     als immer verfuegbares Signal, weil beide Namen ueber ESI vorliegen
      */
-    public static int score(String left, String right) {
+    public int score(String left, String right) {
         String a = normalize(left);
         String b = normalize(right);
         if (a.isEmpty() || b.isEmpty()) {
@@ -99,7 +109,9 @@ public final class NameSimilarity {
      * oben-links braucht. Bei Namen von 20 Zeichen ist der Speicher egal - der
      * Grund ist ein anderer: der Aufruf laeuft im Kreuzprodukt aus allen nicht
      * registrierten Mitgliedern und allen Konten, also einige tausend Mal je
-     * Seitenaufruf.</p>
+     * Seitenaufruf. Seit der Gruppierung unregistrierter untereinander zusaetzlich
+     * im Kreuzprodukt der Unregistrierten mit sich selbst - bei 273 Mitgliedern
+     * rund 37.000 Mal.</p>
      */
     static int levenshtein(String a, String b) {
         int[] previous = new int[b.length() + 1];
@@ -133,7 +145,7 @@ public final class NameSimilarity {
      * doppelt zaehlen. Zu kurze Endungen zaehlen nicht, damit "II" oder "Jr"
      * nicht als geteilter Nachname durchgehen.</p>
      */
-    static int familyNameScore(String a, String b) {
+    int familyNameScore(String a, String b) {
         List<String> left = Arrays.asList(a.split(" "));
         List<String> right = Arrays.asList(b.split(" "));
         if (left.size() < 2 || right.size() < 2) {
@@ -141,11 +153,11 @@ public final class NameSimilarity {
         }
         String leftFamily = left.getLast();
         String rightFamily = right.getLast();
-        if (leftFamily.length() < AltDetectionTuning.NAME_FAMILY_MIN_LENGTH
+        if (leftFamily.length() < props.getNameFamilyMinLength()
                 || !leftFamily.equals(rightFamily)) {
             return 0;
         }
-        return AltDetectionTuning.NAME_FAMILY_MATCH_SCORE;
+        return props.getNameFamilyMatchScore();
     }
 
     /**
@@ -156,23 +168,23 @@ public final class NameSimilarity {
      * "Foo Bar 2" gegen "Foo Bar 3" nicht, obwohl gerade das das deutlichste
      * Muster ueberhaupt ist.</p>
      */
-    static int numberedTwinScore(String a, String b) {
+    int numberedTwinScore(String a, String b) {
         String strippedLeft = stripAltSuffix(a);
         String strippedRight = stripAltSuffix(b);
         if (strippedLeft.isEmpty() || !strippedLeft.equals(strippedRight)) {
             return 0;
         }
-        return AltDetectionTuning.NAME_NUMBERED_TWIN_SCORE;
+        return props.getNameNumberedTwinScore();
     }
 
     /** Entfernt genau eine bekannte Alt-Endung am Wortende. */
-    static String stripAltSuffix(String normalized) {
+    String stripAltSuffix(String normalized) {
         int lastSpace = normalized.lastIndexOf(' ');
         if (lastSpace < 0) {
             return normalized;
         }
         String tail = normalized.substring(lastSpace + 1);
-        for (String suffix : AltDetectionTuning.NAME_ALT_SUFFIXES) {
+        for (String suffix : props.getNameAltSuffixes()) {
             if (tail.equals(suffix)) {
                 return normalized.substring(0, lastSpace);
             }

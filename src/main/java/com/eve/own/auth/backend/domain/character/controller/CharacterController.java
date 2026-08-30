@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Die Endpunkte rund um Charaktere, Accounts und Corp-Mitgliedschaft. */
@@ -93,12 +94,50 @@ public class CharacterController {
      * registrierten Mitgliedern und Konten - bei den heutigen Zahlen rund 4.400
      * Paare, also Millisekunden. Die Laufzeit steckt in den ESI-Aufrufen, nicht
      * im Rechnen; die Grenze dagegen steht in
-     * {@code AltDetectionTuning.MAX_PAIRS_PER_CORPORATION}.</p>
+     * {@code AltDetectionProperties.maxPairsPerCorporation}.</p>
      */
     @PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
     @GetMapping("/alt-suggestions")
     public ResponseEntity<List<CharacterDtos.AltSuggestionDto>> getAltSuggestions() {
         return ResponseEntity.ok(altDetectionService.findProbableAlts());
+    }
+
+    /**
+     * Gruppen nicht registrierter Charaktere, die vermutlich ein Mensch sind.
+     *
+     * <p>Nur lesen. Zu einer solchen Gruppe gehoert kein bekanntes Konto, es
+     * gibt also niemanden, dem man sie zuordnen koennte - und deshalb
+     * ausdruecklich keinen Gegenstueck-Endpunkt zum Bestaetigen. Der naechste
+     * Schritt ist eine Nachfrage im Spiel.</p>
+     */
+    @PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
+    @GetMapping("/alt-groups")
+    public ResponseEntity<List<CharacterDtos.AltGroupDto>> getUnregisteredGroups() {
+        return ResponseEntity.ok(
+                altDetectionService.findUnregisteredGroups(CurrentUser.characterId()));
+    }
+
+    /**
+     * Die Kalibrieransicht: die besten Paare ohne Schwellenfilter.
+     *
+     * <p>Getrennt vom Handlungs-Endpunkt und bewusst {@code GET} ohne jede
+     * Nebenwirkung: hier wird <b>nichts</b> bestaetigt, weder Zuordnung noch
+     * Vormerkung. Der Zweck ist, dass die Fuehrung sieht, was der Scorer denkt,
+     * und die Schwelle danach setzt, statt sie zu raten - eine leere
+     * Vorschlagsliste sagt sonst nicht, ob nichts gefunden wurde oder nichts
+     * gerechnet.</p>
+     *
+     * <p>{@code limit} ist im Dienst nach oben begrenzt; ein zu grosser Wert
+     * wird stillschweigend auf die Obergrenze gekuerzt, damit aus der Ansicht
+     * kein Vollabzug ueber mehrere hundert Menschen wird. Die
+     * Berechtigungspruefung steht ebenfalls im Dienst und nicht nur hier.</p>
+     */
+    @PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
+    @GetMapping("/alt-suggestions/calibration")
+    public ResponseEntity<CharacterDtos.AltCalibrationDto> getAltCalibration(
+            @RequestParam(required = false) Integer limit) {
+        return ResponseEntity.ok(
+                altDetectionService.calibrationSample(CurrentUser.characterId(), limit));
     }
 
     /**

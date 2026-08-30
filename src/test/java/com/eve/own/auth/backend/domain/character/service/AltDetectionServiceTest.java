@@ -74,10 +74,22 @@ class AltDetectionServiceTest {
     private AltDetectionService service;
     private Character main;
 
+    /**
+     * Die Stellschrauben mit ihren Vorgabewerten - also genau den frueheren
+     * Konstanten.
+     *
+     * <p>Je Test ein frisches Objekt. Ein Test, der einen Wert verstellt, um zu
+     * pruefen, dass die Konfiguration ueberhaupt wirkt, darf den naechsten Test
+     * nicht mitverstellen; genau das waere bei einem statischen Konstantenhalter
+     * gar nicht erst moeglich gewesen und ist der Preis der Konfigurierbarkeit.</p>
+     */
+    private AltDetectionProperties props;
+
     @BeforeEach
     void setUp() {
+        props = new AltDetectionProperties();
         service = new AltDetectionService(corporationStatsService, characterRepo, miningRepo,
-                proposalRepo, directorTokenProvider, esiService);
+                proposalRepo, directorTokenProvider, esiService, props);
 
         main = character(MAIN_ID, MAIN_ID, MAIN_NAME, SystemRoles.DIRECTOR);
 
@@ -173,7 +185,7 @@ class AltDetectionServiceTest {
 
             assertThat(suggestion.probability())
                     .as("nur der Name lag vor, also ist der Score genau der Namenswert")
-                    .isEqualTo(AltDetectionTuning.NAME_NUMBERED_TWIN_SCORE);
+                    .isEqualTo(props.getNameNumberedTwinScore());
             assertThat(suggestion.probability())
                     .as("und ausdruecklich nicht der ueber alle drei Gewichte verduennte Wert")
                     .isNotEqualTo(34);
@@ -192,7 +204,7 @@ class AltDetectionServiceTest {
 
             assertThat(signal(suggestion, AltDetectionService.SIGNAL_NAME).available()).isTrue();
             assertThat(signal(suggestion, AltDetectionService.SIGNAL_NAME).score())
-                    .isEqualTo(AltDetectionTuning.NAME_NUMBERED_TWIN_SCORE);
+                    .isEqualTo(props.getNameNumberedTwinScore());
 
             CharacterDtos.AltSignalDto mining =
                     signal(suggestion, AltDetectionService.SIGNAL_MINING);
@@ -274,7 +286,7 @@ class AltDetectionServiceTest {
 
             assertThat(suggestion.signalsUsed()).isEqualTo(2);
             assertThat(suggestion.probability())
-                    .isGreaterThanOrEqualTo(AltDetectionTuning.MIN_PROBABILITY);
+                    .isGreaterThanOrEqualTo(props.getMinProbability());
             assertThat(signal(suggestion, AltDetectionService.SIGNAL_JOIN).score()).isEqualTo(100);
         }
 
@@ -455,7 +467,7 @@ class AltDetectionServiceTest {
             assertThat(saved.getCorporationId()).isEqualTo(CORP);
             assertThat(saved.getActorCharacterId()).isEqualTo(MAIN_ID);
             assertThat(saved.getProbability())
-                    .isEqualTo(AltDetectionTuning.NAME_NUMBERED_TWIN_SCORE);
+                    .isEqualTo(props.getNameNumberedTwinScore());
             assertThat(saved.getSignalSummary())
                     .as("die Aufschluesselung gehoert in den Nachweis, nicht nur in die Antwort")
                     .contains(AltDetectionService.SIGNAL_NAME)
@@ -529,6 +541,365 @@ class AltDetectionServiceTest {
         @DisplayName("ohne registrierte Konten in der Corporation gibt es nichts zu vergleichen")
         void ohneKontenKeineVorschlaege() {
             when(characterRepo.findByCorporationId(CORP)).thenReturn(List.of());
+
+            assertThat(service.findProbableAlts()).isEmpty();
+        }
+    }
+
+    // ==================================================================
+    // Gruppen unregistrierter Charaktere untereinander
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Gruppen unregistrierter Charaktere")
+    class UnregistrierteGruppen {
+
+        private static final Long A = 5001L;
+        private static final Long B = 5002L;
+        private static final Long C = 5003L;
+
+        @Test
+        @DisplayName("Drei Fremde mit demselben Nachnamen sind keine Gruppe")
+        void gleicherNachnameIstKeineGruppe() {
+            // Der Fall, an dem die transitive Huelle scheitert: "A Video",
+            // "B Video" und "C Video" sind paarweise aehnlich, und blindes
+            // Vereinigen macht daraus EINEN Menschen. Ohne die
+            // Einzelsignal-Schwelle entstuende hier gar keine Kante erst gar
+            // nicht - 85 fuer den geteilten Nachnamen liegt unter den
+            // geforderten 90 -, und in einer Corp mit mehreren hundert
+            // Mitgliedern waere das Merkmal danach eine Liste aus lauter
+            // Namensvettern.
+            stats(new CharacterDtos.UnauthedCharDto(A, "Zaphod Video", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(B, "Sansha Video", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(C, "Random Video", "portrait"));
+
+            assertThat(service.findUnregisteredGroups(MAIN_ID)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Zwei durchnummerierte Zwillinge sind eine Gruppe")
+        void zwillingeSindEineGruppe() {
+            // Die Gegenprobe zur vorigen Zeile: waere die Schwelle so streng,
+            // dass auch der Zwilling herausfaellt, haette die Verschaerfung das
+            // Merkmal gleich mit abgeschaltet.
+            stats(new CharacterDtos.UnauthedCharDto(A, "Miner Guy", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(B, "Miner Guy 2", "portrait"));
+
+            List<CharacterDtos.AltGroupDto> gruppen = service.findUnregisteredGroups(MAIN_ID);
+
+            assertThat(gruppen).singleElement().satisfies(gruppe -> {
+                assertThat(gruppe.members()).extracting(CharacterDtos.UnauthedCharDto::id)
+                        .containsExactlyInAnyOrder(A, B);
+                assertThat(gruppe.probability())
+                        .isEqualTo(props.getNameNumberedTwinScore());
+                assertThat(gruppe.signalsUsed())
+                        .as("ohne Director-Token traegt auch hier nur der Name")
+                        .isEqualTo(1);
+                assertThat(gruppe.note())
+                        .as("eine Gruppe ohne Konto ist eine Beobachtung, keine Handlung")
+                        .contains("Beobachtung");
+            });
+        }
+
+        @Test
+        @DisplayName("Die Kette A-B-C ohne Kante A-C wird nicht zu einer Gruppe verschmolzen")
+        void keineTransitiveHuelle() {
+            // Genau der Fehler, den union-find ALLEIN macht: A und B sind
+            // aehnlich, B und C sind aehnlich, A und C nicht - die
+            // Zusammenhangskomponente umfasst trotzdem alle drei und erklaert
+            // drei Menschen zu einem. Ohne die vollstaendige Verkettung
+            // ("Kante zu JEDEM Mitglied, nicht bloss zu einem") stuende hier
+            // eine Dreiergruppe.
+            stats(new CharacterDtos.UnauthedCharDto(A, "Comander Video", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(B, "Comander Video 2", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(C, "Comander Videq 2", "portrait"));
+
+            List<CharacterDtos.AltGroupDto> gruppen = service.findUnregisteredGroups(MAIN_ID);
+
+            assertThat(gruppen).allSatisfy(gruppe -> assertThat(gruppe.members())
+                    .as("keine Gruppe darf alle drei enthalten")
+                    .hasSizeLessThan(3));
+            assertThat(gruppen).singleElement().satisfies(gruppe ->
+                    assertThat(gruppe.members()).extracting(CharacterDtos.UnauthedCharDto::id)
+                            .containsExactlyInAnyOrder(A, B));
+        }
+
+        @Test
+        @DisplayName("Der gemeinsame Beitritt traegt auch zwischen zwei Unregistrierten")
+        void beitrittTraegtBeideSeiten() {
+            // Der Grund, warum diese Gruppen ueberhaupt zwei Signale haben
+            // koennen: die Mitgliederverfolgung kommt mit dem Director-Token und
+            // deckt die GANZE Corporation ab, registriert oder nicht. Ohne
+            // dieses zweite Signal bliebe hier nur der Name, und ein geteilter
+            // Nachname allein ist ausdruecklich keine Gruppe.
+            stats(new CharacterDtos.UnauthedCharDto(A, "Zaphod Video", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(B, "Sansha Video", "portrait"));
+            beitrittsdaten(beitritt(A, JOIN), beitritt(B, JOIN.plusSeconds(120)));
+
+            assertThat(service.findUnregisteredGroups(MAIN_ID)).singleElement()
+                    .satisfies(gruppe -> {
+                        assertThat(gruppe.signalsUsed()).isEqualTo(2);
+                        assertThat(gruppe.probability())
+                                .isGreaterThanOrEqualTo(props.getMinProbability());
+                    });
+        }
+
+        @Test
+        @DisplayName("Eine Rekrutierungswelle loest die Namensvettern wieder auf")
+        void welleLoestGruppeAuf() {
+            // Dieselbe Bremse wie bei den Kontovorschlaegen, und hier ist sie
+            // die wichtigste ueberhaupt: drei gleichzeitig aufgenommene
+            // Namensvettern wuerden ohne die Cluster-Daempfung ueber den
+            // Beitritt genau die Gruppe bilden, die der Nachname allein nicht
+            // bilden darf - ein Gruppenereignis, gehalten fuer einen
+            // Fingerabdruck.
+            stats(new CharacterDtos.UnauthedCharDto(A, "Zaphod Video", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(B, "Sansha Video", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(C, "Random Video", "portrait"));
+            beitrittsdaten(beitritt(A, JOIN), beitritt(B, JOIN.plusSeconds(120)),
+                    beitritt(C, JOIN.plusSeconds(240)));
+
+            assertThat(service.findUnregisteredGroups(MAIN_ID)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Die Gruppenansicht ist fuer Unberechtigte gesperrt")
+        void gruppenNurFuerDieFuehrung() {
+            // Dass hier nichts geschrieben wird, macht die Ansicht nicht
+            // harmlos: es sind zusammengetragene Vermutungen darueber, welche
+            // Menschen hinter welchen Charakteren stecken. Ohne diese Zeile
+            // koennte jedes Corp-Mitglied sie abrufen, sobald der Controller
+            // einmal umgebaut wird.
+            Character fremder = character(STRANGER_ID, STRANGER_ID, "Random Guy", SystemRoles.MEMBER);
+            when(characterRepo.findById(STRANGER_ID)).thenReturn(Optional.of(fremder));
+
+            assertThatThrownBy(() -> service.findUnregisteredGroups(STRANGER_ID))
+                    .isInstanceOf(AccessDeniedException.class);
+        }
+
+        @Test
+        @DisplayName("Die Gruppenansicht schreibt nichts")
+        void gruppenSchreibenNichts() {
+            // Es gibt kein Konto, dem sich eine solche Gruppe zuordnen liesse -
+            // also darf hier auch nichts entstehen, was spaeter wie eine
+            // Zuordnung aussieht.
+            stats(new CharacterDtos.UnauthedCharDto(A, "Miner Guy", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(B, "Miner Guy 2", "portrait"));
+
+            service.findUnregisteredGroups(MAIN_ID);
+
+            verify(proposalRepo, never()).save(any());
+            verify(characterRepo, never()).save(any());
+        }
+    }
+
+    // ==================================================================
+    // Kalibrieransicht
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Kalibrieransicht")
+    class Kalibrierung {
+
+        @Test
+        @DisplayName("Die Kalibrieransicht liefert auch unter der Schwelle, bestaetigt aber nichts")
+        void liefertUnterDerSchwelle() {
+            // Der eigentliche Mangel, den diese Ansicht behebt: eine leere
+            // Vorschlagsliste sieht genauso aus, ob der Scorer nichts findet
+            // oder gar nicht laeuft. Ohne diese Zeile bliebe die Schwelle eine
+            // Zahl, die man nur raten kann.
+            stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, "Zaphod Video", "portrait"));
+
+            assertThat(service.findProbableAlts())
+                    .as("der blosse Namensvetter faellt aus der Handlungsliste heraus")
+                    .isEmpty();
+
+            CharacterDtos.AltCalibrationDto ansicht = service.calibrationSample(MAIN_ID, null);
+
+            assertThat(ansicht.accountPairs()).singleElement().satisfies(zeile -> {
+                assertThat(zeile.suggestion().probability())
+                        .isEqualTo(props.getNameFamilyMatchScore());
+                assertThat(zeile.requiredThreshold())
+                        .as("ein einzelnes Signal muss hoeher springen - und das steht dabei")
+                        .isEqualTo(props.getMinProbabilitySingleSignal());
+                assertThat(zeile.aboveThreshold()).isFalse();
+                assertThat(zeile.suggestion().signals())
+                        .as("die volle Aufschluesselung, sonst ist die Zahl wieder nackt")
+                        .hasSize(AltDetectionService.SIGNAL_COUNT);
+            });
+            assertThat(ansicht.minProbability()).isEqualTo(props.getMinProbability());
+            assertThat(ansicht.examinedAccountPairs()).isEqualTo(1);
+
+            // Hier wird NICHTS bestaetigt: keine Zuordnung, keine Vormerkung.
+            // Waere das anders, liesse sich ueber die Kalibrierung genau die
+            // Vorsicht aushebeln, die die Schwelle darstellt.
+            verify(proposalRepo, never()).save(any());
+            verify(characterRepo, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Die Kalibrieransicht ist fuer Unberechtigte gesperrt")
+        void nurFuerDieFuehrung() {
+            // Die Pruefung steht IM DIENST und nicht nur am Controller. Ohne sie
+            // waere ausgerechnet die ungefilterte Ansicht - die ueber JEDES
+            // Corp-Mitglied eine Vermutung enthaelt - der am wenigsten
+            // geschuetzte Weg des ganzen Merkmals.
+            Character fremder = character(STRANGER_ID, STRANGER_ID, "Random Guy", SystemRoles.MEMBER);
+            when(characterRepo.findById(STRANGER_ID)).thenReturn(Optional.of(fremder));
+
+            assertThatThrownBy(() -> service.calibrationSample(STRANGER_ID, 10))
+                    .isInstanceOf(AccessDeniedException.class);
+        }
+
+        @Test
+        @DisplayName("Ein zu grosses Limit wird auf die Obergrenze gekuerzt")
+        void limitWirdGekuerzt() {
+            // Ohne die Grenze waere die Ansicht ein Vollabzug der
+            // Namens-Kreuztabelle ueber mehrere hundert Menschen - sie soll
+            // zeigen, WIE gerechnet wird, nicht alles ausliefern, WAS gerechnet
+            // wurde.
+            assertThat(service.calibrationSample(MAIN_ID, 100_000).limit())
+                    .isEqualTo(props.getCalibrationMaxLimit());
+            assertThat(service.calibrationSample(MAIN_ID, null).limit())
+                    .isEqualTo(props.getCalibrationDefaultLimit());
+        }
+
+        @Test
+        @DisplayName("Die Kalibrieransicht zeigt auch die Paare unregistrierter untereinander")
+        void auchUnregistriertePaare() {
+            // Sonst waere die Gruppenansicht genauso unkalibrierbar wie vorher
+            // die Vorschlagsliste: leer, ohne Auskunft darueber, wie knapp es
+            // darunter zugeht.
+            stats(new CharacterDtos.UnauthedCharDto(5001L, "Zaphod Video", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(5002L, "Sansha Video", "portrait"));
+
+            CharacterDtos.AltCalibrationDto ansicht = service.calibrationSample(MAIN_ID, null);
+
+            assertThat(ansicht.examinedUnregisteredPairs()).isEqualTo(1);
+            assertThat(ansicht.unregisteredPairs()).singleElement().satisfies(paar -> {
+                assertThat(paar.probability()).isEqualTo(props.getNameFamilyMatchScore());
+                assertThat(paar.aboveThreshold())
+                        .as("ein geteilter Nachname allein begruendet keine Gruppenkante")
+                        .isFalse();
+            });
+        }
+    }
+
+    // ==================================================================
+    // Konfiguration
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Die Stellschrauben wirken zur Laufzeit")
+    class Stellschrauben {
+
+        @Test
+        @DisplayName("Die rechnenden Stellschrauben sind wirklich verdrahtet")
+        void rechnendeStellschraubenWirken() {
+            // Eine Bindung, die niemand prueft, ist keine Bindung. Der
+            // Falsifikationslauf hat es gezeigt: ersetzt man einen props-Getter
+            // durch sein Vorgabe-Literal, bleiben alle Tests gruen - die
+            // Schraube bewegt sich dann stumm nicht mehr, und der Nutzer sucht
+            // den Fehler bei sich. Geprueft werden hier die fuenf, die
+            // tatsaechlich in die Zahl eingehen; die uebrigen sind Grenzen und
+            // Schalter, keine Summanden. weightMining fehlt hier bewusst: das
+            // Signal ist in der Praxis nie verfuegbar (fuer Unregistrierte gibt
+            // es keine Mining-Zeilen), ein Test darauf pruefte einen Pfad, der
+            // nicht laeuft, und waere entsprechend zerbrechlich.
+            beitrittsdaten(beitritt(UNAUTHED_ID, JOIN), beitritt(MAIN_ID, JOIN.plusSeconds(120)));
+            int mitVorgabe = service.findProbableAlts().getFirst().probability();
+
+            // Beitritt entwertet: der Wert MUSS sich bewegen, sonst wird das
+            // Gewicht nicht gelesen.
+            props.setWeightJoin(0);
+            assertThat(service.findProbableAlts().getFirst().probability())
+                    .as("weightJoin geht in die Rechnung ein")
+                    .isNotEqualTo(mitVorgabe);
+
+            props.setWeightJoin(new AltDetectionProperties().getWeightJoin());
+            props.setWeightName(0);
+            assertThat(service.findProbableAlts().getFirst().probability())
+                    .as("weightName geht in die Rechnung ein")
+                    .isNotEqualTo(mitVorgabe);
+
+            // Die Schwelle: hochgedreht ueber den erreichten Wert faellt der
+            // Vorschlag heraus.
+            props.setWeightName(new AltDetectionProperties().getWeightName());
+            props.setMinProbability(mitVorgabe + 1);
+            assertThat(service.findProbableAlts())
+                    .as("minProbability wird gelesen")
+                    .isEmpty();
+
+            // Die Mindestzahl an Signalen: verlangt man drei, traegt das Paar
+            // mit zweien nicht mehr.
+            props.setMinProbability(new AltDetectionProperties().getMinProbability());
+            props.setMinAvailableSignals(3);
+            assertThat(service.findProbableAlts())
+                    .as("minAvailableSignals wird gelesen")
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("Eine gesenkte Einzelsignal-Schwelle laesst den Namensvetter durch")
+        void geaenderteSchwelleWirkt() {
+            // Der ganze Zweck der Umstellung von static final auf Konfiguration:
+            // ohne diese Zeile koennte die Bindung ins Leere gehen und der
+            // Dienst weiter mit den einkompilierten Werten rechnen - der Nutzer
+            // wuerde eine Eigenschaft setzen, an der Liste aendert sich nichts,
+            // und niemand koennte sagen warum.
+            stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, "Zaphod Video", "portrait"));
+            assertThat(service.findProbableAlts())
+                    .as("mit der Vorgabe von 90 faellt der Namensvetter heraus")
+                    .isEmpty();
+
+            props.setMinProbabilitySingleSignal(80);
+
+            assertThat(service.findProbableAlts())
+                    .as("mit 80 kommt genau derselbe Vorschlag durch")
+                    .singleElement()
+                    .satisfies(vorschlag -> assertThat(vorschlag.probability())
+                            .isEqualTo(props.getNameFamilyMatchScore()));
+        }
+
+        @Test
+        @DisplayName("Ein geaenderter Namenspunktwert wirkt bis in die Namensaehnlichkeit")
+        void geaenderterPunktwertWirkt() {
+            // Die Punktwerte liegen in derselben Konfiguration, werden aber von
+            // NameSimilarity gelesen. Ohne diese Zeile bliebe unbemerkt, dass
+            // der Dienst sich seine Namensaehnlichkeit mit einer anderen
+            // Konfiguration gebaut hat als der, die er selbst benutzt.
+            stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, MAIN_NAME + " 2", "portrait"));
+            props.setNameNumberedTwinScore(99);
+
+            assertThat(service.findProbableAlts()).singleElement()
+                    .satisfies(vorschlag -> assertThat(vorschlag.probability()).isEqualTo(99));
+        }
+
+        @Test
+        @DisplayName("Abgeschaltete Gruppierung liefert keine Gruppen")
+        void gruppierungAbschaltbar() {
+            // Eine Beobachtung, die niemand braucht, muss sich abstellen lassen,
+            // ohne dass jemand neu baut - sonst steht sie fuer immer in der
+            // Oberflaeche.
+            stats(new CharacterDtos.UnauthedCharDto(5001L, "Miner Guy", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(5002L, "Miner Guy 2", "portrait"));
+            assertThat(service.findUnregisteredGroups(MAIN_ID)).isNotEmpty();
+
+            props.setGroupUnregistered(false);
+
+            assertThat(service.findUnregisteredGroups(MAIN_ID)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Ein gesenktes Paarbudget bricht die Corporation ehrlich ab")
+        void budgetWirkt() {
+            // Die Reissleine gegen eine Corporation, die um Groessenordnungen
+            // waechst. Ohne sie rechnete der Endpunkt minutenlang an einem
+            // Seitenaufruf, der laengst niemanden mehr interessiert.
+            stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, UNAUTHED_NAME, "portrait"));
+            assertThat(service.findProbableAlts()).isNotEmpty();
+
+            props.setMaxPairsPerCorporation(0);
 
             assertThat(service.findProbableAlts()).isEmpty();
         }

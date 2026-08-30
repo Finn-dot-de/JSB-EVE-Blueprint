@@ -87,6 +87,73 @@ public final class CharacterDtos {
                                    List<AltSignalDto> signals,
                                    Long corpId) {}
 
+    /**
+     * Eine Gruppe nicht registrierter Charaktere, die vermutlich <em>ein</em>
+     * Mensch sind - ohne dass ein bekanntes Konto dazugehoert.
+     *
+     * <p><b>Das ist eine Beobachtung und keine Handlung.</b> Es gibt kein Konto,
+     * dem sich diese Gruppe zuordnen liesse, also gibt es dazu auch keinen
+     * Bestaetigungsweg und keine Schaltflaeche. Wer hier eine anbietet,
+     * suggeriert, das Programm habe die Sache erledigt - es hat nur etwas
+     * bemerkt.</p>
+     *
+     * @param members      alle Charaktere der Gruppe, nach Namen sortiert
+     * @param probability  der Wert der <b>schwaechsten</b> Verbindung in der
+     *                     Gruppe und ausdruecklich nicht der Mittelwert: eine
+     *                     Gruppe ist nur so belastbar wie ihr duennstes Paar
+     * @param signals      die Aufschluesselung eben dieser schwaechsten Verbindung
+     * @param note         der Klartext dazu, was die Zahl bedeutet und was der
+     *                     naechste Schritt ist - er liegt ausserhalb dieses Programms
+     */
+    public record AltGroupDto(Long corpId, List<UnauthedCharDto> members,
+                              int probability, int signalsUsed, int signalsTotal,
+                              List<AltSignalDto> signals, String note) {}
+
+    /**
+     * Ein bewertetes Paar zweier nicht registrierter Charaktere, wie es die
+     * Kalibrieransicht zeigt - auch <b>unterhalb</b> der Schwelle.
+     *
+     * @param requiredThreshold die Schwelle, die genau dieses Paar haette
+     *                          nehmen muessen. Sie haengt an der Zahl tragender
+     *                          Signale und ist deshalb nicht fuer alle Zeilen
+     *                          dieselbe; ohne sie waere die Spalte
+     *                          {@code aboveThreshold} nicht nachvollziehbar.
+     * @param aboveThreshold    ob das Paar eine Gruppenkante begruenden wuerde
+     */
+    public record AltPairDto(Long leftId, String leftName, Long rightId, String rightName,
+                             Long corpId, int probability, int signalsUsed, int signalsTotal,
+                             List<AltSignalDto> signals,
+                             int requiredThreshold, boolean aboveThreshold) {}
+
+    /** Ein Kontopaar der Kalibrieransicht samt der Schwelle, die fuer es gilt. */
+    public record AltCalibrationEntryDto(AltSuggestionDto suggestion,
+                                         int requiredThreshold, boolean aboveThreshold) {}
+
+    /**
+     * Die Kalibrieransicht: was der Scorer denkt, bevor die Schwelle filtert.
+     *
+     * <p>Eine leere Vorschlagsliste hat zwei ununterscheidbare Ursachen - der
+     * Scorer findet nichts, oder er laeuft nicht. Diese Antwort trennt sie:
+     * {@code examinedAccountPairs} sagt, wieviel ueberhaupt gerechnet wurde, und
+     * die Listen zeigen, wie knapp es darunter zugeht. <b>Hier wird nichts
+     * bestaetigt</b> - kein Feld dieser Antwort fuehrt zu einer Zuordnung oder
+     * einer Vormerkung.</p>
+     *
+     * @param limit                     wieviele Zeilen je Liste tatsaechlich geliefert wurden
+     * @param maxLimit                  die harte Obergrenze gegen einen Vollabzug
+     * @param examinedAccountPairs      gerechnete Paare "unregistriert gegen Konto"
+     * @param examinedUnregisteredPairs gerechnete Paare "unregistriert gegen unregistriert"
+     * @param minProbability            die geltende Schwelle bei mehreren Signalen
+     * @param minProbabilitySingleSignal die hoehere Schwelle, wenn nur eines traegt
+     * @param minAvailableSignals       wieviele Signale ueberhaupt vorliegen muessen
+     */
+    public record AltCalibrationDto(int limit, int maxLimit,
+                                    int examinedAccountPairs, int examinedUnregisteredPairs,
+                                    int minProbability, int minProbabilitySingleSignal,
+                                    int minAvailableSignals,
+                                    List<AltCalibrationEntryDto> accountPairs,
+                                    List<AltPairDto> unregisteredPairs) {}
+
     /** Die Anfrage des Directors: diesen Charakter diesem Konto zuordnen. */
     public record AltLinkRequest(Long unauthedCharId, Long mainId) {}
 

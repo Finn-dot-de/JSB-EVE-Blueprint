@@ -9,6 +9,16 @@ import org.junit.jupiter.api.Test;
 @DisplayName("Namensaehnlichkeit zweier EVE-Charaktere")
 class NameSimilarityTest {
 
+    /**
+     * Die Vorgabewerte, also genau die frueheren Konstanten.
+     *
+     * <p>Ein frisches Objekt je Test und kein geteiltes statisches Feld: die
+     * Punktwerte sind seit der Umstellung Konfiguration, und ein statischer
+     * Zustand, den ein Test veraendert, wirkte in den naechsten hinein.</p>
+     */
+    private final AltDetectionProperties props = new AltDetectionProperties();
+    private final NameSimilarity names = new NameSimilarity(props);
+
     @Nested
     @DisplayName("Levenshtein")
     class Levenshtein {
@@ -20,13 +30,13 @@ class NameSimilarityTest {
             // Maximalwert gar nicht erreicht - dann waere die Schwelle von 80
             // aus dem Namensteil allein grundsaetzlich unerreichbar, und zwar
             // still.
-            assertThat(NameSimilarity.score("Comander Video", "Comander Video")).isEqualTo(100);
+            assertThat(names.score("Comander Video", "Comander Video")).isEqualTo(100);
         }
 
         @Test
         @DisplayName("Gross- und Kleinschreibung entscheidet nicht")
         void schreibweiseEgal() {
-            assertThat(NameSimilarity.score("COMANDER VIDEO", "comander video")).isEqualTo(100);
+            assertThat(names.score("COMANDER VIDEO", "comander video")).isEqualTo(100);
         }
 
         @Test
@@ -36,7 +46,7 @@ class NameSimilarityTest {
             // die Schwelle waere wertlos: dann bekaeme JEDER nicht registrierte
             // Charakter einen Vorschlag, und ein Director wuerde fremde
             // Charaktere fremden Konten zuschlagen.
-            assertThat(NameSimilarity.score("Zzz Qqqq Wwww", "Comander Video")).isLessThan(30);
+            assertThat(names.score("Zzz Qqqq Wwww", "Comander Video")).isLessThan(30);
         }
 
         @Test
@@ -61,8 +71,8 @@ class NameSimilarityTest {
             // hier unter 30.
             assertThat(NameSimilarity.levenshteinScore("sansha video", "comander video"))
                     .isLessThan(60);
-            assertThat(NameSimilarity.score("Sansha Video", "Comander Video"))
-                    .isEqualTo(AltDetectionTuning.NAME_FAMILY_MATCH_SCORE);
+            assertThat(names.score("Sansha Video", "Comander Video"))
+                    .isEqualTo(props.getNameFamilyMatchScore());
         }
 
         @Test
@@ -71,8 +81,8 @@ class NameSimilarityTest {
             // "Comander-Video" und "Comander Video" sind in EVE dieselbe
             // Schreibweise. Ohne die Ersetzung faende die Nachnamenregel
             // ueberhaupt keinen Nachnamen und faellt still auf 0.
-            assertThat(NameSimilarity.score("Sansha Video", "Comander-Video"))
-                    .isEqualTo(AltDetectionTuning.NAME_FAMILY_MATCH_SCORE);
+            assertThat(names.score("Sansha Video", "Comander-Video"))
+                    .isEqualTo(props.getNameFamilyMatchScore());
         }
 
         @Test
@@ -80,26 +90,26 @@ class NameSimilarityTest {
         void kurzeEndungZaehltNicht() {
             // Sonst gaelte jedes "II" oder "Jr" als geteilter Nachname und
             // zwei voellig fremde Spieler bekaemen 85 Punkte geschenkt.
-            assertThat(NameSimilarity.score("Alpha II", "Beta II"))
-                    .isLessThan(AltDetectionTuning.NAME_FAMILY_MATCH_SCORE);
+            assertThat(names.score("Alpha II", "Beta II"))
+                    .isLessThan(props.getNameFamilyMatchScore());
         }
 
         @Test
         @DisplayName("der durchnummerierte Zwilling wird erkannt")
         void durchnummerierterZwilling() {
-            assertThat(NameSimilarity.score("Miner Guy", "Miner Guy 2"))
-                    .isEqualTo(AltDetectionTuning.NAME_NUMBERED_TWIN_SCORE);
+            assertThat(names.score("Miner Guy", "Miner Guy 2"))
+                    .isEqualTo(props.getNameNumberedTwinScore());
             // Auf BEIDEN Seiten abgestreift - ohne das faende die Regel
             // "Miner Guy 2" gegen "Miner Guy 3" nicht, obwohl gerade das das
             // deutlichste Muster ueberhaupt ist.
-            assertThat(NameSimilarity.score("Miner Guy 2", "Miner Guy 3"))
-                    .isEqualTo(AltDetectionTuning.NAME_NUMBERED_TWIN_SCORE);
+            assertThat(names.score("Miner Guy 2", "Miner Guy 3"))
+                    .isEqualTo(props.getNameNumberedTwinScore());
         }
 
         @Test
         @DisplayName("ein einzelner Name ohne Nachnamen bekommt keinen Musterbonus")
         void einzelwortOhneBonus() {
-            assertThat(NameSimilarity.score("Video", "Comander Video")).isLessThan(60);
+            assertThat(names.score("Video", "Comander Video")).isLessThan(60);
         }
     }
 
@@ -110,8 +120,8 @@ class NameSimilarityTest {
         @Test
         @DisplayName("ein fehlender Name ergibt keinen Wert")
         void fehlenderName() {
-            assertThat(NameSimilarity.score(null, "Comander Video")).isZero();
-            assertThat(NameSimilarity.score("Comander Video", "   ")).isZero();
+            assertThat(names.score(null, "Comander Video")).isZero();
+            assertThat(names.score("Comander Video", "   ")).isZero();
         }
     }
 }

@@ -1,9 +1,14 @@
 package com.eve.own.auth.backend.domain.character.service;
 
 import java.time.Duration;
+import java.util.List;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Alle Stellschrauben der Alt-Erkennung an EINER Stelle.
+ * Alle Stellschrauben der Alt-Erkennung an EINER Stelle, konfigurierbar ueber
+ * {@code eve.alt-detection.*}.
  *
  * <p>Warum eine eigene Klasse und nicht {@code private static final} im Dienst:
  * die Zahlen hier sind <em>keine</em> Implementierungsdetails. Sie sind die
@@ -12,22 +17,38 @@ import java.time.Duration;
  * findet sie niemand wieder; gebuendelt lassen sie sich lesen, vergleichen und
  * anpassen, ohne den Rechenweg zu verstehen.</p>
  *
- * <p><b>Jede Konstante sagt unten ausdruecklich, was beim Hoch- und was beim
- * Runterdrehen passiert.</b> Das ist keine Formalie: eine Wahrscheinlichkeit
- * ohne Kenntnis ihrer Gewichte ist eine Zahl, die man fuer geeicht haelt.</p>
+ * <h2>Warum das jetzt Konfiguration ist und nicht mehr {@code static final}</h2>
+ * <p>Vorher war das ein Konstantenhalter. Damit kostete jeder Versuch, einen
+ * einzigen Wert anders zu setzen, einen vollen Neubau samt Neustart - und weil
+ * die Werte ausdruecklich <b>nicht kalibriert</b> sind, ist Ausprobieren nicht
+ * die Ausnahme, sondern der einzige Weg, sie ueberhaupt zu setzen. Eine
+ * Stellschraube, an der man nicht drehen kann, ist keine.</p>
+ *
+ * <h2>Warum Klasse mit Feldern und nicht Record wie {@code MarketOrderProperties}</h2>
+ * <p>Der wertvollste Teil dieser Klasse sind nicht die Zahlen, sondern die
+ * Begruendungen darunter: jede sagt, was beim Hoch- und was beim Runterdrehen
+ * passiert. Ein Record kann seine Komponenten nur ueber {@code @param}-Zeilen in
+ * der Klassendoku beschreiben - neunzehn mehrabsaetzige Begruendungen wuerden
+ * dort zu einem Block, in dem niemand mehr die einzelne Schraube findet. Felder
+ * tragen ihre eigene Doku direkt am Wert. Die Vorgabewerte stehen als
+ * Feldinitialisierung und sind exakt die frueheren Konstanten; fehlt eine
+ * Eigenschaft in der Konfiguration, bleibt es beim heutigen Verhalten.</p>
  *
  * <h2>Was diese Zahlen NICHT sind</h2>
  * <p>Sie sind <b>nicht kalibriert</b>. Eine Kalibrierung braucht bekannte
  * Wahrheit - also Paare, von denen man weiss, dass sie zusammengehoeren. Die
  * Datenbank kennt derzeit 12 Charaktere in 2 Konten; das reicht, um ein Signal
  * zu <em>widerlegen</em>, aber nirgends, um eine Schwelle zu <em>bestaetigen</em>.
- * Die Werte hier sind begruendete Setzungen, keine Messergebnisse.</p>
+ * Die Werte hier sind begruendete Setzungen, keine Messergebnisse. Wer sie
+ * setzen will, statt sie zu raten, ruft zuerst
+ * {@link AltDetectionService#calibrationSample(Long, Integer)} auf - die Ansicht
+ * zeigt die besten Paare samt Aufschluesselung <em>unterhalb</em> der Schwelle,
+ * und erst daran laesst sich sehen, wo die Schwelle sinnvoll liegt.</p>
  */
-public final class AltDetectionTuning {
-
-    private AltDetectionTuning() {
-        throw new AssertionError("Konstantenhalter, nicht instanziierbar.");
-    }
+@Getter
+@Setter
+@ConfigurationProperties(prefix = "eve.alt-detection")
+public class AltDetectionProperties {
 
     // ==================================================================
     // Gewichte der drei Signale
@@ -50,7 +71,7 @@ public final class AltDetectionTuning {
      * Gewicht traegt hier hauptsaechlich die beiden <em>Muster</em> (gleicher
      * Nachname, abgestreifte Nummerierung), nicht den nackten Abstand.</p>
      */
-    public static final int WEIGHT_NAME = 40;
+    private int weightName = 40;
 
     /**
      * Gewicht der Beitrittsnaehe (start_date aus der Mitgliederverfolgung).
@@ -65,9 +86,13 @@ public final class AltDetectionTuning {
      * <p>Das hoechste Gewicht, weil es das einzige Signal ist, dessen Datenlage
      * fuer die Zielgruppe nicht strukturell leer ist. Gegen den bekannten
      * Schwachpunkt - Rekrutierungswellen setzen viele fremde Konten auf dieselbe
-     * Minute - hilft nicht das Gewicht, sondern {@link #JOIN_CLUSTER_DILUTION}.</p>
+     * Minute - hilft nicht das Gewicht, sondern {@link #joinClusterDilution}.</p>
+     *
+     * <p>Fuer die Gruppierung <em>unregistrierter untereinander</em> ist es das
+     * einzige zweite Signal ueberhaupt: die Mitgliederverfolgung deckt die ganze
+     * Corporation ab, also beide Seiten eines solchen Paares.</p>
      */
-    public static final int WEIGHT_JOIN = 45;
+    private int weightJoin = 45;
 
     /**
      * Gewicht der Mining-Uebereinstimmung.
@@ -84,14 +109,14 @@ public final class AltDetectionTuning {
      * gemessen und war <em>invertiert</em> - fremde Paare lagen ueber echten
      * (Jaccard-Mittel 0,77 gegen 0,27). Der Grund ist erklaerbar: in einer Corp
      * minen alle an denselben Tagen, der Tag ist ein Gruppenereignis und kein
-     * Fingerabdruck. Genau dagegen rechnet {@link #MINING_RARITY_EXPONENT}.</p>
+     * Fingerabdruck. Genau dagegen rechnet {@link #miningRarityExponent}.</p>
      *
      * <p>Das Signal wird trotzdem gebaut: sobald die Corp-Mining-Beobachter
      * (Scope {@code esi-industry.read_corporation_mining.v1}, ebenfalls bereits
      * vorhanden) Zeilen fuer nicht registrierte Charaktere liefern, ist es die
      * einzige Quelle, die dem Mining-Signal Ort und Uhrzeit zurueckgibt.</p>
      */
-    public static final int WEIGHT_MINING = 15;
+    private int weightMining = 15;
 
     // ==================================================================
     // Die Schwelle
@@ -116,7 +141,7 @@ public final class AltDetectionTuning {
      * Signal der Einzelwert. Wer nur die Zahl anzeigt, verschweigt die Haelfte
      * der Aussage.</p>
      */
-    public static final int MIN_PROBABILITY = 80;
+    private int minProbability = 80;
 
     /**
      * Wieviele Signale mindestens vorliegen muessen, damit ueberhaupt ein
@@ -131,9 +156,9 @@ public final class AltDetectionTuning {
      * <p>Steht auf 1, weil ein einzelnes Signal durchaus tragen kann - ein
      * durchnummerierter Zwilling ist ein starker Hinweis. Gegen den gefaehrlichen
      * Einzelsignal-Fall schuetzt nicht diese Konstante, sondern
-     * {@link #MIN_PROBABILITY_SINGLE_SIGNAL}.</p>
+     * {@link #minProbabilitySingleSignal}.</p>
      */
-    public static final int MIN_AVAILABLE_SIGNALS = 1;
+    private int minAvailableSignals = 1;
 
     /**
      * Die hoehere Schwelle, wenn nur EIN Signal vorliegt.
@@ -147,11 +172,16 @@ public final class AltDetectionTuning {
      * ist ein ernstzunehmender Hinweis. 90 trennt sie.</p>
      *
      * <p><b>Hoeher:</b> auch Zwillinge fallen heraus, die Liste bleibt ohne
-     * Director-Token leer. <b>Auf {@link #MIN_PROBABILITY} herunter:</b> jeder
+     * Director-Token leer. <b>Auf {@link #minProbability} herunter:</b> jeder
      * Namensvetter steht wieder in der Liste - mit einem Knopf daneben, der
      * einen fremden Menschen einem fremden Konto zuschlaegt.</p>
+     *
+     * <p>Dieselbe Schwelle regelt auch, welche Kante zwischen zwei
+     * <em>unregistrierten</em> Charakteren eine Gruppe begruenden darf. Ohne
+     * Director-Token traegt dort ebenfalls nur der Name - und dann ist ein
+     * geteilter Nachname genau der Fall, den diese Zahl draussen haelt.</p>
      */
-    public static final int MIN_PROBABILITY_SINGLE_SIGNAL = 90;
+    private int minProbabilitySingleSignal = 90;
 
     // ==================================================================
     // Signal 1: Name
@@ -169,7 +199,7 @@ public final class AltDetectionTuning {
      * fuer den vollen Namensteil. <b>Niedriger:</b> das Muster wird zur blossen
      * Beigabe, und Alts mit anderem Vornamen fallen wieder heraus.</p>
      */
-    public static final int NAME_FAMILY_MATCH_SCORE = 85;
+    private int nameFamilyMatchScore = 85;
 
     /**
      * Ab welcher Laenge ein Nachname als Nachname zaehlt.
@@ -178,7 +208,7 @@ public final class AltDetectionTuning {
      * Zufallstreffer. <b>Niedriger:</b> zweibuchstabige Endungen ("Jr", "II")
      * gelten ploetzlich als geteilter Nachname und erzeugen Unsinn.</p>
      */
-    public static final int NAME_FAMILY_MIN_LENGTH = 4;
+    private int nameFamilyMinLength = 4;
 
     /**
      * Punktwert, wenn beide Namen nach dem Abstreifen einer Nummerierung
@@ -187,11 +217,11 @@ public final class AltDetectionTuning {
      * <p><b>Hoeher:</b> die Nummerierung wird zum staerksten Namensmuster.
      * <b>Niedriger:</b> sie faellt hinter den gleichen Nachnamen zurueck.</p>
      *
-     * <p>Hoeher als {@link #NAME_FAMILY_MATCH_SCORE}, weil eine durchnummerierte
+     * <p>Hoeher als {@link #nameFamilyMatchScore}, weil eine durchnummerierte
      * Wiederholung des <em>ganzen</em> Namens deutlich seltener zufaellig
      * entsteht als ein geteiltes letztes Wort.</p>
      */
-    public static final int NAME_NUMBERED_TWIN_SCORE = 95;
+    private int nameNumberedTwinScore = 95;
 
     /**
      * Endungen, die eine Alt-Nummerierung markieren und vor dem Vergleich
@@ -199,11 +229,13 @@ public final class AltDetectionTuning {
      *
      * <p><b>Erweitern:</b> faengt mehr Namensschemata. <b>Kuerzen:</b> weniger
      * Fehldeutungen bei Spielern, deren Name echt auf "Alt" oder "II" endet.</p>
+     *
+     * <p>Als Liste und nicht als Array, weil Spring eine kommagetrennte
+     * Eigenschaft direkt hierhin bindet und der Aufrufer nur liest.</p>
      */
-    public static final String[] NAME_ALT_SUFFIXES = {
+    private List<String> nameAltSuffixes = List.of(
             "alt", "alts", "jr", "junior", "ii", "iii", "iv", "v", "vi",
-            "2", "3", "4", "5", "6", "7", "8", "9"
-    };
+            "2", "3", "4", "5", "6", "7", "8", "9");
 
     // ==================================================================
     // Signal 2: Beitritts-Cluster
@@ -222,7 +254,7 @@ public final class AltDetectionTuning {
      * hintereinander in die Corp holt - aber nicht in derselben Sekunde, weil
      * jede Bewerbung einzeln angenommen werden muss.</p>
      */
-    public static final Duration JOIN_FULL_WINDOW = Duration.ofMinutes(15);
+    private Duration joinFullWindow = Duration.ofMinutes(15);
 
     /**
      * Zeitfenster, ab dem ein gemeinsamer Beitritt gar nichts mehr aussagt.
@@ -233,7 +265,7 @@ public final class AltDetectionTuning {
      * Signal verliert seine Trennschaerfe. <b>Niedriger:</b> harte Kante; ein
      * Alt, der am naechsten Tag nachgezogen wurde, zaehlt wie ein Fremder.</p>
      */
-    public static final Duration JOIN_ZERO_WINDOW = Duration.ofDays(3);
+    private Duration joinZeroWindow = Duration.ofDays(3);
 
     /**
      * Ob die Beitrittsnaehe an der Grosse ihres Clusters gedaempft wird.
@@ -244,8 +276,12 @@ public final class AltDetectionTuning {
      * jedes Paar den vollen Punktwert - genau der Fehler, an dem das
      * Mining-Tagessignal gemessen gescheitert ist: ein Gruppenereignis wird fuer
      * einen Fingerabdruck gehalten.</p>
+     *
+     * <p>Fuer die Gruppierung unregistrierter Charaktere untereinander ist das
+     * die wichtigste einzelne Schraube: sie ist es, die drei gleichzeitig
+     * aufgenommene Namensvettern wieder auseinanderfallen laesst.</p>
      */
-    public static final boolean JOIN_CLUSTER_DILUTION = true;
+    private boolean joinClusterDilution = true;
 
     /**
      * Ab welcher Clustergroesse die Daempfung ueberhaupt greift.
@@ -257,7 +293,7 @@ public final class AltDetectionTuning {
      * bringt: das ist genau der gesuchte Fall und darf sich nicht selbst
      * daempfen.</p>
      */
-    public static final int JOIN_CLUSTER_MIN_SIZE = 3;
+    private int joinClusterMinSize = 3;
 
     // ==================================================================
     // Signal 3: Mining
@@ -276,7 +312,7 @@ public final class AltDetectionTuning {
      * niemals "Wert 0". Ein Charakter ohne Mining-Zeilen hat keine gemessene
      * Unaehnlichkeit - er hat gar keine Messung.</p>
      */
-    public static final int MINING_MIN_SHARED_DAYS = 2;
+    private int miningMinSharedDays = 2;
 
     /**
      * Wie stark seltene Mining-Tage gegenueber haeufigen zaehlen.
@@ -293,7 +329,76 @@ public final class AltDetectionTuning {
      * bekommt exakt die rohe Ueberschneidung zurueck, also die gemessen verkehrt
      * herum laufende Variante. <b>Nicht auf 0 stellen, ohne das zu wollen.</b></p>
      */
-    public static final double MINING_RARITY_EXPONENT = 1.0;
+    private double miningRarityExponent = 1.0;
+
+    // ==================================================================
+    // Gruppierung unregistrierter Charaktere untereinander
+    // ==================================================================
+
+    /**
+     * Ob unregistrierte Charaktere auch <em>untereinander</em> zu Gruppen
+     * zusammengefasst werden.
+     *
+     * <p><b>Eingeschaltet:</b> die Erkennung meldet zusaetzlich Gruppen ohne
+     * bekannten Main ("diese drei sind vermutlich ein Mensch"). Das ist eine
+     * Beobachtung und keine Handlung - es gibt niemanden, dem man die Gruppe
+     * zuordnen koennte, und deshalb auch keine Schaltflaeche daneben.
+     * <b>Ausgeschaltet:</b> es bleibt bei den Vorschlaegen gegen bekannte Konten,
+     * also bei der Liste, die in einer Corp ohne Director-Token in der Praxis
+     * fast immer leer ist.</p>
+     */
+    private boolean groupUnregistered = true;
+
+    /**
+     * Wieviele Mitglieder eine gemeldete Gruppe mindestens haben muss.
+     *
+     * <p><b>Hoeher (3):</b> nur noch Dreier- und groessere Verbuende werden
+     * gemeldet - deutlich kuerzere Liste, aber der haeufigste echte Fall (ein
+     * Spieler mit genau einem Zweitcharakter) faellt heraus. <b>Niedriger als 2
+     * ist sinnlos:</b> ein einzelner Charakter ist keine Gruppe.</p>
+     */
+    private int groupMinMembers = 2;
+
+    /**
+     * Obergrenze fuer die Mitglieder einer gemeldeten Gruppe.
+     *
+     * <p>Eine Reissleine gegen ein Namensschema, das eine ganze Corp umfasst -
+     * etwa eine Rekrutierungscorp, in der jeder denselben Nachnamen traegt.
+     * Ueberschreitet eine Gruppe diese Groesse, ist sie mit hoher Sicherheit
+     * eine Konvention und kein Mensch; sie wird verworfen statt gemeldet.</p>
+     *
+     * <p><b>Hoeher:</b> auch sehr grosse Verbuende erscheinen - ein Spieler mit
+     * zwoelf Minenalts ist real. <b>Niedriger:</b> strenger, aber echte grosse
+     * Alt-Flotten fallen heraus.</p>
+     */
+    private int groupMaxMembers = 8;
+
+    // ==================================================================
+    // Kalibrieransicht
+    // ==================================================================
+
+    /**
+     * Wieviele Paare die Kalibrieransicht liefert, wenn der Aufrufer nichts sagt.
+     *
+     * <p><b>Hoeher:</b> mehr Zeilen auf einen Blick. <b>Niedriger:</b> weniger
+     * Ballast; die Ansicht ist nach Wert sortiert, die interessanten Zeilen
+     * stehen ohnehin oben.</p>
+     */
+    private int calibrationDefaultLimit = 50;
+
+    /**
+     * Harte Obergrenze fuer die Kalibrieransicht.
+     *
+     * <p>Sie ist kein Feintuning, sondern eine Grenze gegen den Vollabzug: ohne
+     * sie koennte ein Director mit {@code ?limit=100000} die gesamte
+     * Namens-Kreuztabelle ueber mehrere hundert Menschen als eine Antwort
+     * abholen. Die Ansicht soll zeigen, <em>wie</em> der Scorer rechnet, und
+     * nicht alles ausliefern, <em>was</em> er ueber alle Mitglieder denkt.</p>
+     *
+     * <p><b>Hoeher:</b> groessere Abzuege moeglich. <b>Niedriger:</b> strenger -
+     * zum Setzen einer Schwelle genuegen die obersten Zeilen ohnehin.</p>
+     */
+    private int calibrationMaxLimit = 200;
 
     // ==================================================================
     // Rechenaufwand
@@ -311,11 +416,18 @@ public final class AltDetectionTuning {
      * Corporation eine Mitgliederliste, ein Namensabruf und eine
      * Mitgliederverfolgung.</p>
      *
+     * <p>Fuer die Gruppierung unregistrierter untereinander gilt dieselbe
+     * Grenze, und dort ist sie enger: das Kreuzprodukt ist nicht
+     * {@code unregistriert x Konten}, sondern {@code unregistriert x
+     * unregistriert / 2} - bei 273 Mitgliedern also rund 37.000 Paare statt
+     * 3.000. Immer noch Millisekunden, aber der Abstand zur Grenze ist ein
+     * Zehntel des frueheren.</p>
+     *
      * <p><b>Hoeher:</b> auch riesige Corporations werden vollstaendig gerechnet.
      * <b>Niedriger:</b> frueherer Abbruch - der Endpunkt antwortet dann mit einer
      * unvollstaendigen Liste statt minutenlang zu rechnen. Die Grenze ist eine
      * Reissleine gegen eine Corp, die um Groessenordnungen waechst, kein
      * Feintuning.</p>
      */
-    public static final int MAX_PAIRS_PER_CORPORATION = 250_000;
+    private int maxPairsPerCorporation = 250_000;
 }

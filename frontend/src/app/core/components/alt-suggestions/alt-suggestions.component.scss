@@ -1,0 +1,216 @@
+/* Die Alt-Vorschlaege.
+
+   Durchgehend ueber die CSS-Variablen aus styles.scss - damit folgt die Seite
+   dem Umschalter im Zahnrad. Kein fest verdrahteter Farbwert.
+
+   Im Projekt gibt es ausser .surface-panel nichts Globales zu importieren: die
+   Bausteine (.page-head, .hinweis, .eve-table, .chip, .btn-primary) stehen in
+   jeder Komponente fuer sich. Sie sind hier woertlich aus
+   academy.component.scss uebernommen - nicht neu erfunden. Aus demselben Grund
+   steht hier .eve-table und nicht die urspruenglich gewuenschte .role-table:
+   die lebt in roles.component.scss und griffe wegen der View-Encapsulation in
+   einer eigenen Komponente ueberhaupt nicht. */
+
+.alt-suggestions {
+  padding: 1.5rem 2rem 3rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ================= Seitenkopf ================= */
+
+.page-head {
+  margin-bottom: 1.5rem;
+
+  h2 {
+    margin: 0 0 0.35rem;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+
+    i {
+      color: var(--accent-color);
+      margin-right: 0.5rem;
+    }
+  }
+
+  .lead {
+    margin: 0;
+    color: var(--text-secondary);
+    max-width: 70ch;
+  }
+}
+
+.hinweis {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+
+  &.leise {
+    color: var(--text-secondary);
+    background-color: color-mix(in srgb, var(--text-secondary) 8%, transparent);
+  }
+}
+
+/* ================= Tabelle ================= */
+
+// Die Tabelle stoesst an die Panel-Kante; der Innenabstand kaeme sonst zum
+// Zellenabstand hinzu und die Kopfzeile saesse eingerueckt.
+.table-panel {
+  padding: 0;
+  overflow: hidden;
+
+  // Lade- und Leerzustand stehen im selben Panel und brauchen den Abstand,
+  // den die Tabelle gerade nicht haben soll.
+  .hinweis {
+    margin: 1rem;
+  }
+}
+
+.eve-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-primary);
+
+  th {
+    text-align: left;
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--text-secondary) 12%, transparent);
+    font-size: 0.9rem;
+    vertical-align: top;
+  }
+
+  tr:hover td {
+    background-color: color-mix(in srgb, var(--text-secondary) 6%, transparent);
+  }
+
+  .rechts {
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+.char-name {
+  display: block;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.leise {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+/* ================= Die Spalte "Wahrscheinlichkeit" ================= */
+
+// Sie ist bewusst die breiteste: die nackte Zahl steht oben, darunter die
+// Signale und ein Satz. Wer nur die Zahl sieht, klickt durch.
+.wahrscheinlichkeit {
+  min-width: 22rem;
+}
+
+.wert {
+  display: inline-block;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.4rem;
+}
+
+// Gefaerbt wird erst ab 90 - und nur die Zahl, nie die ganze Zeile. Eine
+// durchgehend gruen leuchtende Liste laese sich als Freigabe lesen, und
+// freigegeben ist hier gar nichts.
+.wert-hoch {
+  color: var(--warning-color);
+}
+
+.chip-reihe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.45rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
+  color: var(--accent-color);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+// Reine Anzeige, kein Bedienpunkt: gedaempft, damit ein Etikett nicht wie ein
+// Knopf aussieht, den man druecken koennte.
+.chip-still {
+  cursor: default;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--text-secondary) 28%, transparent);
+  color: var(--text-secondary);
+}
+
+// Ein nicht gemessenes Signal wird durchsichtig und gestrichelt gezeigt und
+// nicht weggelassen: der Director soll sehen, dass hier nichts geprueft wurde.
+// Ein fehlendes Chip laese sich als "geprueft und unauffaellig" missverstehen.
+.chip-fehlt {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+// Das Gewicht steht am Chip und nicht in einer Fussnote: 40 gegen 15 erklaert,
+// warum ein einzelnes Signal die Zahl schon so weit tragen kann.
+.gewicht {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.begruendung {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  max-width: 40rem;
+}
+
+/* ================= Knopf ================= */
+
+.btn-primary {
+  background-color: var(--accent-color);
+  color: var(--accent-contrast);
+  border: none;
+  padding: 0.55rem 1.1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+
+  i {
+    margin-right: 0.4rem;
+  }
+
+  &:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}

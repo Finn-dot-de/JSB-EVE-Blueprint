@@ -1,0 +1,105 @@
+<div class="alt-suggestions">
+
+  <div class="page-head">
+    <h2><i class="fa-solid fa-user-secret"></i> Vermutete Alts</h2>
+    <p class="lead">
+      Nicht registrierte Corp-Mitglieder, die zu einem hier bekannten Konto gehoeren koennten.
+      Die Zahl ist eine gewichtete Summe von Heuristiken und keine geeichte Wahrscheinlichkeit -
+      lies daneben, worauf sie beruht.
+    </p>
+  </div>
+
+  <div class="hinweis leise">
+    <i class="fa-solid fa-circle-info"></i>
+    <span>
+      "Verknuepfen" merkt die Zuordnung vor. Zugeordnet wird der Charakter erst, wenn er sich
+      selbst per EVE-Login als Alt anmeldet - nur das beweist, wem er gehoert.
+    </span>
+  </div>
+
+  <!--
+    .surface-panel ist global (styles.scss). Die Tabellenklasse dagegen ist im
+    Projekt ueberall komponenten-lokal: die urspruenglich gewuenschte
+    .role-table steht in roles.component.scss und griffe hier wegen Angulars
+    View-Encapsulation gar nicht. Genommen ist der ueberwiegende Name
+    .eve-table, die Regeln liegen lokal in der eigenen .scss - so wie in
+    Academy, Asset-Audit, Groups-Board, Mining und My-Assets auch.
+  -->
+  <div class="surface-panel table-panel">
+
+    @if (loading()) {
+      <p class="hinweis leise">
+        <i class="fa-solid fa-spinner fa-spin"></i>
+        Die Vorschlaege werden berechnet - dafuer fragt der Server die Mitgliederlisten bei ESI ab.
+      </p>
+    } @else if (isEmpty()) {
+      <p class="hinweis leise">
+        <i class="fa-solid fa-circle-check"></i>
+        Kein Vorschlag ueber der Schwelle. Das ist der Normalfall und keine Fehlfunktion: ohne
+        Beitrittsdaten traegt nur der Name, und der reicht allein selten aus.
+      </p>
+    } @else {
+      <table class="eve-table">
+        <thead>
+          <tr>
+            <th>Unregistrierter Charakter</th>
+            <th>Vorgeschlagener Main</th>
+            <th>Wahrscheinlichkeit</th>
+            <th class="rechts">Aktion</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (suggestion of suggestions(); track suggestion.unauthedCharId) {
+            <tr>
+              <td>
+                <span class="char-name">{{ suggestion.unauthedCharName }}</span>
+                <span class="leise">ID {{ suggestion.unauthedCharId }}</span>
+              </td>
+              <td>
+                <span class="char-name">{{ suggestion.mainName }}</span>
+                <span class="leise">ID {{ suggestion.mainId }}</span>
+              </td>
+              <td class="wahrscheinlichkeit">
+                <span
+                  class="wert"
+                  [class.wert-hoch]="suggestion.probability >= hoheWahrscheinlichkeit"
+                >{{ suggestion.probability }} %</span>
+
+                <div class="chip-reihe">
+                  @for (signal of suggestion.signals; track signal.signal) {
+                    <span
+                      class="chip chip-still"
+                      [class.chip-fehlt]="!signal.available"
+                      [title]="signal.detail"
+                    >
+                      {{ chipBeschriftung(signal) }}
+                      <span class="gewicht">&times;{{ signal.weightPercent }}</span>
+                    </span>
+                  }
+                </div>
+
+                <p class="begruendung">{{ begruendung(suggestion) }}</p>
+              </td>
+              <td class="rechts">
+                <button
+                  class="btn-primary"
+                  type="button"
+                  [disabled]="pending() !== null"
+                  (click)="verknuepfen(suggestion)"
+                >
+                  @if (isPending(suggestion)) {
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                  } @else {
+                    <i class="fa-solid fa-link"></i>
+                  }
+                  Verknuepfen
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+  </div>
+</div>

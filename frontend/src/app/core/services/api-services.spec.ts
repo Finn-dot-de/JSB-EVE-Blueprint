@@ -223,6 +223,28 @@ describe('HTTP-Dienste', () => {
       expect(request.request.method).toBe('POST');
       request.flush(null);
     });
+
+    it('holt die Alt-Vorschlaege per GET', () => {
+      service.getAltSuggestions().subscribe();
+
+      const request = httpMock.expectOne(`${apiUrl}/alt-suggestions`);
+      expect(request.request.method).toBe('GET');
+      request.flush([]);
+    });
+
+    it('bestaetigt einen Vorschlag per POST mit beiden IDs im Rumpf', () => {
+      // Beide IDs gehoeren in den Rumpf und nicht in den Pfad: der Server
+      // rechnet den Vorschlag daraus neu und lehnt ein Paar ab, das die
+      // Erkennung nie vorgeschlagen hat. Vertauschte Felder faenden hier
+      // niemanden mehr - der Server wuerde stillschweigend das falsche Konto
+      // vormerken.
+      service.confirmAltSuggestion(2002, 1001).subscribe();
+
+      const request = httpMock.expectOne(`${apiUrl}/alt-suggestions/confirm`);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual({ unauthedCharId: 2002, mainId: 1001 });
+      request.flush({});
+    });
   });
 
   describe('DoctrineService', () => {

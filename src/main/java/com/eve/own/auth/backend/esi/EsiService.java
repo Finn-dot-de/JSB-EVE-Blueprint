@@ -149,6 +149,37 @@ public class EsiService {
     }
 
     /**
+     * Die Mitgliederverfolgung: je Corp-Mitglied unter anderem sein Beitrittsdatum.
+     *
+     * <p>Der einzige Endpunkt dieser Anwendung, der ueber einen <em>nicht</em>
+     * registrierten Charakter etwas aussagt. Alles andere haengt am Token des
+     * Charakters selbst - wer sich hier nie angemeldet hat, hat kein Token und
+     * hinterlaesst deshalb in keiner Tabelle eine Zeile. Diese Liste kommt
+     * dagegen mit dem Token eines <em>Directors</em> und deckt die ganze
+     * Corporation ab, registriert oder nicht.</p>
+     *
+     * <p>Scope {@code esi-corporations.track_members.v1} - er steht bereits in
+     * {@code EVE_SCOPES}, hier wird also nichts erweitert. Zusaetzlich verlangt
+     * ESI die echte Ingame-Rolle <em>Director</em>; welcher unserer Charaktere
+     * sie hat, weiss die Datenbank nicht, weshalb der Aufruf ueber
+     * {@code DirectorTokenProvider} laufen muss statt ueber einen geratenen
+     * Kandidaten.</p>
+     *
+     * <p>{@code start_date} ist das einzige Feld, das hier ausgewertet wird.
+     * {@code logon_date} und {@code logoff_date} waeren das weit staerkere
+     * Signal - gemeinsames Ein- und Ausloggen im Sekundenbereich ist die
+     * eigentliche Signatur des Multiboxings -, aber ESI liefert davon nur den
+     * <em>letzten</em> Zeitpunkt, keine Zeitreihe. Aus einem Momentanwert laesst
+     * sich keine Korrelation bilden; dafuer muesste erst regelmaessig gepollt
+     * und mitgeschrieben werden. Deshalb bleiben sie hier ungenutzt.</p>
+     */
+    public EsiResponse<EsiMemberTrackingResponse[]> getCorporationMemberTracking(Long corporationId,
+                                                                                 String token) {
+        return executor.get("/corporations/{id}/membertracking/", new Object[]{corporationId}, token,
+                EsiMemberTrackingResponse[].class);
+    }
+
+    /**
      * Alle Corp-Bestaende. Paginierter Endpunkt, jede Seite wird per ETag geprueft.
      *
      * <p>Verlangt den Scope {@code esi-assets.read_corporation_assets.v1} <em>und</em>
@@ -463,6 +494,19 @@ public class EsiService {
             return false;
         }
     }
+
+    /**
+     * Eine Zeile der Mitgliederverfolgung.
+     *
+     * <p>Nur {@code character_id} ist laut Spezifikation zugesichert; jedes andere
+     * Feld darf fehlen. {@code start_date} ist deshalb {@code Instant} und nicht
+     * {@code long} - ein fehlendes Beitrittsdatum muss als <em>fehlend</em>
+     * ankommen und nicht als Zeitpunkt null, sonst saehen alle Mitglieder ohne
+     * Datum wie am selben Tag beigetreten aus.</p>
+     */
+    public record EsiMemberTrackingResponse(Long character_id, Instant start_date,
+                                            Instant logon_date, Instant logoff_date,
+                                            Long location_id, Long ship_type_id, Long base_id) {}
 
     public record EsiCorpTitleResponse(Long title_id, String name) {}
     public record EsiTitleResponse(Long title_id, String name) {}

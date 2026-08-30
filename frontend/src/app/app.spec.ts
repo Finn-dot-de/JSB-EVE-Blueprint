@@ -34,7 +34,16 @@ describe('Routen', () => {
   // 'admin/discord' gehört dazu: Dort lassen sich Discord-Rollen-IDs ändern.
   // Vorher hing die Route nur am Anmelde-Wächter - der Menüpunkt war unsichtbar,
   // die Seite über die Adresszeile aber für jeden Angemeldeten offen.
-  const ROLE_GUARDED_PATHS = ['groups/rights', 'admin/navigation', 'admin/discord'];
+  // 'charlink/alt-suggestions' gehört dazu: Die Seite nennt namentlich
+  // Charaktere, die sich hier nie angemeldet haben, und behauptet, wem sie
+  // gehören. Der Server lässt dort nur LEADERSHIP_OR_IT durch - hinge die Route
+  // nur am Anmelde-Wächter, sähe jedes Mitglied eine Seite voller Fehler.
+  const ROLE_GUARDED_PATHS = [
+    'groups/rights',
+    'admin/navigation',
+    'admin/discord',
+    'charlink/alt-suggestions',
+  ];
 
   it('leitet die Wurzel auf die Startseite um', () => {
     const root = routes.find((route: Route) => route.path === '');

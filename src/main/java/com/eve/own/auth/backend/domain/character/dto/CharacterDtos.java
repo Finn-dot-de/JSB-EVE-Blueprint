@@ -44,6 +44,69 @@ public final class CharacterDtos {
                                   String corporationName, List<AdminAccountCharDto> alts) {}
 
     /**
+     * Ein einzelnes Signal eines Alt-Vorschlags, mitsamt der Auskunft, ob es
+     * ueberhaupt gemessen werden konnte.
+     *
+     * <p><b>{@code available == false} heisst "nicht gemessen" und niemals
+     * "gemessen und nichts gefunden".</b> Der Unterschied ist der ganze Punkt
+     * dieses Typs: ein Charakter ohne Mining-Zeilen hat keine gepruefte
+     * Unaehnlichkeit - er hat gar keine Pruefung. Fliesst so etwas als 0 in den
+     * Score ein, kommt eine niedrige Wahrscheinlichkeit heraus, die wie ein
+     * Freispruch aussieht, obwohl nichts geschehen ist.</p>
+     *
+     * @param signal        technischer Name, z.B. {@code NAME}, {@code JOIN}, {@code MINING}
+     * @param label         die Beschriftung fuer die Oberflaeche
+     * @param available     ob es zu diesem Signal ueberhaupt Daten gab
+     * @param score         der Einzelwert 0..100, {@code null} wenn nicht verfuegbar
+     * @param weightPercent das Gewicht dieses Signals am Gesamtwert
+     * @param detail        warum das Signal fehlt oder woraus sich sein Wert speist
+     */
+    public record AltSignalDto(String signal, String label, boolean available,
+                               Integer score, int weightPercent, String detail) {}
+
+    /**
+     * Ein Verdacht: dieser nicht registrierte Charakter koennte zu diesem Konto
+     * gehoeren.
+     *
+     * <p>Die {@code probability} ist eine gewichtete Summe von Heuristiken und
+     * <b>keine geeichte Wahrscheinlichkeit</b>. Deshalb wandert die
+     * Aufschluesselung mit: eine 94 aus drei Signalen und eine 94 aus einem
+     * einzigen sind voellig verschiedene Aussagen, und nur die Aufschluesselung
+     * sagt, welche von beiden vorliegt.</p>
+     *
+     * @param signalsUsed  wieviele Signale tatsaechlich Daten hatten
+     * @param signalsTotal wieviele Signale es insgesamt gibt
+     * @param corpId       die Corporation, aus deren Mitgliederliste der Verdacht
+     *                     stammt - und ausdruecklich nicht die des Mains: der kann
+     *                     in einer anderen sitzen
+     */
+    public record AltSuggestionDto(Long unauthedCharId, String unauthedCharName,
+                                   Long mainId, String mainName,
+                                   int probability,
+                                   int signalsUsed, int signalsTotal,
+                                   List<AltSignalDto> signals,
+                                   Long corpId) {}
+
+    /** Die Anfrage des Directors: diesen Charakter diesem Konto zuordnen. */
+    public record AltLinkRequest(Long unauthedCharId, Long mainId) {}
+
+    /**
+     * Das Ergebnis einer bestaetigten Zuordnung.
+     *
+     * <p>{@code linked} ist bewusst {@code false}: bestaetigt wird eine
+     * <em>Vormerkung</em>, nicht die Zuordnung selbst. Warum, steht in
+     * {@link com.eve.own.auth.backend.domain.character.entity.AltLinkProposal}.
+     * Ohne dieses Feld liesse die Antwort den Director glauben, der Charakter
+     * haenge jetzt am Konto - er tut es nicht.</p>
+     *
+     * @param linked  ob {@code characters.main_character_id} geschrieben wurde
+     * @param message der Klartext fuer den Nutzer, inklusive des naechsten Schritts
+     */
+    public record AltLinkResultDto(Long unauthedCharId, String unauthedCharName,
+                                   Long mainId, String mainName,
+                                   int probability, boolean linked, String message) {}
+
+    /**
      * Ein Charakter, dessen Anmeldung abgelaufen ist.
      *
      * @param invalidSince seit wann - der Zeitpunkt des ERSTEN Fehlschlags,

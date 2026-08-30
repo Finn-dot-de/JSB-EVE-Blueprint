@@ -36,6 +36,13 @@ export const routes: Routes = [
     loadComponent: () => import('./core/components/charlink/charlink.component').then(m => m.CharlinkComponent)
   },
   {
+    // Dieselbe Grenze wie am Server (AccessRules.LEADERSHIP_OR_IT). Der Guard
+    // ist Bequemlichkeit, keine Sicherung - durchgesetzt wird sie im Dienst.
+    path: 'charlink/alt-suggestions',
+    canActivate: [roleGuard(LEADERSHIP_OR_IT)],
+    loadComponent: () => import('./core/components/alt-suggestions/alt-suggestions.component').then(m => m.AltSuggestionsComponent)
+  },
+  {
     path: 'charlink/stats',
     canActivate: [authGuard],
     loadComponent: () => import('./core/components/corp-stats/corp-stats.component').then(m => m.CorpStatsComponent)

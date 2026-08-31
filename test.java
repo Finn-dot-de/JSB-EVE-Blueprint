@@ -44,11 +44,10 @@ public class ScimUserController {
                 return ResponseEntity.badRequest().body(e.getScimError());
             }
         } else {
-            // Kein Filter angegeben? Dann lade einfach alle User aus der DB (mit Paginierung)
+            
         }
 
-        // SCIM verlangt bei Listen-Abfragen das spezielle ListResponse-Format,
-        // damit Metadaten wie die Gesamtanzahl der Treffer enthalten sind.
+       
         ListResponse<UserResource> response = new ListResponse<>(
                 foundUsers,       // Die eigentliche Liste der User-Ressourcen
                 foundUsers.size(),// Total Results (wichtig für die Paginierung des Clients)

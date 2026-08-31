@@ -1,60 +1,60 @@
 package com.example.idmhub.controller;
 
-import com.unboundid.scim2.common.exceptions.BadRequestException;
-import com.unboundid.scim2.common.filters.Filter;
-import com.unboundid.scim2.common.messages.ListResponse;
+import com.unboundid.scim2.common.types.Email;
+import com.unboundid.scim2.common.types.Meta;
 import com.unboundid.scim2.common.types.UserResource;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.net.URI;
+import java.util.Calendar;
+import java.util.UUID;
 
 @RestController
-// SCIM verlangt zwingend diesen Content-Type für alle Antworten
+// SCIM verlangt zwingend diesen speziellen Content-Type
 @RequestMapping(value = "/scim/v2/Users", produces = "application/scim+json")
 public class ScimUserController {
 
-    @GetMapping
-    public ResponseEntity<?> searchUsers(
-            @RequestParam(required = false) String filter,
-            @RequestParam(required = false, defaultValue = "1") Integer startIndex,
-            @RequestParam(required = false, defaultValue = "100") Integer count) {
+    @PostMapping(consumes = "application/scim+json")
+    public ResponseEntity<UserResource> createUser(@RequestBody UserResource user) {
+        System.out.println("Neuer User empfangen: " + user.getUserName());
 
-        System.out.println("GET Request empfangen. Filter-String: " + filter);
+        // 1. Eigene Logik: ID vergeben (macht später deine JPA Entity)
+        String newId = UUID.randomUUID().toString();
+        user.setId(newId);
 
-        List<UserResource> foundUsers = new ArrayList<>();
+        // 2. SCIM Meta-Daten pflegen (Das UEM-System erwartet diese zwingend)
+        Meta meta = new Meta();
+        meta.setResourceType("User");
+        meta.setCreated(Calendar.getInstance());
+        meta.setLastModified(Calendar.getInstance());
+        
+        // Die Location, unter der dieser User zukünftig erreichbar ist
+        String location = "http://localhost:8080/scim/v2/Users/" + newId;
+        meta.setLocation(location);
+        user.setMeta(meta);
 
-        if (filter != null && !filter.isBlank()) {
-            try {
-                // Der absolute Gamechanger des SDKs: 
-                // Aus dem unhandlichen String wird ein fertiger Abstract Syntax Tree (AST)
-                Filter parsedFilter = Filter.fromString(filter);
-                
-                System.out.println("Erfolgreich geparst! Filter-Typ: " + parsedFilter.getFilterType());
-                
-                // Hier würdest du später das Visitor-Pattern ansetzen,
-                // um den parsedFilter in eine saubere JPA- oder SQL-Query zu übersetzen.
-                // Beispiel: JpaSpecification spec = parsedFilter.visit(new MyJpaFilterVisitor());
-                // foundUsers = userRepository.findAll(spec);
-                
-            } catch (BadRequestException e) {
-                // Wenn das externe System syntaktischen Müll schickt (z.B. vergessene Klammer),
-                // fangen wir das hier ab und geben ein 100% standardkonformes SCIM-Fehler-JSON (HTTP 400) zurück.
-                return ResponseEntity.badRequest().body(e.getScimError());
-            }
-        } else {
-            
-        }
+        // 3. Saubere HTTP 201 Created Antwort an das UEM-System schicken
+        return ResponseEntity
+                .created(URI.create(location))
+                .body(user);
+    }
 
-       
-        ListResponse<UserResource> response = new ListResponse<>(
-                foundUsers,       // Die eigentliche Liste der User-Ressourcen
-                foundUsers.size(),// Total Results (wichtig für die Paginierung des Clients)
-                startIndex,       // Start Index
-                count             // Items per Page
-        );
+    @GetMapping("/{id}")
+    public ResponseEntity<UserResource> getUser(@PathVariable String id) {
+        System.out.println("Suche nach User mit ID: " + id);
 
-        return ResponseEntity.ok(response);
+        // Simulierter Dummy-User für den Prototypen
+        UserResource dummyUser = new UserResource();
+        dummyUser.setId(id);
+        dummyUser.setUserName("max.mustermann");
+        
+        // Dank SDK sparst du dir hier die ekligen verschachtelten Listen
+        dummyUser.addEmail(new Email()
+                .setValue("max@beispiel.de")
+                .setType("work")
+                .setPrimary(true));
+
+        return ResponseEntity.ok(dummyUser);
     }
 }

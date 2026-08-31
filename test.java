@@ -1,80 +1,58 @@
-package com.example.idmhub.controller;
+import com.unboundid.scim2.common.filters.Filter;
+import com.unboundid.scim2.common.messages.ListResponse;
+import com.unboundid.scim2.common.exceptions.BadRequestException;
+// ... die anderen Imports von vorhin
 
-import com.unboundid.scim2.common.types.Email;
-import com.unboundid.scim2.common.types.Meta;
-import com.unboundid.scim2.common.types.UserResource;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.net.URI;
-import java.util.Calendar;
-import java.util.UUID;
-
-@RestController
-@RequestMapping(value = "/scim/v2/Users", produces = "application/scim+json")
-// Swagger: Gruppiert alle Endpunkte dieses Controllers in der UI
-@Tag(name = "SCIM 2.0 User Provisioning", description = "Endpunkte für das Verwalten von Benutzern im IDM Hub")
-public class ScimUserController {
-
-    @PostMapping(consumes = "application/scim+json")
-    // Swagger: Beschreibt, was diese Methode macht
-    @Operation(summary = "Neuen Benutzer anlegen", description = "Erstellt einen neuen SCIM-Benutzer und vergibt eine interne ID.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "Benutzer erfolgreich angelegt", 
-                         content = @Content(schema = @Schema(implementation = UserResource.class))),
-            @ApiResponse(responseCode = "400", description = "Ungültiges SCIM JSON Format geliefert", content = @Content)
-    })
-    public ResponseEntity<UserResource> createUser(
-            @Parameter(description = "Das standardkonforme SCIM User JSON") 
-            @RequestBody UserResource user) {
+    @GetMapping
+    @Operation(summary = "Benutzer suchen", description = "Sucht Benutzer anhand eines komplexen SCIM-Filters.")
+    public ResponseEntity<?> searchUsers(
+            @Parameter(description = "SCIM Suchfilter, z.B. userName eq \"test\" and active eq true") 
+            @RequestParam(required = false) String filter) {
         
-        System.out.println("Neuer User empfangen: " + user.getUserName());
+        System.out.println("Eingehender Such-Request. Raw-Filter: " + filter);
 
-        String newId = UUID.randomUUID().toString();
-        user.setId(newId);
+        try {
+            // SCIM-Suchen geben immer eine strukturierte ListResponse zurück, kein nacktes Array
+            ListResponse<UserResource> response = new ListResponse<>();
 
-        Meta meta = new Meta();
-        meta.setResourceType("User");
-        meta.setCreated(Calendar.getInstance());
-        meta.setLastModified(Calendar.getInstance());
-        
-        String location = "http://localhost:8080/scim/v2/Users/" + newId;
-        meta.setLocation(location);
-        user.setMeta(meta);
+            if (filter != null && !filter.isBlank()) {
+                
+                // 1. Die Magie des Ping SDKs: Den String parsen und validieren
+                Filter parsedFilter = Filter.fromString(filter);
+                
+                System.out.println("Filter erfolgreich geparst!");
+                System.out.println("Interne Repräsentation: " + parsedFilter.toString());
+                
+                /*
+                 * 2. Ab hier übernimmt deine Datenbank-Logik.
+                 * Das geparste Filter-Objekt ist jetzt ein sogenannter Abstrakter Syntaxbaum (AST).
+                 * Du durchläufst diesen Baum später mit dem "Visitor Pattern", 
+                 * um daraus z.B. eine JPA Specification oder einen SQL-String zu bauen.
+                 * 
+                 * Beispiel für später:
+                 * JpaSpecificationVisitor visitor = new JpaSpecificationVisitor();
+                 * Specification<UserEntity> spec = parsedFilter.visit(visitor);
+                 * List<UserEntity> dbUsers = userRepository.findAll(spec);
+                 */
+            } else {
+                System.out.println("Kein Filter übergeben. Lade alle User (mit Paginierung).");
+                // Logik für findAll()
+            }
 
-        return ResponseEntity
-                .created(URI.create(location))
-                .body(user);
+            // Dummy-Daten für den Prototypen
+            response.setTotalResults(0); 
+            response.setItemsPerPage(0);
+            response.setStartIndex(1);
+
+            return ResponseEntity.ok(response);
+
+        } catch (BadRequestException e) {
+            // Das SDK wirft automatisch eine Exception, wenn die Syntax falsch ist 
+            // (z. B. eine fehlende schließende Klammer im Filter-String).
+            System.err.println("Das UEM hat einen fehlerhaften Filter geschickt: " + e.getMessage());
+            
+            // Für den Prototypen reicht ein nackter String. 
+            // In Produktion baut man hieraus ein ErrorResponse-Objekt aus dem SDK.
+            return ResponseEntity.badRequest().body("Syntax-Fehler im Filter: " + e.getMessage());
+        }
     }
-
-    @GetMapping("/{id}")
-    @Operation(summary = "Benutzer anhand der ID abrufen")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Benutzer gefunden"),
-            @ApiResponse(responseCode = "404", description = "Benutzer nicht gefunden", content = @Content)
-    })
-    public ResponseEntity<UserResource> getUser(
-            @Parameter(description = "Die interne UUID des Benutzers") 
-            @PathVariable String id) {
-        
-        System.out.println("Suche nach User mit ID: " + id);
-
-        UserResource dummyUser = new UserResource();
-        dummyUser.setId(id);
-        dummyUser.setUserName("max.mustermann");
-        
-        dummyUser.addEmail(new Email()
-                .setValue("max@beispiel.de")
-                .setType("work")
-                .setPrimary(true));
-
-        return ResponseEntity.ok(dummyUser);
-    }
-}

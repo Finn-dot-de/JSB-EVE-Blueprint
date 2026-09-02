@@ -12,6 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param regionId          Region, deren Orderbuch abgezogen wird. 10000002 = The Forge.
  * @param stationId         Zielstation. 60003760 = Jita IV - Moon 4 - Caldari Navy Assembly Plant.
+ * @param stationSystemId   Sonnensystem dieser Station. 30000142 = Jita.
  * @param minUsablePrices   Untergrenze, ab der ein Durchlauf als Ausfall gilt.
  * @param rateLimitReserve  Wieviel vom Kontingent uebrig bleiben muss, sonst wird abgebrochen.
  * @param errorLimitReserve Dasselbe fuer das aeltere Fehlerkontingent.
@@ -21,6 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record MarketOrderProperties(
         Long regionId,
         Long stationId,
+        Long stationSystemId,
         Integer minUsablePrices,
         Integer rateLimitReserve,
         Integer errorLimitReserve,
@@ -30,6 +32,16 @@ public record MarketOrderProperties(
     public MarketOrderProperties {
         if (regionId == null) regionId = 10_000_002L;
         if (stationId == null) stationId = 60_003_760L;
+
+        // Das System der Zielstation steht hier und wird nicht nachgeschlagen,
+        // weil es im SDE nicht zu finden ist: das Schema evesde fuehrt zwar
+        // mapDenormalize, aber keine Stationen - eine Abfrage nach 60003760
+        // liefert nachgemessen null Zeilen. Gebraucht wird es fuer die
+        // Reichweite der Kaufgebote (MarketOrderReach): ein Gebot mit
+        // Reichweite "1" aus Perimeter erreicht Jita, eines aus Amarr nicht.
+        // Wer die Station umstellt, muss diese Zeile mit umstellen - deshalb
+        // meldet der Abzug einen Widerspruch zwischen beiden ausdruecklich.
+        if (stationSystemId == null) stationSystemId = 30_000_142L;
 
         // An einem echten Durchlauf gemessen: 18.799 Typen mit brauchbarem
         // Preis an Jita 4-4, davon 16.887 mit Verkaufsangebot. Selbst ein sehr

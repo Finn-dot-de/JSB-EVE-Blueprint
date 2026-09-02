@@ -16,6 +16,7 @@ import com.eve.own.auth.backend.esi.EsiService.EsiMarketOrder;
 import com.eve.own.auth.backend.esi.client.EsiRequestExecutor.UncachedPage;
 import com.eve.own.auth.backend.testsupport.LogCapture;
 import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,14 +37,39 @@ class MarketSnapshotServiceTest {
     private static final long JITA_44 = 60_003_760L;
     private static final long ANDERE_STATION = 60_011_866L;
 
+    /** Jita - das System der Zielstation. */
+    private static final long JITA = 30_000_142L;
+
+    /** Perimeter, ein Sprung von Jita. Dort steht die Struktur aus dem Schadensfall. */
+    private static final long PERIMETER = 30_000_144L;
+
+    /** Die Struktur in Perimeter - eine location_id weit jenseits der NPC-Stationen. */
+    private static final long STRUKTUR_PERIMETER = 1_044_752_365_771L;
+
+    /** Ein System fuenf Spruenge entfernt. */
+    private static final long WEIT_WEG = 30_000_120L;
+
+    /** Ein System, das die Sprungkarte nicht kennt - Wurmloch, kein Tor dorthin. */
+    private static final long UNERREICHBAR = 31_000_005L;
+
     private static final long TRITANIUM = 34L;
     private static final long PYERITE = 35L;
 
+    /** White Glaze IV-Grade - der Typ aus dem gemeldeten Schadensfall. */
+    private static final long WHITE_GLAZE_IV = 17_976L;
+
     private EsiService esiService;
+    private MarketJumpDistances sprungkarte;
 
     @BeforeEach
     void setUp() {
         esiService = mock(EsiService.class);
+        sprungkarte = mock(MarketJumpDistances.class);
+        // Die echten Entfernungen, nachgeschlagen: Perimeter grenzt an Jita.
+        when(sprungkarte.toStationSystem()).thenReturn(Map.of(
+                JITA, 0,
+                PERIMETER, 1,
+                WEIT_WEG, 5));
     }
 
     // ===========================================================
@@ -52,7 +78,8 @@ class MarketSnapshotServiceTest {
 
     private MarketSnapshotService dienst(int mindestensPreise) {
         return new MarketSnapshotService(esiService,
-                new MarketOrderProperties(REGION, JITA_44, mindestensPreise, 200, 10, 0L));
+                new MarketOrderProperties(REGION, JITA_44, JITA, mindestensPreise, 200, 10, 0L),
+                sprungkarte);
     }
 
     /** Ein Dienst, dem ein einziger Preis genuegt - fuer alles ausser der Ausfallschwelle. */
@@ -61,16 +88,28 @@ class MarketSnapshotServiceTest {
     }
 
     private static EsiMarketOrder verkauf(long typeId, long stationId, double preis) {
-        return order(typeId, stationId, preis, false);
+        return order(typeId, stationId, JITA, preis, false, "station");
+    }
+
+    /** Ein Verkaufsangebot so, wie ESI es wirklich liefert: mit range "region". */
+    private static EsiMarketOrder verkaufMitRegionsReichweite(long typeId, long stationId,
+                                                              long systemId, double preis) {
+        return order(typeId, stationId, systemId, preis, false, "region");
     }
 
     private static EsiMarketOrder kauf(long typeId, long stationId, double preis) {
-        return order(typeId, stationId, preis, true);
+        return order(typeId, stationId, JITA, preis, true, "station");
     }
 
-    private static EsiMarketOrder order(long typeId, long stationId, double preis, boolean istKauf) {
-        return new EsiMarketOrder(1L, typeId, stationId, 30_000_142L,
-                100L, 100L, 1L, 90L, preis, istKauf, "station", Instant.EPOCH);
+    private static EsiMarketOrder kauf(long typeId, long stationId, long systemId,
+                                       double preis, String reichweite) {
+        return order(typeId, stationId, systemId, preis, true, reichweite);
+    }
+
+    private static EsiMarketOrder order(long typeId, long stationId, long systemId,
+                                        double preis, boolean istKauf, String reichweite) {
+        return new EsiMarketOrder(1L, typeId, stationId, systemId,
+                100L, 100L, 1L, 90L, preis, istKauf, reichweite, Instant.EPOCH);
     }
 
     private static UncachedPage<EsiMarketOrder> seite(int seitenGesamt, EsiMarketOrder... orders) {
@@ -150,6 +189,167 @@ class MarketSnapshotServiceTest {
         // reisst den ganzen Abzug mit - wegen einer einzigen kaputten Order
         // unter 411.000.
         assertThat(abzug.price(TRITANIUM).sell()).isEqualTo(3.85);
+    }
+
+
+    // ===========================================================
+    //  Reichweite der Kaufgebote
+    // ===========================================================
+
+    @Test
+    @DisplayName("laesst das Lockvogel-Gebot zu 1 ISK nicht gewinnen")
+    void reichweiteSchlaegtStandort() {
+        // Der gemeldete Fall, Order fuer Order aus ESI abgeschrieben:
+        // GET /markets/10000002/orders/?type_id=17976&order_type=buy
+        antwortet(1, seite(1,
+                kauf(WHITE_GLAZE_IV, STRUKTUR_PERIMETER, PERIMETER, 181_000.00, "1"),
+                kauf(WHITE_GLAZE_IV, STRUKTUR_PERIMETER, PERIMETER, 18_000.00, "4"),
+                kauf(WHITE_GLAZE_IV, JITA_44, JITA, 1.00, "region")));
+
+        MarketSnapshot abzug = dienst().pull();
+
+        // Ohne die Reichweitenpruefung bliebe von diesen dreien genau das
+        // 1-ISK-Gebot uebrig - das einzige, das physisch in Jita 4-4 liegt.
+        // Genau so stand White Glaze IV-Grade mit 1,00 ISK in der Mining-Steuer,
+        // waehrend das Gebot aus Perimeter 181.000 ISK zahlt und mit Reichweite
+        // "1" bis Jita reicht.
+        assertThat(abzug.price(WHITE_GLAZE_IV).buy()).isEqualTo(181_000.00);
+    }
+
+    @Test
+    @DisplayName("zaehlt ein Gebot mit Reichweite station nur an der eigenen Station")
+    void stationsgebotAnFremderStationZaehltNicht() {
+        antwortet(1, seite(1,
+                kauf(TRITANIUM, ANDERE_STATION, JITA, 9.99, "station"),
+                kauf(TRITANIUM, JITA_44, JITA, 3.77, "station")));
+
+        MarketSnapshot abzug = dienst().pull();
+
+        // "station" ist die eine Reichweite, die wirklich am Ort klebt. Ohne
+        // diese Unterscheidung wuerde das hoehere Gebot einer fremden Station
+        // gewinnen - und der Steuerpflichtige zahlte auf einen Preis, den ihm
+        // niemand zahlt.
+        assertThat(abzug.price(TRITANIUM).buy()).isEqualTo(3.77);
+    }
+
+    @Test
+    @DisplayName("zaehlt ein Gebot mit Reichweite region, egal wo es liegt")
+    void regionsgebotZaehltUeberall() {
+        antwortet(1, seite(1,
+                kauf(TRITANIUM, STRUKTUR_PERIMETER, WEIT_WEG, 4.20, "region")));
+
+        MarketSnapshot abzug = dienst().pull();
+
+        // Wir fragen ohnehin nur eine Region ab; ein Regionsgebot deckt alles
+        // darin. Ohne diesen Zweig fiele es heraus, weil es weder an der
+        // Station noch in Reichweite irgendeiner Sprungzahl liegt - und der
+        // haeufigste Gebotstyp ueberhaupt waere unsichtbar.
+        assertThat(abzug.price(TRITANIUM).buy()).isEqualTo(4.20);
+    }
+
+    @Test
+    @DisplayName("zaehlt ein Gebot mit Reichweite 1 aus fuenf Spruengen Entfernung nicht")
+    void zuWeitEntferntesGebotZaehltNicht() {
+        antwortet(1, seite(1,
+                kauf(TRITANIUM, STRUKTUR_PERIMETER, WEIT_WEG, 9.99, "1"),
+                kauf(TRITANIUM, JITA_44, JITA, 3.77, "station")));
+
+        MarketSnapshot abzug = dienst().pull();
+
+        // Reichweite ist eine Zahl und keine Erlaubnis. Wer sie nur auf
+        // "vorhanden" prueft, macht aus jedem Gebot der Region ein gueltiges -
+        // und schreibt dann den Hoechstpreis irgendeines Winkels als
+        // Jita-Preis in die Steuertabelle.
+        assertThat(abzug.price(TRITANIUM).buy()).isEqualTo(3.77);
+    }
+
+    @Test
+    @DisplayName("zaehlt ein Gebot mit Reichweite solarsystem nur im eigenen System")
+    void systemgebotZaehltNurImEigenenSystem() {
+        antwortet(1, seite(1,
+                kauf(TRITANIUM, STRUKTUR_PERIMETER, PERIMETER, 9.99, "solarsystem"),
+                kauf(TRITANIUM, 60_015_148L, JITA, 3.77, "solarsystem")));
+
+        MarketSnapshot abzug = dienst().pull();
+
+        // "solarsystem" ist weiter als "station" und enger als ein Sprung: das
+        // Gebot einer anderen Station IM System zaehlt, das aus Perimeter nicht.
+        // Ohne die Unterscheidung waere entweder das eine zu viel oder das
+        // andere zu wenig.
+        assertThat(abzug.price(TRITANIUM).buy()).isEqualTo(3.77);
+    }
+
+    @Test
+    @DisplayName("laesst ein Gebot aus einem unbekannten System herausfallen, statt zu stolpern")
+    void unbekanntesSystemFaelltHerausOhneAusnahme() {
+        antwortet(1, seite(1,
+                kauf(TRITANIUM, STRUKTUR_PERIMETER, UNERREICHBAR, 9.99, "5"),
+                kauf(TRITANIUM, JITA_44, JITA, 3.77, "station")));
+
+        MarketSnapshot abzug = dienst().pull();
+
+        // Ohne diese Zeile gaebe es zwei Wege ins Unglueck: eine
+        // NullPointerException beim Auspacken der fehlenden Sprungzahl, die den
+        // ganzen Abzug mitreisst - oder, noch schlimmer, die Behandlung als 0
+        // Spruenge, womit jedes Gebot aus dem Nirgendwo gewinnen wuerde.
+        assertThat(abzug.price(TRITANIUM).buy()).isEqualTo(3.77);
+    }
+
+    @Test
+    @DisplayName("laesst Verkaufsangebote stationsgebunden, auch mit Reichweite region")
+    void verkaufsangeboteBleibenStationsgebunden() {
+        antwortet(1, seite(1,
+                verkaufMitRegionsReichweite(TRITANIUM, STRUKTUR_PERIMETER, PERIMETER, 1.01),
+                verkaufMitRegionsReichweite(TRITANIUM, JITA_44, JITA, 3.85)));
+
+        MarketSnapshot abzug = dienst().pull();
+
+        // Die Reichweite gilt nur fuer die Kaufseite. ESI traegt bei
+        // Verkaufsangeboten ausnahmslos "region" ein - nachgemessen an 89
+        // Tritanium-Angeboten in The Forge -, obwohl man Ware in Perimeter von
+        // Jita aus nicht kaufen kann. Wer die beiden Seiten hier
+        // "vereinheitlicht", holt sich den Regionspreis zurueck, den der
+        // Stationsfilter gerade abgeschafft hat.
+        assertThat(abzug.price(TRITANIUM).sell()).isEqualTo(3.85);
+    }
+
+    @Test
+    @DisplayName("bricht ab, wenn die Sprungkarte das Marktsystem nicht kennt")
+    void ohneSprungkarteKeinAbzug() {
+        when(sprungkarte.toStationSystem()).thenReturn(Map.of());
+
+        // Mit einer leeren Karte fielen alle Gebote mit Zahlenreichweite heraus
+        // und uebrig blieben ausgerechnet die Regionsgebote - also genau der
+        // Lockvogel zu 1 ISK. Ein Abzug, der eine Ware still auf ein
+        // Zehntausendstel setzt, ist schlimmer als gar keiner.
+        assertThatThrownBy(() -> dienst().pull())
+                .isInstanceOf(MarketSnapshotUnavailableException.class)
+                .hasMessageContaining("Sprungkarte kennt das Marktsystem");
+        verify(esiService, never()).getMarketOrdersPage(anyLong(), anyInt());
+    }
+
+    @Test
+    @DisplayName("meldet es, wenn Station und konfiguriertes System nicht zusammenpassen")
+    void widerspruchZwischenStationUndSystemWirdGemeldet() {
+        // Die Order liegt an der Zielstation, meldet aber ein anderes System,
+        // als konfiguriert ist - so sieht ein halber Umzug nach Amarr aus.
+        antwortet(1, seite(1,
+                verkauf(TRITANIUM, JITA_44, 3.85),
+                order(PYERITE, JITA_44, 30_002_187L, 17.60, false, "region")));
+
+        try (LogCapture protokoll = new LogCapture(MarketSnapshotService.class)) {
+            dienst().pull();
+
+            // Das System der Station steht in der Konfiguration, weil das SDE
+            // keine Stationen fuehrt - nachgemessen liefert mapDenormalize fuer
+            // 60003760 null Zeilen. Ohne diese Meldung waere ein vergessenes
+            // eve.market.station-system-id lautlos: die Sprungzahlen wuerden vom
+            // falschen Punkt aus gemessen und der Preis waere leise verkehrt.
+            assertThat(protokoll.meldungen(Level.WARN))
+                    .singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                    .contains("liegt laut ESI im System 30002187")
+                    .contains("konfiguriert ist aber 30000142");
+        }
     }
 
     // ===========================================================
@@ -371,8 +571,12 @@ class MarketSnapshotServiceTest {
         when(esiService.getMarketOrdersPage(eq(amarr), anyInt()))
                 .thenReturn(seite(1, verkauf(TRITANIUM, amarrHub, 4.10)));
 
+        long amarrSystem = 30_002_187L;
+        when(sprungkarte.toStationSystem()).thenReturn(Map.of(amarrSystem, 0));
+
         MarketSnapshot abzug = new MarketSnapshotService(esiService,
-                new MarketOrderProperties(amarr, amarrHub, 1, 200, 10, 0L)).pull();
+                new MarketOrderProperties(amarr, amarrHub, amarrSystem, 1, 200, 10, 0L),
+                sprungkarte).pull();
 
         // Ohne die Konfiguration waeren Region und Station Konstanten im Code -
         // und ein Umzug des Handelsplatzes eine Codeaenderung samt Neubau.

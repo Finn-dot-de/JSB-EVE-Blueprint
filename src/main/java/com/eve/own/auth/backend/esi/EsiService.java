@@ -70,6 +70,40 @@ public class EsiService {
         return executor.get("/characters/{id}/wallet/journal/", new Object[]{characterId}, token, EsiJournalResponse[].class);
     }
 
+    /**
+     * Die Kontaktliste eines Charakters. Scope {@code esi-characters.read_contacts.v1}.
+     *
+     * <p>Paginiert, aber in der Praxis einseitig: CCP legt 1024 Eintraege auf
+     * eine Seite. Ein Lauf kostet damit einen konditionalen Aufruf je
+     * registriertem Charakter.</p>
+     */
+    public EsiResponse<List<EsiContactResponse>> getContacts(Long characterId, String token) {
+        return executor.getAllPages("/characters/{id}/contacts/", new Object[]{characterId}, token,
+                EsiContactResponse[].class);
+    }
+
+    /**
+     * Die Kopfzeilen der juengsten Nachrichten. Scope {@code esi-mail.read_mail.v1}.
+     *
+     * <p><b>Nur die erste Seite, und das mit Absicht.</b> ESI blaettert im
+     * Postfach ueber {@code last_mail_id} - wer weiterblaettern will, muss eine
+     * Mail-ID kennen und weiterreichen. Genau die will diese Anwendung nicht
+     * haben: mit einer Mail-ID liesse sich der Inhalt nachladen. Indem
+     * {@link EsiMailHeaderResponse} die ID gar nicht erst einliest, ist das
+     * Weiterblaettern nicht bloss unterlassen, sondern unmoeglich. Der Preis
+     * sind die rund 50 juengsten Nachrichten statt des ganzen Postfachs; der
+     * Gegenwert ist eine Zusage, die nicht von Disziplin abhaengt.</p>
+     *
+     * <p>Nebenbei ist genau diese eine Seite die einzige mit stabiler URL und
+     * damit die einzige, die der ETag-Cache je bedienen koennte: jede
+     * Folgeseite haette bei jedem Lauf eine andere {@code last_mail_id} und
+     * damit garantiert einen vollen Rundlauf.</p>
+     */
+    public EsiResponse<EsiMailHeaderResponse[]> getMailHeaders(Long characterId, String token) {
+        return executor.get("/characters/{id}/mail/", new Object[]{characterId}, token,
+                EsiMailHeaderResponse[].class);
+    }
+
     public EsiResponse<EsiTitleResponse[]> getCharacterTitles(Long characterId, String token) {
         return executor.get("/characters/{id}/titles/", new Object[]{characterId}, token, EsiTitleResponse[].class);
     }
@@ -512,6 +546,35 @@ public class EsiService {
     public record EsiTitleResponse(Long title_id, String name) {}
     public record EsiMiningResponse(String date, Long quantity, Long solar_system_id, Long type_id) {}
     public record EsiJournalResponse(Long id, String date, String ref_type, Double amount, Long second_party_id, String reason) {}
+
+    /**
+     * Ein Eintrag der Kontaktliste.
+     *
+     * <p>{@code standing} ist {@code Float} und nicht {@code float}: ein
+     * fehlender Wert muss als fehlend ankommen. Als primitiver Typ waere er 0
+     * und damit von "bewusst neutral gesetzt" nicht mehr zu unterscheiden.</p>
+     */
+    public record EsiContactResponse(Long contact_id, String contact_type, Float standing,
+                                     Boolean is_blocked, Boolean is_watched) {}
+
+    /**
+     * Die Kopfzeile einer Nachricht - <b>ohne Betreff und ohne Mail-ID</b>.
+     *
+     * <p>ESI liefert an dieser Stelle sehr wohl {@code subject}, {@code mail_id},
+     * {@code labels} und {@code is_read}. Dass sie hier fehlen, ist die
+     * eigentliche Aussage dieses Typs: was nicht als Komponente steht, wird von
+     * Jackson verworfen und existiert im Prozess nie als Wert - es kann also
+     * auch nicht versehentlich protokolliert, weitergereicht oder gespeichert
+     * werden. Ohne {@code mail_id} gibt es zudem keinen Schluessel, mit dem sich
+     * der Text nachladen liesse.</p>
+     *
+     * <p>Die Zusage steht bei {@code CharacterMailCount}; {@code MailPrivacyTest}
+     * laesst jeden Versuch scheitern, hier ein Feld nachzuruesten.</p>
+     */
+    public record EsiMailHeaderResponse(Long from, EsiMailRecipient[] recipients, Instant timestamp) {}
+
+    /** Ein Empfaenger einer Nachricht. {@code recipient_type}: character, corporation, alliance, mailing_list. */
+    public record EsiMailRecipient(Long recipient_id, String recipient_type) {}
     public record EsiLpResponse(Long corporation_id, Integer loyalty_points) {}
     public record SkillResponse(Long total_sp, Integer unallocated_sp, EsiSkillEntry[] skills) {}
 

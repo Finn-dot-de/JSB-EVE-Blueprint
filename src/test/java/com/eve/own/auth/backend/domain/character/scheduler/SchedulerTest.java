@@ -3,17 +3,23 @@ package com.eve.own.auth.backend.domain.character.scheduler;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.eve.own.auth.backend.domain.auth.service.AuthService;
 import com.eve.own.auth.backend.domain.character.CorporationScope;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
+import com.eve.own.auth.backend.domain.character.service.AltSourceRetentionService;
 import com.eve.own.auth.backend.domain.character.service.CharacterSyncService;
+import com.eve.own.auth.backend.domain.character.service.ContactSyncService;
 import com.eve.own.auth.backend.domain.character.service.CorporationAssetSyncService;
+import com.eve.own.auth.backend.domain.character.service.MailCountSyncService;
+import com.eve.own.auth.backend.domain.character.service.MemberPresenceSyncService;
 import com.eve.own.auth.backend.domain.assets.scheduler.AssetPriceScheduler;
 import com.eve.own.auth.backend.domain.industry.service.IndustrySyncService;
 import com.eve.own.auth.backend.domain.market.MarketPriceScheduler;
@@ -179,6 +185,166 @@ class SchedulerTest {
             scheduler("98000002").syncCorporationAssets();
 
             verify(syncService).sync(98000002L);
+        }
+    }
+
+    /**
+     * Der Takt der drei Erfassungen, die eigene ESI-Aufrufe kosten.
+     *
+     * <p>Geprueft wird hier nur, was der Zeitgeber entscheidet: wen er fragt,
+     * wen er auslaesst und was ein Fehlschlag anrichten darf. Was erfasst wird,
+     * steht in den Diensten und wird dort geprueft.</p>
+     */
+    @Nested
+    @DisplayName("Erfassung der Alt-Datenquellen")
+    class AltSources {
+
+        @Mock private CharacterRepository characterRepo;
+        @Mock private AuthService authService;
+        @Mock private MemberPresenceSyncService presenceSync;
+        @Mock private ContactSyncService contactSync;
+        @Mock private MailCountSyncService mailSync;
+
+        private AltSourceScheduler scheduler(String altCorporationIds) {
+            return new AltSourceScheduler(new CorporationScope(98000001L, altCorporationIds),
+                    characterRepo, authService, presenceSync, contactSync, mailSync);
+        }
+
+        private Character mitToken(Long id, String name) {
+            Character character = character(id, name);
+            character.setRefreshToken("refresh");
+            return character;
+        }
+
+        @Test
+        @DisplayName("zeichnet die Anwesenheit je betreuter Corporation auf")
+        void recordsPresenceForEveryCorporation() {
+            scheduler("98000002").recordMemberPresence();
+
+            // Ein Aufruf je Corporation - und er deckt auch die unregistrierten
+            // Mitglieder ab. Das ist der ganze Grund fuer diese Quelle.
+            verify(presenceSync).sync(98000001L);
+            verify(presenceSync).sync(98000002L);
+        }
+
+        @Test
+        @DisplayName("laesst einen Fehler bei einer Corporation die uebrigen nicht aufhalten")
+        void oneCorporationFailureDoesNotStopTheRest() {
+            doThrow(new RuntimeException("kaputt")).when(presenceSync).sync(98000001L);
+
+            scheduler("98000002").recordMemberPresence();
+
+            verify(presenceSync).sync(98000002L);
+        }
+
+        @Test
+        @DisplayName("bricht den Anwesenheitslauf beim aufgebrauchten Fehler-Budget ab")
+        void stopsPresenceRunOnErrorLimit() {
+            doThrow(httpError(EsiHttpStatus.ERROR_LIMITED)).when(presenceSync).sync(98000001L);
+
+            scheduler("98000002").recordMemberPresence();
+
+            // Ohne diese Zeile liefe der Lauf weiter und verlaengerte das
+            // Zeitfenster, in dem CCP uns aussperrt - jeder Versuch kostet
+            // erneut Budget. Das Projekt ist bei Discord schon einmal in ein
+            // Rate-Limit gelaufen.
+            verify(presenceSync, never()).sync(98000002L);
+        }
+
+        @Test
+        @DisplayName("holt Kontakte und Mail-Zaehlung mit einem Token je Charakter")
+        void syncsContactsAndMailWithOneToken() {
+            Character pilot = mitToken(1L, "A");
+            when(characterRepo.findAllWithCorporation()).thenReturn(List.of(pilot));
+            when(authService.getValidAccessToken(pilot)).thenReturn("token");
+
+            scheduler("").syncContactsAndMail();
+
+            // Beide Quellen im selben Lauf: sie brauchen dasselbe Token, und ein
+            // zweiter Lauf haette nur einen zweiten SSO-Rundlauf gekostet.
+            verify(contactSync).sync(pilot, "token");
+            verify(mailSync).sync(pilot, "token");
+        }
+
+        @Test
+        @DisplayName("ueberspringt Charaktere ohne Token und mit dauerhaft ungueltigem Token")
+        void skipsCharactersWithoutUsableToken() {
+            Character ohneToken = character(1L, "Ohne");
+            Character kaputt = mitToken(2L, "Kaputt");
+            kaputt.setTokenInvalidSince(Instant.now());
+            Character gut = mitToken(3L, "Gut");
+            when(characterRepo.findAllWithCorporation())
+                    .thenReturn(List.of(ohneToken, kaputt, gut));
+            when(authService.getValidAccessToken(gut)).thenReturn("token");
+
+            scheduler("").syncContactsAndMail();
+
+            // Sie zu fragen kostet einen SSO-Rundlauf und endet sicher im selben
+            // Fehlschlag, den der Vermerk bereits festhaelt.
+            verify(contactSync, never()).sync(eq(ohneToken), any());
+            verify(contactSync, never()).sync(eq(kaputt), any());
+            verify(contactSync).sync(gut, "token");
+        }
+
+        @Test
+        @DisplayName("laesst einen Fehler bei einem Charakter die uebrigen nicht aufhalten")
+        void oneCharacterFailureDoesNotStopTheRest() {
+            Character erster = mitToken(1L, "A");
+            Character zweiter = mitToken(2L, "B");
+            when(characterRepo.findAllWithCorporation()).thenReturn(List.of(erster, zweiter));
+            when(authService.getValidAccessToken(any())).thenReturn("token");
+            doThrow(httpError(500)).when(contactSync).sync(eq(erster), any());
+
+            scheduler("").syncContactsAndMail();
+
+            verify(contactSync).sync(zweiter, "token");
+        }
+
+        @Test
+        @DisplayName("holt gar nichts, wenn kein Token zu bekommen ist")
+        void doesNothingWithoutAToken() {
+            Character pilot = mitToken(1L, "A");
+            when(characterRepo.findAllWithCorporation()).thenReturn(List.of(pilot));
+            when(authService.getValidAccessToken(pilot)).thenReturn(null);
+
+            scheduler("").syncContactsAndMail();
+
+            verify(contactSync, never()).sync(any(), any());
+            verify(mailSync, never()).sync(any(), any());
+        }
+    }
+
+    /**
+     * Der Loeschlauf. Er ist der Teil, der aus einer Aufbewahrungsfrist mehr
+     * macht als einen Satz im Javadoc.
+     */
+    @Nested
+    @DisplayName("Loeschlauf der Aufbewahrungsfristen")
+    class AltSourceRetention {
+
+        @Mock private AltSourceRetentionService retentionService;
+
+        @Test
+        @DisplayName("raeumt beide anwachsenden Tabellen auf")
+        void purgesBothGrowingTables() {
+            new AltSourceRetentionScheduler(retentionService).purgeExpiredRecords();
+
+            verify(retentionService).purgePresence();
+            verify(retentionService).purgeIskTransfers();
+        }
+
+        @Test
+        @DisplayName("raeumt die zweite Tabelle auch dann auf, wenn es bei der ersten hakte")
+        void purgesTheSecondEvenIfTheFirstFailed() {
+            doThrow(new RuntimeException("kaputt")).when(retentionService).purgePresence();
+
+            new AltSourceRetentionScheduler(retentionService).purgeExpiredRecords();
+
+            // Ohne diese Zeile wuerde ein Fehler in der einen Tabelle die Frist
+            // der anderen stillschweigend aussetzen - und niemand saehe es, weil
+            // ein Loeschlauf, der nichts loescht, genauso aussieht wie einer,
+            // der nichts zu loeschen fand.
+            verify(retentionService).purgeIskTransfers();
         }
     }
 

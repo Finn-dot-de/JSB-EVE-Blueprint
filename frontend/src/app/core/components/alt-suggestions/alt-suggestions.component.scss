@@ -389,3 +389,59 @@
   border-color: color-mix(in srgb, var(--warning-color) 40%, transparent);
   background: color-mix(in srgb, var(--warning-color) 12%, transparent);
 }
+
+/* ================= Was aufgezeichnet wird =================
+
+   Derselbe .hinweis.leise wie sonst, nur mit mehreren Saetzen untereinander.
+   Deshalb faellt die senkrechte Zentrierung weg: bei drei Zeilen saesse das
+   Symbol sonst in der Mitte des Blocks statt bei der ersten Zeile. */
+
+.erfassung {
+  align-items: flex-start;
+
+  i {
+    margin-top: 0.15rem;
+  }
+}
+
+.erfassung-satz {
+  margin: 0;
+  max-width: 80ch;
+  line-height: 1.5;
+
+  & + & {
+    margin-top: 0.4rem;
+  }
+}
+
+/* ================= Signal-Uebersicht =================
+
+   Der Hinweis darueber ist kein Schmuck: ohne ihn liest ein Director aus einer
+   unveraenderten Liste "das Gewicht wirkt nicht" heraus, wo in Wahrheit gar
+   keine Daten vorliegen. Er steht deshalb sichtbar auf der Seite und nicht in
+   einem Kommentar. */
+
+.signal-hinweis {
+  align-items: flex-start;
+  max-width: none;
+  line-height: 1.5;
+
+  i {
+    margin-top: 0.15rem;
+  }
+}
+
+.signal-uebersicht {
+  .leise {
+    display: block;
+  }
+}
+
+/* Ein stummes Signal - 0 von n Paaren. Bewusst NICHT wie ein schwacher Wert
+   gedaempft, sondern eigens abgesetzt: "hatte nie Daten" und "wurde niedrig
+   bewertet" sind gegenteilige Befunde. Wer sie verwechselt, dreht am Gewicht,
+   obwohl die Erfassung das Problem ist. */
+
+.signal-stumm td {
+  background-color: color-mix(in srgb, var(--warning-color) 8%, transparent);
+}

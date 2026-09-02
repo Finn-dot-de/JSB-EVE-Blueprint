@@ -18,6 +18,28 @@
   </div>
 
   <!--
+    Was fuer diese Erkennung aufgezeichnet wird - knapp und sachlich, kein
+    Rechtstext. Es steht oben und nicht in einem aufklappbaren Kasten weiter
+    unten: wer eine Seite mit Namen und Bewegungsdaten von Corp-Mitgliedern
+    liest, soll dabei wissen, woher die Zahlen kommen.
+
+    Der Satz zu Nachrichten ist am Code geprueft und nicht geschaetzt:
+    CharacterMailCount hat kein Textfeld und keine Mail-ID, und
+    EsiService.EsiMailHeaderResponse liest nur Absender, Empfaenger und
+    Zeitpunkt ein. Deshalb steht hier auch nirgends eine Schaltflaeche, die
+    nach Inhalten aussieht - es gibt keine, und es soll auch niemand danach
+    suchen.
+  -->
+  <div class="hinweis leise erfassung">
+    <i class="fa-solid fa-database"></i>
+    <div>
+      @for (satz of erfassung; track satz) {
+        <p class="erfassung-satz">{{ satz }}</p>
+      }
+    </div>
+  </div>
+
+  <!--
     .surface-panel ist global (styles.scss). Die Tabellenklasse dagegen ist im
     Projekt ueberall komponenten-lokal: die urspruenglich gewuenschte
     .role-table steht in roles.component.scss und griffe hier wegen Angulars
@@ -290,6 +312,70 @@
           Zeilen je Liste <span class="gewicht">{{ werte.limit }} von hoechstens {{ werte.maxLimit }}</span>
         </span>
       </div>
+
+      <!-- ========================================================
+           Die Signal-Uebersicht.
+
+           Sie steht VOR den beiden Paartabellen, weil sie deren
+           Voraussetzung ist: ohne zu wissen, welches Signal ueberhaupt
+           Daten hatte, ist jede Einzelzahl darunter nicht einzuordnen.
+
+           Kein Bedienpunkt, auch hier nicht. Die Gewichte werden ueber
+           eve.alt-detection.* gesetzt und nicht ueber diese Seite - eine
+           Schaltflaeche daneben liesse den Eindruck entstehen, man koennte
+           die Schwelle von hier aus umgehen.
+           ======================================================== -->
+      <h4 class="unterkopf">Signale, Gewichte und ob sie ueberhaupt Daten hatten</h4>
+
+      <p class="hinweis leise signal-hinweis">
+        <i class="fa-solid fa-circle-info"></i>
+        {{ signalHinweis }}
+      </p>
+
+      @if (signalZeilen().length === 0) {
+        <p class="hinweis leise">
+          <i class="fa-solid fa-circle-info"></i>
+          Der Server hat zu dieser Antwort keine Signal-Uebersicht mitgeliefert. Ohne sie ist
+          nicht zu sagen, ob ein Gewicht wirkt oder ob das Signal gar keine Daten hatte.
+        </p>
+      } @else {
+        <table class="eve-table signal-uebersicht">
+          <thead>
+            <tr>
+              <th>Signal</th>
+              <th class="rechts">Gewicht</th>
+              <th class="rechts">Daten in Paaren</th>
+              <th>Was das heisst</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (zeile of signalZeilen(); track zeile.signal) {
+              <!-- Ein stummes Signal wird eigens markiert und NICHT bloss
+                   gedaempft wie ein schwacher Wert: "0 von 549" und "niedrig
+                   bewertet" sind gegenteilige Befunde, und nur der erste ist
+                   ein Grund, an der Erfassung statt am Gewicht zu drehen. -->
+              <tr [class.signal-stumm]="zeile.stand === 'ohne-daten'">
+                <td>
+                  <span class="char-name">{{ zeile.label }}</span>
+                  <span class="leise">{{ zeile.signal }}</span>
+                </td>
+                <td class="rechts"><span class="wert-klein">{{ zeile.gewicht }}</span></td>
+                <td class="rechts">
+                  <span class="wert-klein">{{ zeile.verfuegbar }} von {{ zeile.gerechnet }}</span>
+                  @if (zeile.stand === 'gerechnet') {
+                    <span class="leise">{{ zeile.anteilProzent }} %</span>
+                  } @else if (zeile.stand === 'ohne-daten') {
+                    <span class="chip chip-still chip-fehlt">noch keine Daten</span>
+                  } @else {
+                    <span class="chip chip-still chip-fehlt">nichts gerechnet</span>
+                  }
+                </td>
+                <td class="begruendung">{{ zeile.auskunft }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
 
       <h4 class="unterkopf">Unregistriert gegen Konto</h4>
       @if (werte.accountPairs.length === 0) {

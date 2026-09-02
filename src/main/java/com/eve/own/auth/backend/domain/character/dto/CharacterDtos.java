@@ -130,6 +130,29 @@ public final class CharacterDtos {
                                          int requiredThreshold, boolean aboveThreshold) {}
 
     /**
+     * Ein Signal, wie es die Kalibrieransicht zeigt: sein Gewicht und wie oft es
+     * ueberhaupt Daten hatte.
+     *
+     * <p><b>Ohne diese Zeile kann niemand ein Signal einstellen.</b> Ein
+     * Director, der das Gewicht eines Signals verstellt und danach keine
+     * Aenderung sieht, hat zwei ununterscheidbare Ursachen vor sich: das Gewicht
+     * wirkt nicht, oder das Signal hatte in keinem einzigen Paar Daten. Genau
+     * das trennt {@code availableInPairs}. Bei den neuen Quellen ist der zweite
+     * Fall der Regelfall, solange die Erfassung erst wenige Tage laeuft - und
+     * eine Null in dieser Spalte ist die einzige ehrliche Auskunft darueber.</p>
+     *
+     * @param signal           technischer Name, z.B. {@code ISK} oder {@code PRESENCE}
+     * @param label            die Beschriftung fuer die Oberflaeche
+     * @param weightPercent    das eingestellte Gewicht
+     * @param availableInPairs in wievielen der gerechneten Paare dieses Signal
+     *                         Daten hatte
+     * @param examinedPairs    wieviele Paare insgesamt gerechnet wurden - der
+     *                         Nenner dazu, denn "0" heisst ohne ihn nichts
+     */
+    public record AltSignalConfigDto(String signal, String label, int weightPercent,
+                                     int availableInPairs, int examinedPairs) {}
+
+    /**
      * Die Kalibrieransicht: was der Scorer denkt, bevor die Schwelle filtert.
      *
      * <p>Eine leere Vorschlagsliste hat zwei ununterscheidbare Ursachen - der
@@ -146,11 +169,20 @@ public final class CharacterDtos {
      * @param minProbability            die geltende Schwelle bei mehreren Signalen
      * @param minProbabilitySingleSignal die hoehere Schwelle, wenn nur eines traegt
      * @param minAvailableSignals       wieviele Signale ueberhaupt vorliegen muessen
+     * @param signalConfig              jedes Signal mit seinem Gewicht und der
+     *                                  Auskunft, in wievielen der gerechneten
+     *                                  Paare es ueberhaupt Daten hatte. Ohne
+     *                                  diese Liste laesst sich ein Signal nicht
+     *                                  einstellen: ein Gewicht zu verstellen und
+     *                                  nichts zu sehen kann heissen, dass das
+     *                                  Gewicht nicht wirkt - oder dass das Signal
+     *                                  in keinem Paar Daten hatte.
      */
     public record AltCalibrationDto(int limit, int maxLimit,
                                     int examinedAccountPairs, int examinedUnregisteredPairs,
                                     int minProbability, int minProbabilitySingleSignal,
                                     int minAvailableSignals,
+                                    List<AltSignalConfigDto> signalConfig,
                                     List<AltCalibrationEntryDto> accountPairs,
                                     List<AltPairDto> unregisteredPairs) {}
 

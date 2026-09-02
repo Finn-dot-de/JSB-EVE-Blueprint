@@ -31,6 +31,13 @@ import org.springframework.stereotype.Service;
  * 4.501 ISK in Jita 4-4. Wer die Region ohnehin durchlaeuft, bekommt die
  * Genauigkeit geschenkt und muss sich gar nicht entscheiden.</p>
  *
+ * <p><b>Und warum das nur fuer die Verkaufsseite gilt.</b> Der Filter war
+ * anfangs auf beide Seiten gelegt, und das war eine falsche Symmetrie. Ein
+ * Verkaufsangebot ist stationsgebunden - wer es haben will, muss hinfliegen.
+ * Ein Kaufgebot hat eine Reichweite und nimmt dir die Ware auch aus dem
+ * Nachbarsystem ab. Die Regel dafuer steht in {@link MarketOrderReach}, samt
+ * dem Schaden, den die Verwechslung angerichtet hat.</p>
+ *
  * <p><b>Was der Abzug nicht sieht.</b> Nur NPC-Stationen und oeffentliche
  * Strukturen. Private Strukturen liegen hinter
  * {@code /markets/structures/{id}} und braeuchten dort einen Scope. Fuer Jita
@@ -43,10 +50,13 @@ public class MarketSnapshotService {
 
     private final EsiService esiService;
     private final MarketOrderProperties props;
+    private final MarketJumpDistances jumpDistances;
 
-    public MarketSnapshotService(EsiService esiService, MarketOrderProperties props) {
+    public MarketSnapshotService(EsiService esiService, MarketOrderProperties props,
+                                 MarketJumpDistances jumpDistances) {
         this.esiService = esiService;
         this.props = props;
+        this.jumpDistances = jumpDistances;
     }
 
     /**
@@ -62,13 +72,22 @@ public class MarketSnapshotService {
         long region = props.regionId();
         long station = props.stationId();
 
+        // Vor der ersten ESI-Seite, nicht danach: kommt die Sprungkarte nicht
+        // zustande, ist der ganze Abzug hinfaellig, und dann sollen auch keine
+        // 411 Seiten Kontingent dafuer draufgehen.
+        MarketOrderReach reichweite = reichweite(station);
+
         Map<Long, Double> guenstigsterVerkauf = new HashMap<>();
         Map<Long, Double> hoechstesKaufgebot = new HashMap<>();
 
         int seite = 1;
         int seitenGesamt = 1;
         long ordersGesamt = 0;
-        long ordersAnStation = 0;
+        long ordersVerwertet = 0;
+
+        // Das System, in dem die Zielstation laut ESI wirklich liegt - zur
+        // Gegenprobe gegen die Konfiguration.
+        Long systemAnDerStation = null;
 
         while (seite <= seitenGesamt) {
             UncachedPage<EsiMarketOrder> antwort = holeSeite(region, seite, seitenGesamt);
@@ -86,8 +105,12 @@ public class MarketSnapshotService {
 
             ordersGesamt += orders.length;
             for (EsiMarketOrder order : orders) {
-                if (uebernimm(order, station, guenstigsterVerkauf, hoechstesKaufgebot)) {
-                    ordersAnStation++;
+                Long gesehen = systemDerZielstation(order, station);
+                if (gesehen != null) {
+                    systemAnDerStation = gesehen;
+                }
+                if (uebernimm(order, reichweite, guenstigsterVerkauf, hoechstesKaufgebot)) {
+                    ordersVerwertet++;
                 }
             }
 
@@ -95,6 +118,8 @@ public class MarketSnapshotService {
             seite++;
             pause();
         }
+
+        meldeSystemWiderspruch(systemAnDerStation, station);
 
         Map<Long, StationPrice> preise = zusammenfuehren(guenstigsterVerkauf, hoechstesKaufgebot);
 
@@ -104,10 +129,10 @@ public class MarketSnapshotService {
             // der Quelle - und muss so heissen. Frueher las sich genau dieser
             // Fall als "2165 Typen gespeichert, 0 Batches fehlgeschlagen".
             log.warn("Marktabzug lieferte nur {} brauchbare Preise an Station {} "
-                            + "(erwartet mindestens {}; {} Orders auf {} Seiten, davon {} an der Station). "
+                            + "(erwartet mindestens {}; {} Orders auf {} Seiten, davon {} verwertbar). "
                             + "Das ist ein Ausfall der Preisquelle - die alten Preise bleiben stehen.",
                     preise.size(), station, props.minUsablePrices(),
-                    ordersGesamt, seitenGesamt, ordersAnStation);
+                    ordersGesamt, seitenGesamt, ordersVerwertet);
             throw new MarketSnapshotUnavailableException(
                     "nur " + preise.size() + " brauchbare Preise, mindestens "
                             + props.minUsablePrices() + " erwartet");
@@ -129,6 +154,61 @@ public class MarketSnapshotService {
     // ===========================================================
     //  Interna
     // ===========================================================
+
+    /**
+     * Baut die Reichweitenpruefung fuer diesen Durchlauf.
+     *
+     * <p>Ohne Sprungkarte gibt es keinen Abzug. Das ist Absicht und keine
+     * Haerte: mit einer leeren Karte fielen alle Gebote mit Zahlenreichweite
+     * heraus, und uebrig blieben ausgerechnet die Regionsgebote - also genau
+     * der Lockvogel zu 1 ISK, dessentwegen das hier gebaut wurde. Ein Abzug,
+     * der eine Ware still auf ein Zehntausendstel ihres Wertes setzt, ist
+     * schlimmer als gar keiner; der Aufrufer schreibt dann nichts und die
+     * alten Preise bleiben stehen.</p>
+     */
+    private MarketOrderReach reichweite(long station) {
+        long stationSystem = props.stationSystemId();
+        Map<Long, Integer> spruenge;
+        try {
+            spruenge = jumpDistances.toStationSystem();
+        } catch (RuntimeException e) {
+            throw abbruch("Sprungentfernungen zum System " + stationSystem
+                    + " nicht ermittelbar: " + e.getMessage(), e);
+        }
+        if (!spruenge.containsKey(stationSystem)) {
+            // Kennt die Karte nicht einmal ihren eigenen Ausgangspunkt, dann
+            // sind die Stammdaten nicht geladen. Weiterzurechnen hiesse, jedes
+            // Gebot mit Zahlenreichweite wegzuwerfen.
+            throw abbruch("Sprungkarte kennt das Marktsystem " + stationSystem
+                    + " nicht (" + spruenge.size() + " Systeme) - sind die Stammdaten geladen?");
+        }
+        return new MarketOrderReach(station, stationSystem, spruenge);
+    }
+
+    /**
+     * Das System einer Order, die an der Zielstation liegt - sonst {@code null}.
+     *
+     * <p>Die Gegenprobe zur Konfiguration: ESI liefert zu jeder Order beides,
+     * {@code location_id} und {@code system_id}. Wer die Station umstellt und
+     * das System vergisst, bekommt sonst lautlos falsche Sprungzahlen.</p>
+     */
+    private static Long systemDerZielstation(EsiMarketOrder order, long station) {
+        if (order == null || order.location_id() == null || order.system_id() == null) {
+            return null;
+        }
+        return order.location_id() == station ? order.system_id() : null;
+    }
+
+    private void meldeSystemWiderspruch(Long systemAnDerStation, long station) {
+        long konfiguriert = props.stationSystemId();
+        if (systemAnDerStation == null || systemAnDerStation == konfiguriert) {
+            return;
+        }
+        log.warn("Station {} liegt laut ESI im System {}, konfiguriert ist aber {} "
+                        + "(eve.market.station-system-id). Die Reichweite der Kaufgebote wurde damit "
+                        + "vom falschen Punkt aus gemessen - die Kaufpreise dieses Abzugs sind unzuverlaessig.",
+                station, systemAnDerStation, konfiguriert);
+    }
 
     private UncachedPage<EsiMarketOrder> holeSeite(long region, int seite, int seitenGesamt) {
         try {
@@ -163,21 +243,40 @@ public class MarketSnapshotService {
     }
 
     /**
-     * Verrechnet eine Order, sofern sie an der Zielstation liegt und einen
+     * Verrechnet eine Order, sofern sie die Zielstation bedient und einen
      * brauchbaren Preis traegt.
+     *
+     * <p>Die beiden Seiten werden hier ausdruecklich <em>ungleich</em>
+     * behandelt, und das ist der Kern der Korrektur - siehe
+     * {@link MarketOrderReach}.</p>
      *
      * @return ob sie gezaehlt wurde
      */
-    private boolean uebernimm(EsiMarketOrder order, long station,
+    private boolean uebernimm(EsiMarketOrder order, MarketOrderReach reichweite,
                               Map<Long, Double> verkauf, Map<Long, Double> kauf) {
         if (order == null || order.type_id() == null) {
             return false;
         }
-        // Orders anderer Standorte fliegen raus. Ohne diese Zeile stuende der
-        // guenstigste Preis IRGENDWO in der Region in der Tabelle - an einem
-        // Ort, an dem niemand einkauft.
-        if (order.location_id() == null || order.location_id() != station) {
-            return false;
+        boolean istKauf = Boolean.TRUE.equals(order.is_buy_order());
+
+        if (istKauf) {
+            // Ein Kaufgebot zaehlt, wenn seine Reichweite bis zu uns reicht.
+            // Ohne diese Zeile gewinnt bei duenn gehandelten Waren das Gebot,
+            // das jemand als Lockvogel physisch in Jita 4-4 stehen laesst:
+            // Typ 17976 stuende auf 1,00 ISK statt auf 181.000.
+            if (!reichweite.deckt(order.location_id(), order.system_id(), order.range())) {
+                return false;
+            }
+        } else {
+            // Verkaufsangebote bleiben stationsgebunden. Das ist keine
+            // vergessene Vereinheitlichung: Ware in Perimeter kann man in Jita
+            // nicht kaufen, egal was im Feld "range" steht - und dort steht bei
+            // Verkaufsangeboten ohnehin ausnahmslos "region". Ohne diese Zeile
+            // stuende der guenstigste Preis IRGENDWO in der Region in der
+            // Tabelle, an einem Ort, an dem niemand einkauft.
+            if (order.location_id() == null || order.location_id() != reichweite.station()) {
+                return false;
+            }
         }
         // Die eine Regel, hier nicht nachgebaut: <= 0 heisst "unbekannt".
         // In EVE liegt der Mindestpreis einer Order bei 0,01 ISK.
@@ -185,7 +284,7 @@ public class MarketSnapshotService {
         if (preis == null) {
             return false;
         }
-        if (Boolean.TRUE.equals(order.is_buy_order())) {
+        if (istKauf) {
             kauf.merge(order.type_id(), preis, Math::max);
         } else {
             verkauf.merge(order.type_id(), preis, Math::min);

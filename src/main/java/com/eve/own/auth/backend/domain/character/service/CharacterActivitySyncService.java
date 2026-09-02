@@ -24,6 +24,11 @@ import org.springframework.stereotype.Service;
  *
  * <p>Ergebnis sind die Werte aus {@link ActivityType}: abgebautes Volumen,
  * Kopfgelder, erlegte NPCs und erkannte Steuerzahlungen.</p>
+ *
+ * <p>Nebenbei reicht die Klasse das ohnehin geholte Journal an den
+ * {@link IskTransferSyncService} weiter. Das ist keine Vermischung von
+ * Zustaendigkeiten, sondern die Vermeidung eines zweiten Abrufs derselben
+ * Daten: die Auswertung selbst liegt vollstaendig dort.</p>
  */
 @Slf4j
 @Service
@@ -48,15 +53,18 @@ public class CharacterActivitySyncService {
     private final InvTypeRepository invTypeRepo;
     private final AssetSyncService assetSyncService;
     private final CorporationScope corporationScope;
+    private final IskTransferSyncService iskTransferSyncService;
 
     public CharacterActivitySyncService(EsiService esiService,
                                         InvTypeRepository invTypeRepo,
                                         AssetSyncService assetSyncService,
-                                        CorporationScope corporationScope) {
+                                        CorporationScope corporationScope,
+                                        IskTransferSyncService iskTransferSyncService) {
         this.esiService = esiService;
         this.invTypeRepo = invTypeRepo;
         this.assetSyncService = assetSyncService;
         this.corporationScope = corporationScope;
+        this.iskTransferSyncService = iskTransferSyncService;
     }
 
     public void sync(Character character, String token) {
@@ -112,12 +120,25 @@ public class CharacterActivitySyncService {
                 .sum();
     }
 
-    /** Wertet das Wallet-Journal fuer Kopfgelder und Steuerzahlungen aus. */
+    /**
+     * Wertet das Wallet-Journal fuer Kopfgelder und Steuerzahlungen aus - und
+     * reicht dieselbe Antwort an die Erfassung der Spieler-Ueberweisungen weiter.
+     *
+     * <p>Die Weitergabe steht hier und nicht in einem eigenen Lauf, weil sie so
+     * <b>keinen einzigen zusaetzlichen ESI-Aufruf</b> kostet: das Journal liegt
+     * an dieser Stelle bereits vor. Bisher wurde die Gegenpartei jeder Zeile
+     * weggeworfen; genau sie ist das staerkste Merkmal, das dieses Journal
+     * hergibt - siehe {@link IskTransferSyncService}.</p>
+     *
+     * <p>Weitergereicht wird erst nach der Pruefung auf {@code null}: eine
+     * ausgefallene Quelle darf keine Teildaten schreiben.</p>
+     */
     private List<CharacterActivity> syncWalletJournal(Character character, String token, Instant measuredAt) {
         var response = esiService.getWalletJournal(character.getId(), token);
         if (response.data() == null) {
             return List.of();
         }
+        iskTransferSyncService.sync(character.getId(), response.data());
 
         List<CharacterActivity> activities = new ArrayList<>();
         double bountyTotal = 0.0;

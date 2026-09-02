@@ -28,8 +28,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * <p>Der wertvollste Teil dieser Klasse sind nicht die Zahlen, sondern die
  * Begruendungen darunter: jede sagt, was beim Hoch- und was beim Runterdrehen
  * passiert. Ein Record kann seine Komponenten nur ueber {@code @param}-Zeilen in
- * der Klassendoku beschreiben - neunzehn mehrabsaetzige Begruendungen wuerden
- * dort zu einem Block, in dem niemand mehr die einzelne Schraube findet. Felder
+ * der Klassendoku beschreiben - so viele mehrabsaetzige Begruendungen wuerden
+ * dort zu einem Block, in dem niemand mehr die einzelne Schraube findet - und
+ * mit den vier neuen Signalen sind es inzwischen ueber dreissig. Felder
  * tragen ihre eigene Doku direkt am Wert. Die Vorgabewerte stehen als
  * Feldinitialisierung und sind exakt die frueheren Konstanten; fehlt eine
  * Eigenschaft in der Konfiguration, bleibt es beim heutigen Verhalten.</p>
@@ -51,7 +52,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AltDetectionProperties {
 
     // ==================================================================
-    // Gewichte der drei Signale
+    // Gewichte der Signale
     // ==================================================================
 
     /**
@@ -117,6 +118,91 @@ public class AltDetectionProperties {
      * einzige Quelle, die dem Mining-Signal Ort und Uhrzeit zurueckgibt.</p>
      */
     private int weightMining = 15;
+
+    /**
+     * Gewicht der ISK-Ueberweisungen zwischen genau diesen beiden Charakteren.
+     *
+     * <p><b>Das hoechste Gewicht ueberhaupt</b>, und der Grund ist die Bauart des
+     * Merkmals, nicht seine Messung: eine Ueberweisung benennt <em>zwei</em>
+     * Charaktere. Sie ist damit von vornherein das, was Beitritts-Cluster und
+     * Mining-Tag erst muehsam werden muessen - ein gerichtetes Merkmal zwischen
+     * zwei Menschen statt der Spur eines Gruppenereignisses, an dem alle
+     * teilnahmen. Ein gemeinsamer Mining-Tag entsteht auch dann, wenn sich zwei
+     * Leute nie begegnet sind; eine Ueberweisung nicht.</p>
+     *
+     * <p><b>Hoeher:</b> wiederholter Geldfluss entscheidet praktisch allein.
+     * <b>Niedriger:</b> das Signal wird zur Bestaetigung - und damit verschenkt
+     * man das einzige Merkmal, das ohne Seltenheitskorrektur ueberhaupt etwas
+     * aussagt.</p>
+     *
+     * <p>Was das Gewicht ausdruecklich <em>nicht</em> abfaengt, ist der Fall
+     * "eine einzige grosse Zahlung": dagegen hilft nicht das Gewicht, sondern
+     * {@link #iskFullDays} - gewertet wird die <b>Wiederholung</b>, nicht die
+     * Hoehe.</p>
+     */
+    private int weightIsk = 50;
+
+    /**
+     * Gewicht der Kontaktliste.
+     *
+     * <p>Der eigene Alt steht dort auffallend oft und mit hoher Standing - eine
+     * Eintragung, die der Spieler selbst vorgenommen hat. Das ist wie die
+     * Ueberweisung ein gerichtetes Merkmal und deshalb hoeher gewichtet als
+     * Mining, aber niedriger als Geld: eine Kontaktzeile kostet einen Klick und
+     * bleibt danach jahrelang stehen, auch wenn die Verbindung laengst keine
+     * mehr ist.</p>
+     *
+     * <p><b>Hoeher:</b> ein Eintrag in der Kontaktliste entscheidet staerker -
+     * und trifft dann die Spieler, die die halbe Corporation als Kontakt fuehren.
+     * <b>Niedriger:</b> das Signal wird zur Beigabe. Gegen die grossen
+     * Kontaktlisten hilft nicht das Gewicht, sondern
+     * {@link #contactFullListSize}.</p>
+     */
+    private int weightContact = 25;
+
+    /**
+     * Gewicht der Nachrichtenanzahl.
+     *
+     * <p><b>Das kleinste Gewicht aller Signale, und zwar mit Absicht.</b> Drei
+     * Gruende, jeder fuer sich ausreichend:</p>
+     * <ol>
+     *   <li>In EVE schreibt man seinem eigenen Alt <em>nicht</em>. Man loggt ihn
+     *       ein. Post laeuft zwischen verschiedenen Menschen - Handel,
+     *       Bewerbung, Flottenabsprache -, also genau zwischen den Paaren, die
+     *       hier <b>nicht</b> gesucht werden.</li>
+     *   <li>Gezaehlt wird nur, was ESI in einem Zug an Kopfzeilen herausgibt.
+     *       Der Wert ist "so viele der zuletzt sichtbaren Nachrichten", nicht
+     *       "so viele insgesamt" - er schwankt mit dem Postfach.</li>
+     *   <li>Die Zusage aus {@code CharacterMailCount} nimmt dem Signal jede
+     *       Tiefe: ohne Betreff bleibt eine Zahl, und eine Zahl kann nicht
+     *       zwischen "vier Mal wegen desselben Handels" und "vier Mal ueber
+     *       Monate verteilt" unterscheiden.</li>
+     * </ol>
+     *
+     * <p>Es wird trotzdem gebaut, weil ein Austausch zwischen zwei Charakteren
+     * eine gerichtete Beobachtung ist und in Verbindung mit Geld und Kontakt das
+     * Bild abrundet. <b>Hoeher:</b> Postverkehr faengt an, Vorschlaege zu tragen -
+     * davon ist abzuraten. <b>Niedriger oder 0:</b> das Signal erscheint nur noch
+     * in der Aufschluesselung und beeinflusst die Zahl nicht mehr.</p>
+     */
+    private int weightMail = 8;
+
+    /**
+     * Gewicht des gemeinsamen Aufenthalts.
+     *
+     * <p><b>Hoeher:</b> gemeinsame Standorte entscheiden staerker. <b>Niedriger:</b>
+     * das Signal wird zur Bestaetigung.</p>
+     *
+     * <p>Deutlich unter dem der Ueberweisung, obwohl es das einzige neue Signal
+     * ist, das auch zwei <em>unregistrierte</em> Charaktere verbinden kann - und
+     * zwar wegen des Fehlers, den dieses Projekt bereits gemessen hat: mit
+     * dreissig Corpmates in Jita zu stehen sagt <b>nichts</b>. Ein Standort ist
+     * ohne Seltenheitskorrektur dasselbe Gruppenereignis wie ein Mining-Tag, und
+     * roh gerechnet laeuft er genauso verkehrt herum. Die Korrektur steht in
+     * {@link #presenceRarityExponent}; das Gewicht bleibt gedaempft, weil die
+     * Korrektur eine Schaetzung ueber die Seltenheit ist und keine Messung.</p>
+     */
+    private int weightPresence = 30;
 
     // ==================================================================
     // Die Schwelle
@@ -330,6 +416,243 @@ public class AltDetectionProperties {
      * herum laufende Variante. <b>Nicht auf 0 stellen, ohne das zu wollen.</b></p>
      */
     private double miningRarityExponent = 1.0;
+
+    // ==================================================================
+    // Signal 4: ISK-Ueberweisungen
+    // ==================================================================
+
+    /**
+     * An wievielen <b>verschiedenen Tagen</b> zwischen den beiden Geld geflossen
+     * sein muss, damit das Signal seinen vollen Wert erreicht. Darunter steigt
+     * der Wert linear an.
+     *
+     * <p><b>Warum Tage und nicht Ueberweisungen und schon gar nicht Betraege.</b>
+     * Eine einzelne grosse Ueberweisung ist zwischen Fremden voellig normal -
+     * ein Schiffskauf, ein Vertrag, eine Kopfgeldauszahlung. Der Betrag traegt
+     * deshalb <em>nichts</em> zur Bewertung bei; er steht nur in der
+     * Aufschluesselung, damit der Director sieht, worueber geredet wird. Die
+     * Anzahl der Ueberweisungen taugt ebenfalls nicht: derselbe Schiffskauf in
+     * drei Raten ist dreimal derselbe Vorgang. Was Fremde nicht tun, ist, an
+     * <em>verschiedenen Tagen wieder und wieder</em> Geld zu schicken. Genau das
+     * zaehlt hier.</p>
+     *
+     * <p><b>Hoeher:</b> strenger - erst eine lange Reihe zaehlt voll, ein
+     * einzelner Handel faellt fast ganz heraus. <b>Auf 1:</b> eine einzige
+     * Zahlung ergibt den vollen Wert, und damit ist genau die Falle wieder offen,
+     * gegen die diese Schraube steht.</p>
+     */
+    private int iskFullDays = 4;
+
+    /**
+     * Aufschlag, wenn zwischen den beiden in <b>beide Richtungen</b> Geld floss.
+     *
+     * <p>Ein Kaufvorgang ist einseitig: der eine zahlt, der andere liefert. Geld,
+     * das hin und zurueck laeuft, passt dagegen zum Bild eines Menschen, der
+     * seine eigenen Taschen umschichtet. Der Aufschlag wird auf den Wert
+     * addiert und danach bei 100 gekappt.</p>
+     *
+     * <p><b>Hoeher:</b> Wechselverkehr wird zum entscheidenden Muster - trifft
+     * auch zwei Handelspartner mit laufender Geschaeftsbeziehung. <b>Auf 0:</b>
+     * die Richtung geht nur noch in den Text der Aufschluesselung ein.</p>
+     */
+    private int iskBothDirectionsBonus = 15;
+
+    /**
+     * Ob der Wert gedaempft wird, wenn der Zahlende ohnehin mit vielen
+     * verschiedenen Charakteren Geld tauscht.
+     *
+     * <p><b>Die zweite tragende Regel, angewandt auf Geld.</b> Ein Director, der
+     * den Erz-Rueckkauf auszahlt, ueberweist im Monat an fuenfzig Leute. Ohne
+     * diese Daempfung bekaeme jeder einzelne davon einen hohen Wert - und zwar
+     * genau die Leute, die ohnehin in derselben Corporation sind. Das ist
+     * derselbe Fehler wie der gemeinsame Mining-Tag, nur mit ISK.</p>
+     *
+     * <p><b>Ausgeschaltet:</b> die Auszahlungsliste des Directors wird zur
+     * Alt-Liste. Nicht abschalten, ohne das zu wollen.</p>
+     */
+    private boolean iskCounterpartyDilution = true;
+
+    /**
+     * Bis zu wievielen verschiedenen Geldpartnern ein Charakter ungedaempft
+     * bleibt.
+     *
+     * <p>Darueber wird der Wert mit {@code diese Zahl / Anzahl der Partner}
+     * multipliziert - dieselbe lineare Form wie die Daempfung der
+     * Rekrutierungswelle in {@link #joinClusterDilution}, damit im Dienst nicht
+     * zwei verschiedene Daempfungskurven nebeneinander stehen.</p>
+     *
+     * <p><b>Hoeher:</b> auch wer mit zwanzig Leuten handelt, zaehlt noch voll -
+     * mehr Treffer, mehr Auszahlungslisten. <b>Niedriger:</b> strenger; ein
+     * Spieler mit normalem Handelsverkehr verliert dann auch die echte
+     * Alt-Ueberweisung.</p>
+     */
+    private int iskCounterpartyFullCount = 5;
+
+    // ==================================================================
+    // Signal 5: Kontaktliste
+    // ==================================================================
+
+    /**
+     * Punktwert, wenn nur <em>eine</em> Seite die andere als Kontakt fuehrt.
+     *
+     * <p>Beidseitig ist der volle Wert (100): zwei Charaktere, die sich
+     * gegenseitig eingetragen haben, sind zweimal bewusst verbunden worden.
+     * Einseitig ist schwaecher, aber keineswegs nichts - beim eigenen Alt traegt
+     * oft nur der Main den anderen ein, weil nur er die Liste pflegt.</p>
+     *
+     * <p><b>Hoeher (Richtung 100):</b> die Gegenseitigkeit verliert ihre
+     * Bedeutung. <b>Niedriger:</b> nur noch beidseitige Eintraege zaehlen, und
+     * der haeufigste echte Fall faellt heraus.</p>
+     */
+    private int contactOneWayScore = 60;
+
+    /**
+     * Ab welcher Standing ein Kontakt als bewusst hoch eingestuft gilt.
+     *
+     * <p>Standing ist der Teil der Kontaktliste, der Arbeit macht: eintragen
+     * kostet einen Klick, +10 setzen einen zweiten. <b>Hoeher:</b> nur noch die
+     * Bestwertung zaehlt. <b>Niedriger:</b> auch eine freundliche 1 gilt als
+     * Hinweis - dann bekommt fast jeder Corpmate den Aufschlag.</p>
+     *
+     * <p>Eine <em>fehlende</em> Standing loest den Aufschlag nie aus. ESI darf
+     * das Feld weglassen, und fehlend ist nicht 0 und schon gar nicht +10 -
+     * dieselbe Unterscheidung wie beim ganzen Signalbegriff.</p>
+     */
+    private double contactStrongStanding = 5.0;
+
+    /**
+     * Aufschlag fuer einen Kontakt mit hoher Standing, addiert und bei 100
+     * gekappt.
+     *
+     * <p><b>Hoeher:</b> die Standing wird zum eigentlichen Merkmal. <b>Auf 0:</b>
+     * es zaehlt nur noch, <em>dass</em> jemand eingetragen ist.</p>
+     */
+    private int contactStandingBonus = 20;
+
+    /**
+     * Bis zu welcher Groesse eine Kontaktliste ungedaempft zaehlt.
+     *
+     * <p><b>Die Falle, gegen die diese Schraube steht:</b> manche fuehren die
+     * halbe Corporation als Kontakt. Ein Eintrag bei jemandem mit fuenf
+     * Kontakten ist eine Auswahl; derselbe Eintrag bei jemandem mit
+     * dreihundert ist eine Adressliste. Ueber dieser Groesse wird der Wert mit
+     * {@code diese Zahl / Laenge der Liste} multipliziert - eine Liste von 300
+     * bringt einen beidseitigen Eintrag damit von 100 auf 7.</p>
+     *
+     * <p>Bei einem beidseitigen Eintrag zaehlt die <em>groessere</em> der beiden
+     * Listen. Sonst koennte ein Spieler mit drei Kontakten die Adressliste des
+     * anderen wieder aufwerten, und genau die soll gedaempft werden.</p>
+     *
+     * <p><b>Hoeher:</b> auch lange Listen zaehlen voll - mehr Treffer, mehr
+     * Corp-Adressbuecher. <b>Niedriger:</b> strenger; ein Spieler, der ordentlich
+     * pflegt, verliert dann auch den echten Alt-Eintrag.</p>
+     */
+    private int contactFullListSize = 20;
+
+    // ==================================================================
+    // Signal 6: Nachrichtenanzahl
+    // ==================================================================
+
+    /**
+     * Wieviele gezaehlte Nachrichten zwischen den beiden den vollen Wert
+     * ergeben; darunter steigt der Wert linear an.
+     *
+     * <p><b>Hoeher:</b> erst regelmaessiger Briefwechsel zaehlt. <b>Auf 1:</b>
+     * eine einzige Nachricht ergibt den vollen Wert - und eine einzelne Mail
+     * schreibt man in EVE an jeden, mit dem man einmal etwas zu tun hatte.</p>
+     *
+     * <p>Bewusst ohne Alterskurve: der Zeitpunkt der juengsten Nachricht liegt
+     * vor und wandert in die Aufschluesselung, aber nicht in die Zahl. Eine
+     * Alterskurve auf dem schwaechsten Signal von allen waeren zwei weitere
+     * Schrauben, die auf diesem Bestand niemand einstellen kann - und ein
+     * schwaches Signal wird durch mehr Parameter nicht staerker, nur
+     * unuebersichtlicher.</p>
+     */
+    private int mailFullCount = 6;
+
+    // ==================================================================
+    // Signal 7: Gemeinsamer Aufenthalt
+    // ==================================================================
+
+    /**
+     * Wie weit die Anwesenheitsaufzeichnung fuer die Bewertung zurueckgelesen
+     * wird.
+     *
+     * <p>Nicht dasselbe wie die Aufbewahrungsfrist in {@code AltSourceProperties}
+     * - die sagt, wie lange die Zeilen <em>existieren</em> duerfen, diese hier,
+     * wieviel davon eine <em>Bewertung</em> liest. Der Unterschied ist Last: die
+     * Bewertung laeuft an einem Seitenaufruf, und alle Zeilen einer Corporation
+     * ueber 90 Tage sind ein Vielfaches dessen, was 30 Tage kosten.</p>
+     *
+     * <p><b>Hoeher:</b> mehr Bewegung faellt ins Fenster - laengere Reihen,
+     * langsamere Antwort. <b>Niedriger:</b> schneller, aber ein Alt, der einmal
+     * im Monat gespielt wird, hat dann keine gemeinsame Beobachtung mehr.</p>
+     */
+    private Duration presenceLookback = Duration.ofDays(30);
+
+    /**
+     * Wie grob die Messzeitpunkte zusammengefasst werden, bevor zwei Charaktere
+     * als gemeinsam anwesend gelten.
+     *
+     * <p>Die Erfassung schreibt eine Zeile nur bei <em>Aenderung</em>, mit einem
+     * Messzeitpunkt je Corporation und Lauf. Zwei Alts, die zusammen umziehen,
+     * erzeugen ihre Zeilen deshalb im selben Lauf. Das Fenster faengt den Fall
+     * ab, dass zwei Laeufe knapp auseinanderliegen.</p>
+     *
+     * <p><b>Hoeher:</b> zwei Leute, die Stunden auseinander in dasselbe System
+     * kamen, gelten als gemeinsam anwesend - mehr Treffer, mehr Zufall.
+     * <b>Niedriger:</b> nur noch der exakt gleiche Lauf zaehlt; das ist streng,
+     * aber es ist auch genau das, was "zusammen unterwegs" heisst.</p>
+     */
+    private Duration presenceBucket = Duration.ofHours(3);
+
+    /**
+     * Wie stark seltene Aufenthaltsorte gegenueber vielbesuchten zaehlen.
+     *
+     * <p><b>Hier sitzt die Gefahr, und sie ist in diesem Projekt schon einmal
+     * gemessen worden.</b> Beim Mining-Tag lagen fremde Paare ueber echten, weil
+     * in einer Corp alle an denselben Tagen minen. Der Standort ist derselbe
+     * Fall in schaerfer: mit dreissig Corpmates in Jita zu stehen sagt
+     * <em>nichts</em>, weil dort alle stehen. Mit genau einem anderen in einem
+     * beliebigen abgelegenen System zu stehen sagt viel. Roh gezaehlt liefe das
+     * Signal deshalb genauso verkehrt herum wie die rohe Tagesueberschneidung.</p>
+     *
+     * <p>Jeder gemeinsame Aufenthalt wird mit
+     * {@code (1 / Anzahl der dort je gesehenen Charaktere)^Exponent} gewichtet.
+     * Der Exponent steht hoeher als der des Mining-Tags, weil sich die Anzahl
+     * der Besucher eines Handelsknotenpunkts von der eines abgelegenen Systems
+     * um Groessenordnungen unterscheidet - beim Tag tut sie das nicht.</p>
+     *
+     * <p><b>Hoeher:</b> nur noch die ganz abgelegenen Orte zaehlen - sehr
+     * streng. <b>Auf 0:</b> die Korrektur ist ausgeschaltet, jeder Ort zaehlt
+     * gleich, und man bekommt exakt die gemessen verkehrt herum laufende
+     * Variante zurueck. <b>Nicht auf 0 stellen, ohne das zu wollen.</b></p>
+     */
+    private double presenceRarityExponent = 1.5;
+
+    /**
+     * Wieviel gewichtete Beobachtung den vollen Wert ergibt.
+     *
+     * <p>Die Zahl ist kein Bauchgefuehl, sie ist ein umgerechneter Fall: zwei
+     * gemeinsame Aufenthalte an einem Ort, an dem ueberhaupt nur diese beiden je
+     * gesehen wurden, ergeben bei Exponent 1,5 genau {@code 2 * 2^-1,5 = 0,707}.
+     * Der Vorgabewert ist knapp darunter, damit dieser Fall den vollen Wert
+     * erreicht. Zum Vergleich: dreissig gemeinsame Aufenthalte an einem Ort mit
+     * zweihundert Besuchern ergeben {@code 30 * 200^-1,5 = 0,011} - also
+     * praktisch nichts. Genau das ist der Zweck.</p>
+     *
+     * <p><b>Hoeher:</b> es braucht mehr oder seltenere gemeinsame Aufenthalte -
+     * strenger. <b>Niedriger:</b> schon ein einzelner gemeinsamer Aufenthalt an
+     * einem halbwegs seltenen Ort ergibt den vollen Wert.</p>
+     *
+     * <p>Ausdruecklich <b>keine</b> Ueberschneidungsquote (gemeinsam durch
+     * insgesamt). Eine Quote waere hier der Fehler: zwei Charaktere, die je
+     * genau einmal beobachtet wurden und beide in Jita, haetten die Quote 1,0
+     * und damit den Hoechstwert - obwohl das die nichtssagendste Beobachtung
+     * ueberhaupt ist. Gezaehlt wird deshalb absolute Evidenz, und die ist bei
+     * einem vielbesuchten Ort winzig.</p>
+     */
+    private double presenceFullEvidence = 0.7;
 
     // ==================================================================
     // Gruppierung unregistrierter Charaktere untereinander

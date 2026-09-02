@@ -17,12 +17,23 @@ import com.eve.own.auth.backend.domain.character.entity.AltLinkProposal;
 import com.eve.own.auth.backend.domain.character.entity.Character;
 import com.eve.own.auth.backend.domain.character.entity.CharacterMining;
 import com.eve.own.auth.backend.domain.character.entity.Corporation;
+import com.eve.own.auth.backend.domain.character.entity.CharacterContact;
+import com.eve.own.auth.backend.domain.character.entity.CharacterIskTransfer;
+import com.eve.own.auth.backend.domain.character.entity.CharacterMailCount;
+import com.eve.own.auth.backend.domain.character.entity.CorporationMemberPresence;
+import com.eve.own.auth.backend.domain.character.entity.IskTransferDirection;
 import com.eve.own.auth.backend.domain.character.repository.AltLinkProposalRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterContactRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterIskTransferRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterMailCountRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterMiningRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
+import com.eve.own.auth.backend.domain.character.repository.CorporationMemberPresenceRepository;
 import com.eve.own.auth.backend.esi.EsiResponse;
 import com.eve.own.auth.backend.esi.EsiService;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -50,6 +61,13 @@ class AltDetectionServiceTest {
 
     private static final String MAIN_NAME = "Comander Video";
 
+    /** Handelsknotenpunkt und abgelegenes System der Anwesenheits-Faelle. */
+    private static final Long JITA = 30000142L;
+    private static final Long ABGELEGEN = 30004321L;
+    private static final Long HUB_KANDIDAT = 5100L;
+    private static final Long SELTEN_KANDIDAT = 5200L;
+    private static final Instant MESSUNG = Instant.parse("2026-05-01T00:00:00Z");
+
     /**
      * Durchnummerierter Zwilling des Mains - das Muster, das auch ALLEIN traegt.
      *
@@ -68,6 +86,10 @@ class AltDetectionServiceTest {
     @Mock private CharacterRepository characterRepo;
     @Mock private CharacterMiningRepository miningRepo;
     @Mock private AltLinkProposalRepository proposalRepo;
+    @Mock private CharacterIskTransferRepository iskRepo;
+    @Mock private CharacterContactRepository contactRepo;
+    @Mock private CharacterMailCountRepository mailRepo;
+    @Mock private CorporationMemberPresenceRepository presenceRepo;
     @Mock private DirectorTokenProvider directorTokenProvider;
     @Mock private EsiService esiService;
 
@@ -89,7 +111,8 @@ class AltDetectionServiceTest {
     void setUp() {
         props = new AltDetectionProperties();
         service = new AltDetectionService(corporationStatsService, characterRepo, miningRepo,
-                proposalRepo, directorTokenProvider, esiService, props);
+                proposalRepo, iskRepo, contactRepo, mailRepo, presenceRepo,
+                directorTokenProvider, esiService, props);
 
         main = character(MAIN_ID, MAIN_ID, MAIN_NAME, SystemRoles.DIRECTOR);
 
@@ -101,6 +124,15 @@ class AltDetectionServiceTest {
         when(proposalRepo.findByUnauthedCharacterIdIn(anyList())).thenReturn(List.of());
         when(proposalRepo.findByUnauthedCharacterId(anyLong())).thenReturn(Optional.empty());
         when(miningRepo.findByCharacterIdIn(anyList())).thenReturn(List.of());
+
+        // Voreinstellung fuer die vier neuen Quellen: NICHTS erfasst. Damit
+        // melden sich alle vier als "nicht verfuegbar" und die Tests der drei
+        // alten Signale rechnen genau wie zuvor - was zugleich die Zusicherung
+        // ist, dass ein neues Signal ohne Datengrundlage den Score nicht senkt.
+        when(iskRepo.findByCharacterIdIn(any())).thenReturn(List.of());
+        when(contactRepo.findByCharacterIdIn(any())).thenReturn(List.of());
+        when(mailRepo.findByCharacterIdIn(any())).thenReturn(List.of());
+        when(presenceRepo.findByCorporationSince(anyLong(), any())).thenReturn(List.of());
 
         // Voreinstellung: KEIN Director-Token, also keine Mitgliederverfolgung.
         // Genau der Zustand, in dem zwei der drei Signale fehlen.
@@ -165,6 +197,99 @@ class AltDetectionServiceTest {
                 .orElseThrow();
     }
 
+    // ------------------------------------------------------------------
+    // Hilfen fuer die vier neuen Quellen
+    // ------------------------------------------------------------------
+
+    /**
+     * Das bewertete Paar aus der Kalibrieransicht, also <b>ohne Schwelle</b>.
+     *
+     * <p>Die Vorschlagsliste taugt fuer die Einzelwert-Tests nicht, und zwar aus
+     * einem Grund, der selbst richtig ist: sobald ein zweites Signal Daten hat,
+     * gilt die niedrigere Schwelle - und ein gemessener Wert 0 (Journal gelesen,
+     * keine Ueberweisung) drueckt das Paar dann unter sie. Genau so soll es
+     * sein. Geprueft wird hier aber der EINZELWERT eines Signals und nicht, ob
+     * das Paar es in die Liste schafft.</p>
+     */
+    private CharacterDtos.AltSuggestionDto bewertetesPaar(Long kandidat) {
+        return service.calibrationSample(MAIN_ID, null).accountPairs().stream()
+                .map(CharacterDtos.AltCalibrationEntryDto::suggestion)
+                .filter(eintrag -> eintrag.unauthedCharId().equals(kandidat))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    /** Fortlaufend, damit zwei Zeilen nie dieselbe Journal-ID tragen. */
+    private long journalRef = 1L;
+
+    private CharacterIskTransfer iskZeile(Long eigner, Long gegenpartei,
+                                          IskTransferDirection richtung, String tag) {
+        CharacterIskTransfer row = new CharacterIskTransfer();
+        row.setCharacterId(eigner);
+        row.setCounterpartyId(gegenpartei);
+        row.setDirection(richtung);
+        row.setAmount(new BigDecimal("250000000.00"));
+        row.setOccurredAt(Instant.parse(tag + "T18:30:00Z"));
+        row.setJournalRefId(journalRef++);
+        return row;
+    }
+
+    private void iskZeilen(CharacterIskTransfer... zeilen) {
+        when(iskRepo.findByCharacterIdIn(any())).thenReturn(List.of(zeilen));
+    }
+
+    /** Der Einzelwert des ISK-Signals im einzigen Vorschlag. */
+    private int iskWert() {
+        return signal(bewertetesPaar(UNAUTHED_ID), AltDetectionService.SIGNAL_ISK).score();
+    }
+
+    private static CharacterContact kontakt(Long eigner, Long kontaktId, Double standing) {
+        CharacterContact row = new CharacterContact();
+        row.setCharacterId(eigner);
+        row.setContactId(kontaktId);
+        row.setStanding(standing);
+        row.setRecordedAt(Instant.parse("2026-05-01T00:00:00Z"));
+        return row;
+    }
+
+    private void kontakte(CharacterContact... zeilen) {
+        when(contactRepo.findByCharacterIdIn(any())).thenReturn(List.of(zeilen));
+    }
+
+    private int kontaktWert() {
+        return signal(bewertetesPaar(UNAUTHED_ID), AltDetectionService.SIGNAL_CONTACT).score();
+    }
+
+    private static CharacterMailCount mailStand(Long eigner, Long gegenpartei,
+                                                int gesendet, int empfangen) {
+        CharacterMailCount row = new CharacterMailCount();
+        row.setCharacterId(eigner);
+        row.setCounterpartyId(gegenpartei);
+        row.setSentCount(gesendet);
+        row.setReceivedCount(empfangen);
+        row.setLastMailAt(Instant.parse("2026-05-01T00:00:00Z"));
+        row.setCountedAt(Instant.parse("2026-05-01T00:00:00Z"));
+        return row;
+    }
+
+    private void mails(CharacterMailCount... zeilen) {
+        when(mailRepo.findByCharacterIdIn(any())).thenReturn(List.of(zeilen));
+    }
+
+    private static CorporationMemberPresence praesenz(Long charakter, Long ort, Instant gemessen) {
+        CorporationMemberPresence row = new CorporationMemberPresence();
+        row.setCorporationId(CORP);
+        row.setCharacterId(charakter);
+        row.setLocationId(ort);
+        row.setMeasuredAt(gemessen);
+        return row;
+    }
+
+    private void anwesenheit(List<CorporationMemberPresence> zeilen) {
+        when(presenceRepo.findByCorporationSince(anyLong(), any())).thenReturn(zeilen);
+    }
+
+
     // ==================================================================
     // Die entscheidende Regel
     // ==================================================================
@@ -181,7 +306,7 @@ class AltDetectionServiceTest {
             // ist nichts bekannt" wuerde stillschweigend "geprueft und
             // unauffaellig" - eine niedrige Zahl, die wie ein Freispruch
             // aussieht, obwohl nichts geprueft wurde.
-            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts().getFirst();
+            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts(MAIN_ID).getFirst();
 
             assertThat(suggestion.probability())
                     .as("nur der Name lag vor, also ist der Score genau der Namenswert")
@@ -197,7 +322,7 @@ class AltDetectionServiceTest {
             // Ohne die Aufschluesselung stuende dort eine nackte Zahl, und der
             // Director haelt sie fuer geeicht. Eine 85 aus EINEM Signal ist
             // etwas anderes als eine 85 aus dreien.
-            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts().getFirst();
+            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts(MAIN_ID).getFirst();
 
             assertThat(suggestion.signalsUsed()).isEqualTo(1);
             assertThat(suggestion.signalsTotal()).isEqualTo(AltDetectionService.SIGNAL_COUNT);
@@ -224,7 +349,7 @@ class AltDetectionServiceTest {
             beitrittsdaten(beitritt(UNAUTHED_ID, JOIN),
                     beitritt(MAIN_ID, JOIN.plusSeconds(60L * 60 * 24 * 30)));
 
-            List<CharacterDtos.AltSuggestionDto> suggestions = service.findProbableAlts();
+            List<CharacterDtos.AltSuggestionDto> suggestions = service.findProbableAlts(MAIN_ID);
 
             assertThat(suggestions)
                     .as("40*85 + 45*0 geteilt durch 85 ergibt 40 - unter der Schwelle")
@@ -248,7 +373,7 @@ class AltDetectionServiceTest {
             // der die wenigen echten Treffer untergehen.
             stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, "Zzz Qqqq Wwww", "portrait"));
 
-            assertThat(service.findProbableAlts()).isEmpty();
+            assertThat(service.findProbableAlts(MAIN_ID)).isEmpty();
         }
 
         @Test
@@ -263,7 +388,7 @@ class AltDetectionServiceTest {
             // jeder mit einem Knopf daneben, der einen fremden Menschen einem
             // fremden Konto zuschlaegt.
             stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, "Zaphod Video", "portrait"));
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("gemeinsamer Nachname allein reicht nicht")
                     .isEmpty();
 
@@ -271,7 +396,7 @@ class AltDetectionServiceTest {
             // Hinweis und muss weiterhin durchkommen - sonst haette die
             // Verschaerfung das Merkmal gleich mit abgeschaltet.
             stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, MAIN_NAME + " 2", "portrait"));
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("durchnummerierter Zwilling traegt auch allein")
                     .singleElement()
                     .satisfies(v -> assertThat(v.signalsUsed()).isEqualTo(1));
@@ -282,7 +407,7 @@ class AltDetectionServiceTest {
         void zweiSignaleTragen() {
             beitrittsdaten(beitritt(UNAUTHED_ID, JOIN), beitritt(MAIN_ID, JOIN.plusSeconds(120)));
 
-            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts().getFirst();
+            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts(MAIN_ID).getFirst();
 
             assertThat(suggestion.signalsUsed()).isEqualTo(2);
             assertThat(suggestion.probability())
@@ -306,7 +431,7 @@ class AltDetectionServiceTest {
             }
             beitrittsdaten(welle);
 
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("ohne Daempfung waere es 93 und der Vorschlag stuende in der Liste; "
                             + "zwoelf Beitritte im selben Fenster sagen ueber ein Paar nichts mehr")
                     .isEmpty();
@@ -331,7 +456,7 @@ class AltDetectionServiceTest {
                     .thenReturn(List.of(miningRow(MAIN_ID, "2026-05-01")));
 
             CharacterDtos.AltSignalDto mining =
-                    signal(service.findProbableAlts().getFirst(), AltDetectionService.SIGNAL_MINING);
+                    signal(service.findProbableAlts(MAIN_ID).getFirst(), AltDetectionService.SIGNAL_MINING);
 
             assertThat(mining.available()).isFalse();
             assertThat(mining.score()).isNull();
@@ -348,7 +473,7 @@ class AltDetectionServiceTest {
                     miningRow(MAIN_ID, "2026-05-01")));
 
             CharacterDtos.AltSignalDto mining =
-                    signal(service.findProbableAlts().getFirst(), AltDetectionService.SIGNAL_MINING);
+                    signal(service.findProbableAlts(MAIN_ID).getFirst(), AltDetectionService.SIGNAL_MINING);
 
             assertThat(mining.available()).isFalse();
             assertThat(mining.detail()).contains("gemeinsame Mining-Tage");
@@ -361,13 +486,466 @@ class AltDetectionServiceTest {
                     miningRow(UNAUTHED_ID, "2026-05-01"), miningRow(MAIN_ID, "2026-05-01"),
                     miningRow(UNAUTHED_ID, "2026-05-02"), miningRow(MAIN_ID, "2026-05-02")));
 
-            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts().getFirst();
+            CharacterDtos.AltSuggestionDto suggestion = service.findProbableAlts(MAIN_ID).getFirst();
             CharacterDtos.AltSignalDto mining =
                     signal(suggestion, AltDetectionService.SIGNAL_MINING);
 
             assertThat(mining.available()).isTrue();
             assertThat(mining.score()).isNotNull().isPositive();
             assertThat(suggestion.signalsUsed()).isEqualTo(2);
+        }
+    }
+
+    // ==================================================================
+    // Die vier neuen Quellen
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Die vier neuen Signale, wenn ihre Datengrundlage fehlt")
+    class NeueSignaleOhneGrundlage {
+
+        @Test
+        @DisplayName("keines der vier senkt den Score, wenn nichts erfasst wurde")
+        void ohneGrundlageKeineSenkung() {
+            // Die tragende Regel, jetzt fuer vier weitere Signale. Wuerde eines
+            // von ihnen mit 0 einfliessen, faellt der Wert von 95 auf
+            // 40*95/(40+50+25+8+30) = 25 - und aus "ueber Geld, Kontakte, Post
+            // und Aufenthalt ist NICHTS bekannt" wuerde eine niedrige Zahl, die
+            // aussieht wie geprueft und unauffaellig.
+            CharacterDtos.AltSuggestionDto vorschlag = service.findProbableAlts(MAIN_ID).getFirst();
+
+            assertThat(vorschlag.probability())
+                    .as("nur der Name lag vor, also ist der Score genau der Namenswert")
+                    .isEqualTo(props.getNameNumberedTwinScore());
+            assertThat(vorschlag.signalsUsed()).isEqualTo(1);
+            assertThat(vorschlag.signalsTotal()).isEqualTo(7);
+
+            for (String name : List.of(AltDetectionService.SIGNAL_ISK,
+                    AltDetectionService.SIGNAL_CONTACT,
+                    AltDetectionService.SIGNAL_MAIL,
+                    AltDetectionService.SIGNAL_PRESENCE)) {
+                CharacterDtos.AltSignalDto eintrag = signal(vorschlag, name);
+                assertThat(eintrag.available()).as(name + " ohne Daten").isFalse();
+                assertThat(eintrag.score())
+                        .as(name + ": nicht gemessen heisst null und nicht 0")
+                        .isNull();
+                assertThat(eintrag.detail()).as(name + " sagt, warum es fehlt").isNotBlank();
+                // Ein .formatted, das nur am letzten Teilstring einer
+                // Verkettung haengt, laesst das %s der ersten Zeile stehen -
+                // ein Fehler, der beim Lesen nicht auffaellt und dem Director
+                // eine Platzhalterzeile hinstellt. Genau das ist hier schon
+                // einmal passiert.
+                assertThat(eintrag.detail())
+                        .as(name + ": kein stehengebliebener Platzhalter")
+                        .doesNotContain("%s").doesNotContain("%d");
+            }
+        }
+    }
+
+    // ==================================================================
+    // Signal: ISK-Ueberweisungen
+    // ==================================================================
+
+    @Nested
+    @DisplayName("ISK-Ueberweisungen")
+    class IskUeberweisungen {
+
+        @Test
+        @DisplayName("ohne Journal ist das Signal nicht verfuegbar und senkt nichts")
+        void ohneJournalNichtVerfuegbar() {
+            CharacterDtos.AltSuggestionDto vorschlag = service.findProbableAlts(MAIN_ID).getFirst();
+
+            assertThat(signal(vorschlag, AltDetectionService.SIGNAL_ISK).available()).isFalse();
+            assertThat(vorschlag.probability()).isEqualTo(props.getNameNumberedTwinScore());
+        }
+
+        @Test
+        @DisplayName("ein gelesenes Journal ohne Ueberweisung an den anderen IST eine Messung")
+        void gelesenesJournalOhneTrefferIstNull() {
+            // Der Unterschied, um den es in dieser ganzen Klasse geht: "nicht
+            // nachgesehen" und "nachgesehen, nichts gefunden" sind zwei
+            // verschiedene Aussagen. Nur die zweite darf eine 0 ergeben.
+            iskZeilen(iskZeile(MAIN_ID, 999999L, IskTransferDirection.OUTGOING, "2026-05-01"));
+
+            CharacterDtos.AltSignalDto isk =
+                    signal(bewertetesPaar(UNAUTHED_ID), AltDetectionService.SIGNAL_ISK);
+
+            assertThat(isk.available()).isTrue();
+            assertThat(isk.score()).isZero();
+        }
+
+        @Test
+        @DisplayName("eine einzelne Ueberweisung traegt weniger als wiederholte")
+        void einzelneTraegtWenigerAlsWiederholte() {
+            // Die Falle: eine einzelne grosse Ueberweisung ist auch zwischen
+            // Fremden voellig normal - ein Schiffskauf, ein Vertrag. Traegt sie
+            // voll, ist der teuerste Handel der Corp zugleich ihr staerkster
+            // Alt-Verdacht.
+            iskZeilen(iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"));
+            int einmal = iskWert();
+
+            iskZeilen(
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-02"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-03"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-04"));
+            int viermal = iskWert();
+
+            assertThat(einmal).isLessThan(viermal);
+            assertThat(viermal).isEqualTo(100);
+        }
+
+        @Test
+        @DisplayName("derselbe Vorgang in drei Raten zaehlt wie eine einzelne Ueberweisung")
+        void ratenSindEinVorgang() {
+            // Deshalb zaehlen Tage und nicht Zeilen: drei Raten an einem Tag
+            // sind dreimal derselbe Handel, nicht drei Gewohnheiten.
+            iskZeilen(iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"));
+            int einmal = iskWert();
+
+            iskZeilen(
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"));
+
+            assertThat(iskWert()).isEqualTo(einmal);
+        }
+
+        @Test
+        @DisplayName("Geld in beide Richtungen wiegt schwerer als einseitiges")
+        void wechselverkehrWiegtSchwerer() {
+            iskZeilen(
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-02"));
+            int einseitig = iskWert();
+
+            iskZeilen(
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.INCOMING, "2026-05-02"));
+
+            assertThat(iskWert()).isGreaterThan(einseitig);
+        }
+
+        @Test
+        @DisplayName("die Auszahlungsliste eines Directors wird gedaempft")
+        void auszahlungslisteWirdGedaempft() {
+            // Dieselbe Falle wie der gemeinsame Mining-Tag, nur mit ISK: wer den
+            // Erz-Rueckkauf ausschuettet, ueberweist im Monat an fuenfzig Leute.
+            // Ohne Daempfung stuende jeder von ihnen als Verdacht in der Liste -
+            // und zwar genau die Leute, die ohnehin in derselben Corp sind.
+            List<CharacterIskTransfer> viele = new ArrayList<>(List.of(
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-01"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-02"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-03"),
+                    iskZeile(MAIN_ID, UNAUTHED_ID, IskTransferDirection.OUTGOING, "2026-05-04")));
+            for (int i = 0; i < 20; i++) {
+                viele.add(iskZeile(MAIN_ID, 800000L + i,
+                        IskTransferDirection.OUTGOING, "2026-05-05"));
+            }
+            when(iskRepo.findByCharacterIdIn(any())).thenReturn(viele);
+
+            assertThat(iskWert())
+                    .as("21 Geldpartner: nur noch 5/21 des vollen Wertes")
+                    .isLessThan(50);
+
+            props.setIskCounterpartyDilution(false);
+            assertThat(iskWert())
+                    .as("ohne Daempfung waere die Auszahlungsliste die Alt-Liste")
+                    .isEqualTo(100);
+        }
+    }
+
+    // ==================================================================
+    // Signal: Kontaktliste
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Kontaktliste")
+    class Kontaktliste {
+
+        @Test
+        @DisplayName("ohne Kontaktliste ist das Signal nicht verfuegbar und senkt nichts")
+        void ohneListeNichtVerfuegbar() {
+            CharacterDtos.AltSuggestionDto vorschlag = service.findProbableAlts(MAIN_ID).getFirst();
+
+            assertThat(signal(vorschlag, AltDetectionService.SIGNAL_CONTACT).available()).isFalse();
+            assertThat(vorschlag.probability()).isEqualTo(props.getNameNumberedTwinScore());
+        }
+
+        @Test
+        @DisplayName("eine gelesene Liste ohne den anderen darin IST eine Messung")
+        void geleseneListeOhneTrefferIstNull() {
+            kontakte(kontakt(MAIN_ID, 999999L, 10.0));
+
+            CharacterDtos.AltSignalDto contact = signal(bewertetesPaar(UNAUTHED_ID),
+                    AltDetectionService.SIGNAL_CONTACT);
+
+            assertThat(contact.available()).isTrue();
+            assertThat(contact.score()).isZero();
+        }
+
+        @Test
+        @DisplayName("ein Kontakt bei jemandem mit sehr vielen Kontakten zaehlt weniger")
+        void grosseListeZaehltWeniger() {
+            // Die Falle: manche fuehren die halbe Corp als Kontakt. Ein Eintrag
+            // bei jemandem mit fuenf Kontakten ist eine Auswahl, derselbe
+            // Eintrag bei jemandem mit dreihundert ist ein Adressbuch.
+            kontakte(kontakt(MAIN_ID, UNAUTHED_ID, 10.0),
+                    kontakt(MAIN_ID, 900001L, 0.0),
+                    kontakt(MAIN_ID, 900002L, 0.0));
+            int kurzeListe = kontaktWert();
+
+            List<CharacterContact> lang = new ArrayList<>();
+            lang.add(kontakt(MAIN_ID, UNAUTHED_ID, 10.0));
+            for (int i = 0; i < 299; i++) {
+                lang.add(kontakt(MAIN_ID, 900100L + i, 0.0));
+            }
+            when(contactRepo.findByCharacterIdIn(any())).thenReturn(lang);
+            int langeListe = kontaktWert();
+
+            assertThat(langeListe)
+                    .as("derselbe Eintrag, aber in einem Adressbuch von 300")
+                    .isLessThan(kurzeListe);
+            assertThat(langeListe).isLessThan(20);
+            assertThat(kurzeListe).isGreaterThan(50);
+        }
+
+        @Test
+        @DisplayName("eine fehlende Standing loest den Aufschlag nicht aus")
+        void fehlendeStandingIstKeineHohe() {
+            // Fehlend ist nicht 0 und schon gar nicht +10. Wer daraus einen
+            // Aufschlag macht, erfindet eine Zuneigung, die niemand eintrug.
+            kontakte(kontakt(MAIN_ID, UNAUTHED_ID, null));
+            int ohneStanding = kontaktWert();
+
+            kontakte(kontakt(MAIN_ID, UNAUTHED_ID, 10.0));
+
+            assertThat(kontaktWert()).isGreaterThan(ohneStanding);
+        }
+    }
+
+    // ==================================================================
+    // Signal: Nachrichtenanzahl
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Nachrichtenanzahl")
+    class Nachrichtenanzahl {
+
+        @Test
+        @DisplayName("ohne gezaehltes Postfach ist das Signal nicht verfuegbar und senkt nichts")
+        void ohnePostfachNichtVerfuegbar() {
+            CharacterDtos.AltSuggestionDto vorschlag = service.findProbableAlts(MAIN_ID).getFirst();
+
+            assertThat(signal(vorschlag, AltDetectionService.SIGNAL_MAIL).available()).isFalse();
+            assertThat(vorschlag.probability()).isEqualTo(props.getNameNumberedTwinScore());
+        }
+
+        @Test
+        @DisplayName("gezaehlte Nachrichten ergeben einen Wert - mit dem kleinsten Gewicht")
+        void nachrichtenZaehlenSchwach() {
+            // Das Signal wird sauber gebaut, aber bewusst klein gewichtet: in
+            // EVE schreibt man seinem eigenen Alt nicht, man loggt ihn ein.
+            // Post laeuft zwischen verschiedenen Menschen.
+            mails(mailStand(MAIN_ID, UNAUTHED_ID, 4, 4));
+
+            CharacterDtos.AltSignalDto mail = signal(bewertetesPaar(UNAUTHED_ID),
+                    AltDetectionService.SIGNAL_MAIL);
+
+            assertThat(mail.available()).isTrue();
+            assertThat(mail.score()).isEqualTo(100);
+            assertThat(mail.weightPercent())
+                    .as("kleiner als jedes andere Signal")
+                    .isEqualTo(props.getWeightMail())
+                    .isLessThan(props.getWeightMining());
+        }
+
+        @Test
+        @DisplayName("ein gezaehltes Postfach ohne Nachricht an den anderen IST eine Messung")
+        void gezaehltesPostfachOhneTrefferIstNull() {
+            mails(mailStand(MAIN_ID, 999999L, 3, 3));
+
+            CharacterDtos.AltSignalDto mail = signal(bewertetesPaar(UNAUTHED_ID),
+                    AltDetectionService.SIGNAL_MAIL);
+
+            assertThat(mail.available()).isTrue();
+            assertThat(mail.score()).isZero();
+        }
+    }
+
+    // ==================================================================
+    // Signal: Gemeinsamer Aufenthalt - hier sitzt die Gefahr
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Gemeinsamer Aufenthalt")
+    class GemeinsamerAufenthalt {
+
+        @Test
+        @DisplayName("ohne Aufzeichnung ist das Signal nicht verfuegbar und senkt nichts")
+        void ohneAufzeichnungNichtVerfuegbar() {
+            CharacterDtos.AltSuggestionDto vorschlag = service.findProbableAlts(MAIN_ID).getFirst();
+
+            assertThat(signal(vorschlag, AltDetectionService.SIGNAL_PRESENCE).available()).isFalse();
+            assertThat(vorschlag.probability()).isEqualTo(props.getNameNumberedTwinScore());
+        }
+
+        @Test
+        @DisplayName("aufgezeichnet, aber nie zusammen gesehen IST eine Messung")
+        void nieZusammenIstNull() {
+            anwesenheit(List.of(
+                    praesenz(UNAUTHED_ID, JITA, MESSUNG),
+                    praesenz(MAIN_ID, ABGELEGEN, MESSUNG)));
+
+            CharacterDtos.AltSignalDto presence = signal(bewertetesPaar(UNAUTHED_ID),
+                    AltDetectionService.SIGNAL_PRESENCE);
+
+            assertThat(presence.available()).isTrue();
+            assertThat(presence.score()).isZero();
+        }
+
+        @Test
+        @DisplayName("Handelsknotenpunkt zaehlt fast nichts, ein seltenes System viel")
+        void seltenheitEntscheidet() {
+            zweiKandidatenMitAufenthalten();
+            CharacterDtos.AltCalibrationDto ansicht = service.calibrationSample(MAIN_ID, null);
+
+            assertThat(praesenzWert(ansicht, HUB_KANDIDAT))
+                    .as("dreissig gemeinsame Aufenthalte in Jita sagen nichts - dort stehen alle")
+                    .isLessThan(10);
+            assertThat(praesenzWert(ansicht, SELTEN_KANDIDAT))
+                    .as("ein gemeinsamer Aufenthalt in einem System, in dem nur diese beiden "
+                            + "je gesehen wurden, sagt viel")
+                    .isGreaterThan(40);
+        }
+
+        @Test
+        @DisplayName("OHNE Seltenheitsgewichtung ginge genau dieser Fall falsch herum aus")
+        void ohneSeltenheitsgewichtungVerkehrtHerum() {
+            // Der in diesem Projekt bereits gemessene Fehler, diesmal am
+            // Standort statt am Mining-Tag: roh gezaehlt gewinnt das Paar, das
+            // nur zufaellig oft im selben Handelsknotenpunkt stand, gegen das
+            // Paar, das gemeinsam in einem abgelegenen System war.
+            zweiKandidatenMitAufenthalten();
+
+            CharacterDtos.AltCalibrationDto mitGewichtung = service.calibrationSample(MAIN_ID, null);
+            assertThat(praesenzWert(mitGewichtung, SELTEN_KANDIDAT))
+                    .as("mit Seltenheitsgewichtung gewinnt das seltene System")
+                    .isGreaterThan(praesenzWert(mitGewichtung, HUB_KANDIDAT));
+
+            // Exponent 0 schaltet die Korrektur ab: jeder Ort wiegt gleich. Die
+            // noetige Evidenz muss dabei mitgesetzt werden, denn die 0,7 bedeutet
+            // woertlich "zwei gemeinsame Aufenthalte an einem Ort, den nur diese
+            // beiden je besuchten" - ein Satz, der ohne Gewichtung keinen Sinn
+            // hat und bei dem sonst beide Paare bei 100 klebten.
+            props.setPresenceRarityExponent(0.0);
+            props.setPresenceFullEvidence(40.0);
+
+            CharacterDtos.AltCalibrationDto ohneGewichtung = service.calibrationSample(MAIN_ID, null);
+            assertThat(praesenzWert(ohneGewichtung, HUB_KANDIDAT))
+                    .as("ohne Gewichtung gewinnt Jita - genau das gemessene Gegenteil")
+                    .isGreaterThan(praesenzWert(ohneGewichtung, SELTEN_KANDIDAT));
+        }
+
+        /**
+         * Zwei Kandidaten am selben Konto: einer stand dreissig Mal mit dem Main
+         * in Jita, der andere genau einmal mit ihm in einem System, in dem sonst
+         * niemand war.
+         */
+        private void zweiKandidatenMitAufenthalten() {
+            stats(new CharacterDtos.UnauthedCharDto(HUB_KANDIDAT, "Aaa Hubchar", "portrait"),
+                    new CharacterDtos.UnauthedCharDto(SELTEN_KANDIDAT, "Bbb Rarechar", "portrait"));
+
+            List<CorporationMemberPresence> zeilen = new ArrayList<>();
+            for (int i = 0; i < 30; i++) {
+                Instant zeitpunkt = MESSUNG.plusSeconds(i * 4L * 3600);
+                zeilen.add(praesenz(HUB_KANDIDAT, JITA, zeitpunkt));
+                zeilen.add(praesenz(MAIN_ID, JITA, zeitpunkt));
+            }
+            // Jita ist ein Handelsknotenpunkt, weil dort alle stehen. Ohne diese
+            // zweihundert Mitglieder waere es im Index ein seltener Ort - und
+            // der Test pruefte nichts.
+            for (int i = 0; i < 200; i++) {
+                zeilen.add(praesenz(700000L + i, JITA, MESSUNG.plusSeconds(i * 60L)));
+            }
+            Instant selten = MESSUNG.plusSeconds(500L * 3600);
+            zeilen.add(praesenz(SELTEN_KANDIDAT, ABGELEGEN, selten));
+            zeilen.add(praesenz(MAIN_ID, ABGELEGEN, selten));
+
+            anwesenheit(zeilen);
+        }
+
+        private int praesenzWert(CharacterDtos.AltCalibrationDto ansicht, Long kandidat) {
+            CharacterDtos.AltSuggestionDto vorschlag = ansicht.accountPairs().stream()
+                    .map(CharacterDtos.AltCalibrationEntryDto::suggestion)
+                    .filter(eintrag -> eintrag.unauthedCharId().equals(kandidat))
+                    .findFirst()
+                    .orElseThrow();
+            CharacterDtos.AltSignalDto presence =
+                    signal(vorschlag, AltDetectionService.SIGNAL_PRESENCE);
+            assertThat(presence.available()).isTrue();
+            return presence.score();
+        }
+    }
+
+    // ==================================================================
+    // Kalibrieransicht: die neuen Signale muessen einstellbar sein
+    // ==================================================================
+
+    @Nested
+    @DisplayName("Die Kalibrieransicht gibt jedes Signal mit aus")
+    class KalibrierungDerSignale {
+
+        @Test
+        @DisplayName("alle sieben Signale stehen mit Gewicht und Datenlage in der Antwort")
+        void alleSignaleStehenDrin() {
+            // Ohne diese Liste kann der Nutzer ein neues Signal nicht
+            // einstellen: verstellt er ein Gewicht und sieht dieselbe Liste,
+            // kann das heissen "das Gewicht wirkt nicht" ODER "das Signal hatte
+            // in keinem einzigen Paar Daten". Nur availableInPairs trennt das.
+            kontakte(kontakt(MAIN_ID, UNAUTHED_ID, 10.0));
+
+            CharacterDtos.AltCalibrationDto ansicht = service.calibrationSample(MAIN_ID, null);
+
+            assertThat(ansicht.signalConfig()).hasSize(AltDetectionService.SIGNAL_COUNT);
+            assertThat(ansicht.signalConfig())
+                    .extracting(CharacterDtos.AltSignalConfigDto::signal)
+                    .containsExactlyInAnyOrder(AltDetectionService.SIGNAL_NAME,
+                            AltDetectionService.SIGNAL_JOIN, AltDetectionService.SIGNAL_MINING,
+                            AltDetectionService.SIGNAL_ISK, AltDetectionService.SIGNAL_CONTACT,
+                            AltDetectionService.SIGNAL_MAIL, AltDetectionService.SIGNAL_PRESENCE);
+
+            CharacterDtos.AltSignalConfigDto contact = konfiguration(ansicht,
+                    AltDetectionService.SIGNAL_CONTACT);
+            assertThat(contact.weightPercent()).isEqualTo(props.getWeightContact());
+            assertThat(contact.availableInPairs())
+                    .as("die Kontaktliste lag vor, also muss die Ansicht das sagen")
+                    .isPositive();
+            assertThat(contact.examinedPairs()).isPositive();
+
+            assertThat(konfiguration(ansicht, AltDetectionService.SIGNAL_PRESENCE)
+                    .availableInPairs())
+                    .as("nichts aufgezeichnet - eine 0 hier ist die Antwort auf die Frage, "
+                            + "warum das Verstellen des Gewichts nichts bewirkt")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("ein verstelltes Gewicht steht auch in der Kalibrieransicht")
+        void verstelltesGewichtWirdSichtbar() {
+            props.setWeightIsk(77);
+
+            assertThat(konfiguration(service.calibrationSample(MAIN_ID, null),
+                    AltDetectionService.SIGNAL_ISK).weightPercent())
+                    .isEqualTo(77);
+        }
+
+        private CharacterDtos.AltSignalConfigDto konfiguration(
+                CharacterDtos.AltCalibrationDto ansicht, String signal) {
+            return ansicht.signalConfig().stream()
+                    .filter(eintrag -> eintrag.signal().equals(signal))
+                    .findFirst()
+                    .orElseThrow();
         }
     }
 
@@ -395,6 +973,22 @@ class AltDetectionServiceTest {
                     .isInstanceOf(AccessDeniedException.class);
 
             verify(proposalRepo, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("ein Fremder bekommt die Vorschlagsliste gar nicht erst zu sehen")
+        void fremderSiehtDieListeNicht() {
+            // Solange die Aufschluesselung nur Namen und Beitrittsdaten nannte,
+            // hing diese Liste allein an der Annotation am Endpunkt. Seit sie
+            // zusaetzlich sagt, wer wem wieviel Geld ueberwies, wen er als
+            // Kontakt fuehrt und wo er sich aufgehalten hat, ist sie eine
+            // Zusammenstellung ueber Menschen - und die Pruefung gehoert in den
+            // Dienst, wo sie bei einem Umbau des Endpunkts nicht wegfaellt.
+            Character fremder = character(STRANGER_ID, STRANGER_ID, "Random Guy", SystemRoles.MEMBER);
+            when(characterRepo.findById(STRANGER_ID)).thenReturn(Optional.of(fremder));
+
+            assertThatThrownBy(() -> service.findProbableAlts(STRANGER_ID))
+                    .isInstanceOf(AccessDeniedException.class);
         }
 
         @Test
@@ -517,7 +1111,7 @@ class AltDetectionServiceTest {
             when(proposalRepo.findByUnauthedCharacterIdIn(anyList()))
                     .thenReturn(List.of(vorhanden));
 
-            assertThat(service.findProbableAlts()).isEmpty();
+            assertThat(service.findProbableAlts(MAIN_ID)).isEmpty();
         }
 
         @Test
@@ -529,7 +1123,7 @@ class AltDetectionServiceTest {
             when(characterRepo.findByCorporationId(CORP)).thenReturn(List.of(main, zweiterMain));
             when(characterRepo.findAllById(any())).thenReturn(List.of(main, zweiterMain));
 
-            List<CharacterDtos.AltSuggestionDto> suggestions = service.findProbableAlts();
+            List<CharacterDtos.AltSuggestionDto> suggestions = service.findProbableAlts(MAIN_ID);
 
             assertThat(suggestions).hasSize(1);
             assertThat(suggestions.getFirst().mainId())
@@ -542,7 +1136,7 @@ class AltDetectionServiceTest {
         void ohneKontenKeineVorschlaege() {
             when(characterRepo.findByCorporationId(CORP)).thenReturn(List.of());
 
-            assertThat(service.findProbableAlts()).isEmpty();
+            assertThat(service.findProbableAlts(MAIN_ID)).isEmpty();
         }
     }
 
@@ -710,7 +1304,7 @@ class AltDetectionServiceTest {
             // Zahl, die man nur raten kann.
             stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, "Zaphod Video", "portrait"));
 
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("der blosse Namensvetter faellt aus der Handlungsliste heraus")
                     .isEmpty();
 
@@ -807,18 +1401,18 @@ class AltDetectionServiceTest {
             // es keine Mining-Zeilen), ein Test darauf pruefte einen Pfad, der
             // nicht laeuft, und waere entsprechend zerbrechlich.
             beitrittsdaten(beitritt(UNAUTHED_ID, JOIN), beitritt(MAIN_ID, JOIN.plusSeconds(120)));
-            int mitVorgabe = service.findProbableAlts().getFirst().probability();
+            int mitVorgabe = service.findProbableAlts(MAIN_ID).getFirst().probability();
 
             // Beitritt entwertet: der Wert MUSS sich bewegen, sonst wird das
             // Gewicht nicht gelesen.
             props.setWeightJoin(0);
-            assertThat(service.findProbableAlts().getFirst().probability())
+            assertThat(service.findProbableAlts(MAIN_ID).getFirst().probability())
                     .as("weightJoin geht in die Rechnung ein")
                     .isNotEqualTo(mitVorgabe);
 
             props.setWeightJoin(new AltDetectionProperties().getWeightJoin());
             props.setWeightName(0);
-            assertThat(service.findProbableAlts().getFirst().probability())
+            assertThat(service.findProbableAlts(MAIN_ID).getFirst().probability())
                     .as("weightName geht in die Rechnung ein")
                     .isNotEqualTo(mitVorgabe);
 
@@ -826,7 +1420,7 @@ class AltDetectionServiceTest {
             // Vorschlag heraus.
             props.setWeightName(new AltDetectionProperties().getWeightName());
             props.setMinProbability(mitVorgabe + 1);
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("minProbability wird gelesen")
                     .isEmpty();
 
@@ -834,7 +1428,7 @@ class AltDetectionServiceTest {
             // mit zweien nicht mehr.
             props.setMinProbability(new AltDetectionProperties().getMinProbability());
             props.setMinAvailableSignals(3);
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("minAvailableSignals wird gelesen")
                     .isEmpty();
         }
@@ -848,13 +1442,13 @@ class AltDetectionServiceTest {
             // wuerde eine Eigenschaft setzen, an der Liste aendert sich nichts,
             // und niemand koennte sagen warum.
             stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, "Zaphod Video", "portrait"));
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("mit der Vorgabe von 90 faellt der Namensvetter heraus")
                     .isEmpty();
 
             props.setMinProbabilitySingleSignal(80);
 
-            assertThat(service.findProbableAlts())
+            assertThat(service.findProbableAlts(MAIN_ID))
                     .as("mit 80 kommt genau derselbe Vorschlag durch")
                     .singleElement()
                     .satisfies(vorschlag -> assertThat(vorschlag.probability())
@@ -871,7 +1465,7 @@ class AltDetectionServiceTest {
             stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, MAIN_NAME + " 2", "portrait"));
             props.setNameNumberedTwinScore(99);
 
-            assertThat(service.findProbableAlts()).singleElement()
+            assertThat(service.findProbableAlts(MAIN_ID)).singleElement()
                     .satisfies(vorschlag -> assertThat(vorschlag.probability()).isEqualTo(99));
         }
 
@@ -897,11 +1491,11 @@ class AltDetectionServiceTest {
             // waechst. Ohne sie rechnete der Endpunkt minutenlang an einem
             // Seitenaufruf, der laengst niemanden mehr interessiert.
             stats(new CharacterDtos.UnauthedCharDto(UNAUTHED_ID, UNAUTHED_NAME, "portrait"));
-            assertThat(service.findProbableAlts()).isNotEmpty();
+            assertThat(service.findProbableAlts(MAIN_ID)).isNotEmpty();
 
             props.setMaxPairsPerCorporation(0);
 
-            assertThat(service.findProbableAlts()).isEmpty();
+            assertThat(service.findProbableAlts(MAIN_ID)).isEmpty();
         }
     }
 }

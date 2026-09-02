@@ -99,7 +99,8 @@ public class CharacterController {
     @PreAuthorize(AccessRules.LEADERSHIP_OR_IT)
     @GetMapping("/alt-suggestions")
     public ResponseEntity<List<CharacterDtos.AltSuggestionDto>> getAltSuggestions() {
-        return ResponseEntity.ok(altDetectionService.findProbableAlts());
+        return ResponseEntity.ok(
+                altDetectionService.findProbableAlts(CurrentUser.characterId()));
     }
 
     /**

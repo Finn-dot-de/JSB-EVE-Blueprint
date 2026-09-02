@@ -166,6 +166,28 @@ export interface AltCalibrationEntryDto {
 }
 
 /**
+ * Ein Signal mit seinem Gewicht und der Auskunft, wie oft es ueberhaupt Daten
+ * hatte. Spiegelt `CharacterDtos.AltSignalConfigDto`.
+ *
+ * `availableInPairs` von `examinedPairs` ist der Grund, warum es diesen Typ
+ * gibt. Wer ein Gewicht verstellt und danach dieselbe Liste wiedersieht, hat
+ * zwei ununterscheidbare Ursachen vor sich: das Gewicht wirkt nicht, oder das
+ * Signal hatte in keinem einzigen Paar Daten. Nur diese Zahl trennt sie - und
+ * solange die Erfassung erst Tage laeuft, ist der zweite Fall der Regelfall.
+ *
+ * Die Zahlen zaehlen ALLE gerechneten Paare und nicht die gelieferten Zeilen:
+ * die Lieferung ist gekuerzt und nach Wert sortiert, also gerade nicht
+ * repraesentativ dafuer, wo Daten lagen.
+ */
+export interface AltSignalConfigDto {
+  signal: string;
+  label: string;
+  weightPercent: number;
+  availableInPairs: number;
+  examinedPairs: number;
+}
+
+/**
  * Was der Scorer denkt, BEVOR die Schwelle filtert.
  * Spiegelt `CharacterDtos.AltCalibrationDto`.
  *
@@ -187,6 +209,7 @@ export interface AltCalibrationDto {
   minProbability: number;
   minProbabilitySingleSignal: number;
   minAvailableSignals: number;
+  signalConfig: AltSignalConfigDto[];
   accountPairs: AltCalibrationEntryDto[];
   unregisteredPairs: AltPairDto[];
 }

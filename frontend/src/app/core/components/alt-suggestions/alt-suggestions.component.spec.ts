@@ -3,17 +3,23 @@ import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AltSuggestionsComponent,
+  ERFASSUNG_SAETZE,
+  SIGNAL_UEBERSICHT_HINWEIS,
   begruendungSatz,
   chipText,
   gruppenSatz,
   leerzustandSaetze,
   paarZahl,
   signalBilanz,
+  signalStandSaetze,
+  signalUebersicht,
+  zeileFuer,
 } from './alt-suggestions.component';
 import {
   AltCalibrationDto,
   AltGroupDto,
   AltPairDto,
+  AltSignalConfigDto,
   AltSignalDto,
   AltSuggestionDto,
   CharacterService,
@@ -105,6 +111,62 @@ describe('AltSuggestionsComponent', () => {
     ...over,
   });
 
+  const signalKonfig = (over: Partial<AltSignalConfigDto> = {}): AltSignalConfigDto => ({
+    signal: 'NAME',
+    label: 'Namensaehnlichkeit',
+    weightPercent: 40,
+    availableInPairs: 549,
+    examinedPairs: 549,
+    ...over,
+  });
+
+  /**
+   * Die sieben Signale, wie der Server sie heute liefert - vier davon stumm.
+   *
+   * Genau dieser Zuschnitt ist der Alltag kurz nach der Umstellung: Name,
+   * Beitritt und Mining haben Daten, die vier neuen Quellen noch nicht. 549 ist
+   * die Summe der beiden gerechneten Paarzahlen der Kalibrierung.
+   */
+  const alleSieben = (): AltSignalConfigDto[] => [
+    signalKonfig(),
+    signalKonfig({
+      signal: 'JOIN',
+      label: 'Beitritts-Cluster',
+      weightPercent: 45,
+      availableInPairs: 12,
+    }),
+    signalKonfig({
+      signal: 'MINING',
+      label: 'Mining-Aktivitaet',
+      weightPercent: 15,
+      availableInPairs: 3,
+    }),
+    signalKonfig({
+      signal: 'ISK',
+      label: 'ISK-Ueberweisungen',
+      weightPercent: 50,
+      availableInPairs: 0,
+    }),
+    signalKonfig({
+      signal: 'CONTACT',
+      label: 'Kontaktliste',
+      weightPercent: 25,
+      availableInPairs: 0,
+    }),
+    signalKonfig({
+      signal: 'MAIL',
+      label: 'Nachrichtenanzahl',
+      weightPercent: 8,
+      availableInPairs: 0,
+    }),
+    signalKonfig({
+      signal: 'PRESENCE',
+      label: 'Gemeinsamer Aufenthalt',
+      weightPercent: 30,
+      availableInPairs: 0,
+    }),
+  ];
+
   const kalibrierung = (over: Partial<AltCalibrationDto> = {}): AltCalibrationDto => ({
     limit: 20,
     maxLimit: 200,
@@ -113,6 +175,7 @@ describe('AltSuggestionsComponent', () => {
     minProbability: 80,
     minProbabilitySingleSignal: 90,
     minAvailableSignals: 1,
+    signalConfig: alleSieben(),
     accountPairs: [{ suggestion: vorschlag(), requiredThreshold: 80, aboveThreshold: true }],
     unregisteredPairs: [paar()],
     ...over,
@@ -545,6 +608,14 @@ describe('AltSuggestionsComponent', () => {
       kalibrierung({
         examinedAccountPairs: 0,
         examinedUnregisteredPairs: 0,
+        // Wurde nichts gerechnet, traegt auch die Signal-Uebersicht ueberall
+        // Nullen. Sie darf daraus KEIN "noch keine Daten" machen: das waere
+        // eine Messung, die es nicht gab.
+        signalConfig: alleSieben().map((eintrag) => ({
+          ...eintrag,
+          availableInPairs: 0,
+          examinedPairs: 0,
+        })),
         accountPairs: [],
         unregisteredPairs: [],
       }),
@@ -649,6 +720,219 @@ describe('AltSuggestionsComponent', () => {
     c.ngOnInit();
 
     expect(c.ladefehler()).toBeNull();
+  });
+
+  // ================= Die Signal-Uebersicht =================
+
+  it('laedt die Signal-Uebersicht mit und zeigt alle sieben Signale', () => {
+    // Ohne diese Zeile faellt auf, dass die Uebersicht gar nicht ankommt: sie
+    // haengt an derselben Antwort wie die Paartabellen, und ein vergessenes
+    // Feld im DTO liesse die Liste still leer bleiben - die Seite saehe dann
+    // aus wie vorher, obwohl der Auftrag genau diese Liste war.
+    const c = build([], true, []);
+    c.ngOnInit();
+
+    expect(c.signalZeilen()).toHaveLength(7);
+    expect(c.signalZeilen().map((zeile) => zeile.signal)).toEqual([
+      'NAME',
+      'JOIN',
+      'MINING',
+      'ISK',
+      'CONTACT',
+      'MAIL',
+      'PRESENCE',
+    ]);
+    expect(c.signalZeilen()[0].label).toBe('Namensaehnlichkeit');
+    expect(c.signalZeilen()[3].gewicht).toBe(50);
+  });
+
+  it('haelt die Signal-Uebersicht leer, solange die Kalibrierung fehlt', () => {
+    // Sonst stuenden Gewichte ohne die Zahl daneben, die sie einzuordnen
+    // erlaubt - und genau diese Zahl ist der Zweck der Ansicht.
+    const c = build();
+
+    expect(c.signalZeilen()).toEqual([]);
+  });
+
+  it('weist ein Signal ohne Daten als "noch keine Daten" aus und nicht als schwach', () => {
+    // Ohne diese Unterscheidung dreht der Nutzer am Gewicht, obwohl die
+    // Erfassung das Problem ist: "0 von 549" heisst nicht "schwaches Signal",
+    // sondern "stummes Signal". Ein hoeheres Gewicht aendert daran nichts.
+    const isk = zeileFuer(
+      signalKonfig({ signal: 'ISK', label: 'ISK-Ueberweisungen', availableInPairs: 0 }),
+    );
+
+    expect(isk.stand).toBe('ohne-daten');
+    expect(isk.verfuegbar).toBe(0);
+    expect(isk.gerechnet).toBe(549);
+    expect(isk.auskunft).toContain('Noch keine Daten');
+    expect(isk.auskunft).toContain('in keinem der 549 gerechneten Paare');
+    expect(isk.auskunft).toContain('kein schwaches Signal, sondern ein stummes');
+    expect(isk.auskunft).not.toContain('schwach.');
+  });
+
+  it('trennt "noch keine Daten" von "es wurde ueberhaupt nichts gerechnet"', () => {
+    // Beide zeigen eine 0. Nur der erste Fall ist eine Messung; wer sie
+    // zusammenwirft, liest aus einem Ausfall eine Aussage ueber das Signal
+    // heraus, die niemand erhoben hat.
+    const stumm = zeileFuer(signalKonfig({ availableInPairs: 0, examinedPairs: 549 }));
+    const ungerechnet = zeileFuer(signalKonfig({ availableInPairs: 0, examinedPairs: 0 }));
+
+    expect(stumm.stand).toBe('ohne-daten');
+    expect(ungerechnet.stand).toBe('nichts-gerechnet');
+    expect(ungerechnet.auskunft).toContain('kein einziges Paar gerechnet');
+    expect(ungerechnet.auskunft).toContain('nichts gesagt');
+    expect(ungerechnet.auskunft).not.toContain('Noch keine Daten');
+    // Kein Prozentsatz aus einer Division durch Null - eine NaN in der Spalte
+    // saehe aus wie ein Rechenfehler der Erkennung.
+    expect(ungerechnet.anteilProzent).toBe(0);
+  });
+
+  it('rechnet den Anteil nur dort, wo ueberhaupt gerechnet wurde', () => {
+    // Der Anteil ist die Bequemlichkeit, nicht die Aussage: 100 % aus einem
+    // einzigen Paar und 100 % aus 549 sind dasselbe Prozent und nicht dieselbe
+    // Auskunft. Deshalb stehen beide Zahlen daneben.
+    const zeilen = signalUebersicht(kalibrierung());
+
+    expect(zeilen[0].anteilProzent).toBe(100);
+    expect(zeilen[1].anteilProzent).toBe(2);
+    expect(zeilen[1].auskunft).toBe('Lag in 12 von 549 gerechneten Paaren vor.');
+  });
+
+  it('nennt ueber der Uebersicht sichtbar, warum die Datenzahl die wichtigste ist', () => {
+    // Der Satz gehoert auf die Seite und nicht in einen Kommentar: wer ein
+    // Gewicht verstellt und dieselbe Liste wiedersieht, sucht den Fehler sonst
+    // bei sich, obwohl schlicht noch nichts erfasst ist.
+    const c = build();
+
+    expect(c.signalHinweis).toBe(SIGNAL_UEBERSICHT_HINWEIS);
+    expect(c.signalHinweis).toContain('das Gewicht wirkt nicht');
+    expect(c.signalHinweis).toContain('in keinem einzigen Paar Daten');
+    expect(c.signalHinweis).toContain('nicht schwach, sondern stumm');
+  });
+
+  it('bestaetigt aus der Kalibrieransicht heraus auch mit der Uebersicht nichts', () => {
+    // Gaebe es hier einen Bedienpunkt, liesse sich ueber die Kalibrierung genau
+    // die Schwelle aushebeln, die sie sichtbar machen soll - sie liefert
+    // ausdruecklich auch die Paare DARUNTER. Die Uebersicht ist reine Anzeige;
+    // die Gewichte stehen in eve.alt-detection.* und nicht auf dieser Seite.
+    const c = build([], true, []);
+    c.ngOnInit();
+    c.ladeKalibrierung();
+
+    expect(c.signalZeilen().length).toBeGreaterThan(0);
+    expect(characterService.confirmAltSuggestion).not.toHaveBeenCalled();
+    expect(confirm.ask).not.toHaveBeenCalled();
+
+    const methoden = Object.getOwnPropertyNames(Object.getPrototypeOf(c));
+    // Genau ein Weg zu einer Bestaetigung, und der haengt an der oberen Liste.
+    expect(methoden.filter((name) => /verknuepf|bestaetig|confirm/i.test(name))).toEqual([
+      'verknuepfen',
+    ]);
+    expect(characterService).not.toHaveProperty('setSignalWeight');
+  });
+
+  // ================= Was aufgezeichnet wird =================
+
+  it('sagt bei Nachrichten ausdruecklich, dass nur gezaehlt und nichts gelesen wird', () => {
+    // Die Zusage ist bindend und im Code durchgesetzt: CharacterMailCount hat
+    // kein Textfeld und keine Mail-ID, EsiMailHeaderResponse liest weder
+    // Betreff noch Mail-ID ein. Ein Satz, der hier mehr verspraeche - oder
+    // weniger klar waere - liesse die Oberflaeche den Eindruck erwecken,
+    // Inhalte seien verfuegbar.
+    const c = build();
+    const text = c.erfassung.join(' ');
+
+    expect(c.erfassung).toBe(ERFASSUNG_SAETZE);
+    expect(text).toContain('Anzahl gewechselter Nachrichten');
+    expect(text).toContain('ausschliesslich gezaehlt');
+    expect(text).toContain('Betreff und Text werden weder gespeichert noch eingelesen');
+    expect(text).toContain('keine Mail-ID');
+  });
+
+  it('nennt die vier neuen Quellen und die Aufbewahrungsfrist', () => {
+    // Ohne diese Zeile kann der Text still auf den alten Stand zurueckfallen,
+    // waehrend die Erkennung laengst Bewegungsdaten erfasst - und niemand auf
+    // der Seite erfaehrt es.
+    const text = ERFASSUNG_SAETZE.join(' ');
+
+    expect(text).toContain('ISK-Ueberweisungen');
+    expect(text).toContain('Kontaktliste');
+    expect(text).toContain('in welchem System Corp-Mitglieder gesehen wurden');
+    expect(text).toContain('Aufbewahrungsfrist');
+    expect(text).toContain('taeglich');
+
+    // KEINE Zahl im Text. Die Fristen stehen in eve.alt-sources.* und sind ueber
+    // die .env aenderbar; eine hier eingetragene "90" waere nach dem ersten
+    // Verstellen eine Falschaussage - ausgerechnet in dem Kasten, dessen Zweck
+    // Verlaesslichkeit ist. Der Test haelt die Abwesenheit fest, weil sonst der
+    // naechste, der den Satz "konkreter" macht, genau das wieder einbaut.
+    expect(text).not.toMatch(/\d+\s*Tage/);
+
+    // Und die Zusage muss ALLE Quellen decken. Frueher stand hier, Kontakte und
+    // Nachrichtenanzahlen braeuchten keine Frist, weil jeder Lauf sie ersetze -
+    // das galt aber nur je Charakter und nur, wenn er im Lauf vorkam. Wer sein
+    // Token entzog, blieb fuer immer gespeichert.
+    expect(text).toContain('Alle vier Quellen');
+    expect(text).toContain('herausgefallen');
+  });
+
+  // ================= Der Leerzustand nennt die stummen Signale =================
+
+  it('nennt im Leerzustand, welche Signale schon Daten liefern und welche nicht', () => {
+    // "Keine Vorschlaege" heisst bei frischer Erfassung etwas anderes als nach
+    // vier Wochen. Ohne diese Aufzaehlung ist beides derselbe leere Bildschirm,
+    // und der Nutzer haelt einen Anlaufzustand fuer einen Befund.
+    const saetze = leerzustandSaetze(kalibrierung()).join(' ');
+
+    expect(saetze).toContain('Daten geliefert haben bisher: Namensaehnlichkeit in 549 von 549');
+    expect(saetze).toContain('Beitritts-Cluster in 12 von 549 Paaren');
+    expect(saetze).toContain(
+      'Noch keine Daten hat: ISK-Ueberweisungen, Kontaktliste, Nachrichtenanzahl, ' +
+        'Gemeinsamer Aufenthalt',
+    );
+    expect(saetze).toContain('nicht schwach, sondern stumm');
+  });
+
+  it('erfindet im Leerzustand keinen Signalstand, wenn nichts gerechnet wurde', () => {
+    // Bei 0 gerechneten Paaren traegt die Uebersicht ueberall Nullen. Ein
+    // "noch keine Daten" daraus waere eine Messung, die es nicht gab - der Satz
+    // ueber den Ausfall steht bereits davor.
+    const saetze = signalStandSaetze(
+      kalibrierung({
+        signalConfig: alleSieben().map((eintrag) => ({
+          ...eintrag,
+          availableInPairs: 0,
+          examinedPairs: 0,
+        })),
+      }),
+    );
+
+    expect(saetze).toEqual([]);
+  });
+
+  it('sagt es ausdruecklich, wenn kein einziges Signal Daten hatte', () => {
+    // Sonst stuende dort ein leerer Satzanfang "Daten geliefert haben bisher:"
+    // - und das laese sich als Aufzaehlung lesen, die abgeschnitten wurde.
+    const saetze = signalStandSaetze(
+      kalibrierung({
+        signalConfig: alleSieben().map((eintrag) => ({ ...eintrag, availableInPairs: 0 })),
+      }),
+    );
+
+    expect(saetze[0]).toContain('Kein einziges der 7 Signale');
+    expect(saetze[0]).toContain('549 gerechneten Paaren');
+  });
+
+  it('kommt ohne Signal-Uebersicht durch, ohne den Leerzustand zu verlieren', () => {
+    // Ein aelterer Server liefert das Feld nicht. Faellt dann der ganze
+    // Leerzustand aus, steht der Nutzer wieder vor der leeren Seite, gegen die
+    // diese Ansicht gebaut ist.
+    const ohne = { ...kalibrierung(), signalConfig: [] };
+
+    expect(signalUebersicht(ohne)).toEqual([]);
+    expect(signalStandSaetze(ohne)).toEqual([]);
+    expect(leerzustandSaetze(ohne).length).toBeGreaterThan(0);
   });
 
   it('laedt nach einer Bestaetigung auch die Gruppen neu', async () => {

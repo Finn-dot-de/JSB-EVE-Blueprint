@@ -62,6 +62,38 @@ class AltDetectionPropertiesTest {
         assertThat(props.getMiningMinSharedDays()).isEqualTo(2);
         assertThat(props.getMiningRarityExponent()).isEqualTo(1.0);
         assertThat(props.getMaxPairsPerCorporation()).isEqualTo(250_000);
+
+        // Die vier neuen Signale. Ihre Gewichte stehen hier mit, weil ihre
+        // Reihenfolge eine Fachaussage ist: die Ueberweisung ist das staerkste
+        // Signal, weil sie von vornherein ZWEI Charaktere benennt, und die Post
+        // das schwaechste, weil man seinem eigenen Alt nicht schreibt. Wer die
+        // Reihenfolge umstellt, aendert das Merkmal und nicht bloss eine Zahl.
+        assertThat(props.getWeightIsk()).isEqualTo(50);
+        assertThat(props.getWeightContact()).isEqualTo(25);
+        assertThat(props.getWeightMail()).isEqualTo(8);
+        assertThat(props.getWeightPresence()).isEqualTo(30);
+        assertThat(props.getWeightIsk())
+                .as("die Ueberweisung ist das staerkste Signal")
+                .isGreaterThan(props.getWeightJoin());
+        assertThat(props.getWeightMail())
+                .as("die Post ist das schwaechste Signal")
+                .isLessThan(props.getWeightMining());
+
+        assertThat(props.getIskFullDays()).isEqualTo(4);
+        assertThat(props.getIskBothDirectionsBonus()).isEqualTo(15);
+        assertThat(props.isIskCounterpartyDilution()).isTrue();
+        assertThat(props.getIskCounterpartyFullCount()).isEqualTo(5);
+        assertThat(props.getContactOneWayScore()).isEqualTo(60);
+        assertThat(props.getContactStrongStanding()).isEqualTo(5.0);
+        assertThat(props.getContactStandingBonus()).isEqualTo(20);
+        assertThat(props.getContactFullListSize()).isEqualTo(20);
+        assertThat(props.getMailFullCount()).isEqualTo(6);
+        assertThat(props.getPresenceLookback()).isEqualTo(Duration.ofDays(30));
+        assertThat(props.getPresenceBucket()).isEqualTo(Duration.ofHours(3));
+        assertThat(props.getPresenceRarityExponent())
+                .as("auf 0 laeuft das Standort-Signal gemessen verkehrt herum")
+                .isEqualTo(1.5);
+        assertThat(props.getPresenceFullEvidence()).isEqualTo(0.7);
     }
 
     @Test
@@ -93,6 +125,23 @@ class AltDetectionPropertiesTest {
         raw.put("eve.alt-detection.calibration-default-limit", "25");
         raw.put("eve.alt-detection.calibration-max-limit", "150");
         raw.put("eve.alt-detection.max-pairs-per-corporation", "500");
+        raw.put("eve.alt-detection.weight-isk", "51");
+        raw.put("eve.alt-detection.weight-contact", "26");
+        raw.put("eve.alt-detection.weight-mail", "9");
+        raw.put("eve.alt-detection.weight-presence", "31");
+        raw.put("eve.alt-detection.isk-full-days", "5");
+        raw.put("eve.alt-detection.isk-both-directions-bonus", "16");
+        raw.put("eve.alt-detection.isk-counterparty-dilution", "false");
+        raw.put("eve.alt-detection.isk-counterparty-full-count", "6");
+        raw.put("eve.alt-detection.contact-one-way-score", "61");
+        raw.put("eve.alt-detection.contact-strong-standing", "6.5");
+        raw.put("eve.alt-detection.contact-standing-bonus", "21");
+        raw.put("eve.alt-detection.contact-full-list-size", "21");
+        raw.put("eve.alt-detection.mail-full-count", "7");
+        raw.put("eve.alt-detection.presence-lookback", "45d");
+        raw.put("eve.alt-detection.presence-bucket", "2h");
+        raw.put("eve.alt-detection.presence-rarity-exponent", "2.5");
+        raw.put("eve.alt-detection.presence-full-evidence", "0.9");
 
         AltDetectionProperties props = bind(raw);
 
@@ -118,6 +167,23 @@ class AltDetectionPropertiesTest {
         assertThat(props.getCalibrationDefaultLimit()).isEqualTo(25);
         assertThat(props.getCalibrationMaxLimit()).isEqualTo(150);
         assertThat(props.getMaxPairsPerCorporation()).isEqualTo(500);
+        assertThat(props.getWeightIsk()).isEqualTo(51);
+        assertThat(props.getWeightContact()).isEqualTo(26);
+        assertThat(props.getWeightMail()).isEqualTo(9);
+        assertThat(props.getWeightPresence()).isEqualTo(31);
+        assertThat(props.getIskFullDays()).isEqualTo(5);
+        assertThat(props.getIskBothDirectionsBonus()).isEqualTo(16);
+        assertThat(props.isIskCounterpartyDilution()).isFalse();
+        assertThat(props.getIskCounterpartyFullCount()).isEqualTo(6);
+        assertThat(props.getContactOneWayScore()).isEqualTo(61);
+        assertThat(props.getContactStrongStanding()).isEqualTo(6.5);
+        assertThat(props.getContactStandingBonus()).isEqualTo(21);
+        assertThat(props.getContactFullListSize()).isEqualTo(21);
+        assertThat(props.getMailFullCount()).isEqualTo(7);
+        assertThat(props.getPresenceLookback()).isEqualTo(Duration.ofDays(45));
+        assertThat(props.getPresenceBucket()).isEqualTo(Duration.ofHours(2));
+        assertThat(props.getPresenceRarityExponent()).isEqualTo(2.5);
+        assertThat(props.getPresenceFullEvidence()).isEqualTo(0.9);
     }
 
     @Test

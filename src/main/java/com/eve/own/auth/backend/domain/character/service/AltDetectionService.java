@@ -4,14 +4,26 @@ import com.eve.own.auth.backend.domain.auth.SystemRoles;
 import com.eve.own.auth.backend.domain.character.dto.CharacterDtos;
 import com.eve.own.auth.backend.domain.character.entity.AltLinkProposal;
 import com.eve.own.auth.backend.domain.character.entity.Character;
+import com.eve.own.auth.backend.domain.character.entity.CharacterContact;
+import com.eve.own.auth.backend.domain.character.entity.CharacterIskTransfer;
+import com.eve.own.auth.backend.domain.character.entity.CharacterMailCount;
 import com.eve.own.auth.backend.domain.character.entity.CharacterMining;
+import com.eve.own.auth.backend.domain.character.entity.CorporationMemberPresence;
+import com.eve.own.auth.backend.domain.character.entity.IskTransferDirection;
 import com.eve.own.auth.backend.domain.character.repository.AltLinkProposalRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterContactRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterIskTransferRepository;
+import com.eve.own.auth.backend.domain.character.repository.CharacterMailCountRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterMiningRepository;
 import com.eve.own.auth.backend.domain.character.repository.CharacterRepository;
+import com.eve.own.auth.backend.domain.character.repository.CorporationMemberPresenceRepository;
 import com.eve.own.auth.backend.esi.EsiResponse;
 import com.eve.own.auth.backend.esi.EsiService;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -57,6 +69,49 @@ import org.springframework.transaction.annotation.Transactional;
  * nichts geprueft wurde. Welche Signale getragen haben, sagt das DTO Zeile fuer
  * Zeile.</p>
  *
+ * <h2>Die sieben Signale</h2>
+ * <ol>
+ *   <li><b>Name</b> - immer da, deshalb allein nie genug.</li>
+ *   <li><b>Beitritts-Cluster</b> - deckt ueber die Mitgliederverfolgung auch
+ *       Unregistrierte ab, muss aber gegen Rekrutierungswellen gedaempft werden.</li>
+ *   <li><b>Mining-Tag</b> - nach Seltenheit gewichtet; roh gerechnet lief es
+ *       gemessen verkehrt herum.</li>
+ *   <li><b>ISK-Ueberweisungen</b> - das staerkste, weil eine Ueberweisung von
+ *       vornherein <em>zwei</em> Charaktere benennt statt einen Tag, an dem alle
+ *       etwas taten. Gewertet wird die Wiederholung, nicht die Hoehe.</li>
+ *   <li><b>Kontaktliste</b> - nach der Laenge der Liste gedaempft.</li>
+ *   <li><b>Nachrichtenanzahl</b> - das schwaechste, und mit Absicht klein
+ *       gewichtet.</li>
+ *   <li><b>Gemeinsamer Aufenthalt</b> - nach Seltenheit des Ortes gewichtet.</li>
+ * </ol>
+ *
+ * <h2>Ein Signal, das ausdruecklich NICHT gebaut ist: gleichzeitig online</h2>
+ * <p>Die Anwesenheitsaufzeichnung enthaelt Logon- und Logoff-Zeiten, und
+ * gleichzeitiges Einloggen ist die Signatur des Multiboxings. Es ist trotzdem
+ * <b>kein Signal geworden</b>, aus drei Gruenden, von denen jeder allein reicht:</p>
+ * <ul>
+ *   <li><b>Es deutet in beide Richtungen.</b> In dieser Corporation wird beim
+ *       Mining multiboxt - dann sind Alts <em>gleichzeitig</em> online. Wer
+ *       seine Charaktere nacheinander spielt, ist <em>nie</em> gleichzeitig
+ *       online. Beides ist ein Hinweis, und die Hinweise zeigen entgegengesetzt.
+ *       Eine Zahl kann nur eine Richtung ausdruecken; eine, die beide Extreme
+ *       hoch bewertet, bewertet fast jedes Paar hoch, denn beide Extreme sind
+ *       auch von Fremden dicht besetzt (zwei Abendspieler ueberlappen immer,
+ *       zwei Spieler in verschiedenen Zeitzonen nie).</li>
+ *   <li><b>Die Daten geben es nicht her.</b> Gemessen wird alle drei Stunden,
+ *       und ESI nennt nur den <em>letzten</em> Logon. Aus diesem Raster laesst
+ *       sich "innerhalb derselben halben Minute eingeloggt" nicht ablesen - und
+ *       genau das waere die Signatur. Was ablesbar bleibt, ist "beide waren im
+ *       selben Vierteltag online", also das Merkmal einer Zeitzone.</li>
+ *   <li><b>Die Abwesenheit des Merkmals waere keine Messung.</b> Ein Wert 0
+ *       fuer "nie gleichzeitig" wuerde sequenziell gespielte Alts aktiv
+ *       herunterrechnen - also gerade die Haelfte der Zielgruppe bestrafen, um
+ *       die andere zu finden.</li>
+ * </ul>
+ * <p>Ein Signal, das in beide Richtungen deutet, ist Rauschen mit
+ * Nachkommastellen. Was aus derselben Quelle sehr wohl traegt, ist der
+ * gemeinsame <em>Ort</em> - siehe {@link #presenceSignal}.</p>
+ *
  * <h2>Drei Ansichten, drei verschiedene Dinge</h2>
  * <ul>
  *   <li>{@link #findProbableAlts()} - Vorschlaege gegen <em>bekannte Konten</em>.
@@ -87,14 +142,36 @@ public class AltDetectionService {
     static final String SIGNAL_NAME = "NAME";
     static final String SIGNAL_JOIN = "JOIN";
     static final String SIGNAL_MINING = "MINING";
+    static final String SIGNAL_ISK = "ISK";
+    static final String SIGNAL_CONTACT = "CONTACT";
+    static final String SIGNAL_MAIL = "MAIL";
+    static final String SIGNAL_PRESENCE = "PRESENCE";
 
-    /** Wieviele Signale es insgesamt gibt - fuer die Anzeige "x von y". */
-    static final int SIGNAL_COUNT = 3;
+    /**
+     * Wieviele Signale es insgesamt gibt - fuer die Anzeige "x von y".
+     *
+     * <p>Die Zahl ist der <em>Nenner</em> dieser Anzeige und nicht die Zahl der
+     * Signale, die etwas gefunden haben. Sie zu erhoehen macht keinen einzigen
+     * Vorschlag besser; sie macht sichtbar, wieviel bei einem Vorschlag
+     * <b>nicht</b> gemessen werden konnte. Genau das ist ihr Zweck: "2 von 7" ist
+     * eine andere Aussage als "2 von 3", auch wenn die Wahrscheinlichkeit
+     * dieselbe ist.</p>
+     */
+    static final int SIGNAL_COUNT = 7;
+
+    /** Die Signale in der Reihenfolge, in der sie in der Aufschluesselung stehen. */
+    static final List<String> SIGNALS = List.of(
+            SIGNAL_NAME, SIGNAL_JOIN, SIGNAL_MINING,
+            SIGNAL_ISK, SIGNAL_CONTACT, SIGNAL_MAIL, SIGNAL_PRESENCE);
 
     private final CorporationStatsService corporationStatsService;
     private final CharacterRepository characterRepo;
     private final CharacterMiningRepository miningRepo;
     private final AltLinkProposalRepository proposalRepo;
+    private final CharacterIskTransferRepository iskRepo;
+    private final CharacterContactRepository contactRepo;
+    private final CharacterMailCountRepository mailRepo;
+    private final CorporationMemberPresenceRepository presenceRepo;
     private final DirectorTokenProvider directorTokenProvider;
     private final EsiService esiService;
     private final AltDetectionProperties props;
@@ -104,6 +181,10 @@ public class AltDetectionService {
                                CharacterRepository characterRepo,
                                CharacterMiningRepository miningRepo,
                                AltLinkProposalRepository proposalRepo,
+                               CharacterIskTransferRepository iskRepo,
+                               CharacterContactRepository contactRepo,
+                               CharacterMailCountRepository mailRepo,
+                               CorporationMemberPresenceRepository presenceRepo,
                                DirectorTokenProvider directorTokenProvider,
                                EsiService esiService,
                                AltDetectionProperties props) {
@@ -111,6 +192,10 @@ public class AltDetectionService {
         this.characterRepo = characterRepo;
         this.miningRepo = miningRepo;
         this.proposalRepo = proposalRepo;
+        this.iskRepo = iskRepo;
+        this.contactRepo = contactRepo;
+        this.mailRepo = mailRepo;
+        this.presenceRepo = presenceRepo;
         this.directorTokenProvider = directorTokenProvider;
         this.esiService = esiService;
         this.props = props;
@@ -180,7 +265,27 @@ public class AltDetectionService {
      * waeren keine Hilfe, sondern eine Einladung zum Raten.</p>
      */
     @Transactional(readOnly = true)
-    public List<CharacterDtos.AltSuggestionDto> findProbableAlts() {
+    public List<CharacterDtos.AltSuggestionDto> findProbableAlts(Long actorId) {
+        requireLeadership(actorId);
+        return findProbableAlts();
+    }
+
+    /**
+     * Derselbe Lauf ohne Rechtepruefung - <b>nur fuer Aufrufer innerhalb dieser
+     * Klasse, die bereits geprueft haben</b>.
+     *
+     * <p>Sie ist ausdruecklich nicht {@code public}. Der einzige Aufrufer ist
+     * {@link #confirmAltSuggestion(Long, Long, Long)}, und der hat die
+     * Berechtigung als allererstes geprueft - er darf sie nicht ein zweites Mal
+     * pruefen muessen, um seinen eigenen Vorschlag nachzurechnen.</p>
+     *
+     * <p>Seit die Aufschluesselung auch Geld, Kontakte, Post und Aufenthaltsorte
+     * benennt, ist diese Liste kein Namensvergleich mehr, sondern eine
+     * Zusammenstellung ueber Menschen. Eine Fassung davon ohne Pruefung nach
+     * aussen zu geben, waere derselbe Fehler wie eine Annotation, die bei einem
+     * Umbau lautlos wegfaellt.</p>
+     */
+    private List<CharacterDtos.AltSuggestionDto> findProbableAlts() {
         List<CharacterDtos.AltSuggestionDto> suggestions = new ArrayList<>();
         for (CharacterDtos.CorpStatsDto stats : corporationStatsService.statsForAllCorporations()) {
             suggestions.addAll(suggestionsFor(stats));
@@ -252,7 +357,7 @@ public class AltDetectionService {
         }
 
         Map<Long, Instant> joinDates = joinDates(stats.corpId(), joinCache);
-        MiningIndex mining = miningIndex(unauthed, byAccount);
+        SourceIndex sources = sourceIndex(stats.corpId(), unauthed, byAccount);
 
         List<CharacterDtos.AltSuggestionDto> result = new ArrayList<>();
         for (CharacterDtos.UnauthedCharDto candidate : unauthed) {
@@ -263,7 +368,7 @@ public class AltDetectionService {
                 }
                 List<Long> kontoIds = account.getValue().stream().map(Character::getId).toList();
                 ScoredPair scored = scorePair(candidate.name(), candidate.id(), main.getName(),
-                        kontoIds, joinDates, mining, "Konto \"%s\"".formatted(main.getName()));
+                        kontoIds, joinDates, sources, "Konto \"%s\"".formatted(main.getName()));
                 if (scored == null) {
                     continue;
                 }
@@ -354,12 +459,22 @@ public class AltDetectionService {
     private ScoredPair scorePair(String linkerName, Long linkeId,
                                  String rechterName, Collection<Long> rechteIds,
                                  Map<Long, Instant> joinDates,
-                                 MiningIndex mining,
+                                 SourceIndex sources,
                                  String gegenseite) {
+        // Die Gegenseite wird einmal zu einer Menge gemacht und nicht in jedem
+        // Signal erneut durchsucht: sie steckt in vier verschachtelten Schleifen
+        // ueber einige tausend Paare.
+        Set<Long> rechte = rechteIds instanceof Set<Long> menge
+                ? menge : new LinkedHashSet<>(rechteIds);
+
         Map<String, SignalValue> values = new LinkedHashMap<>();
         values.put(SIGNAL_NAME, nameSignal(linkerName, rechterName));
-        values.put(SIGNAL_JOIN, joinSignal(linkeId, rechteIds, joinDates, gegenseite));
-        values.put(SIGNAL_MINING, miningSignal(linkeId, rechteIds, mining, gegenseite));
+        values.put(SIGNAL_JOIN, joinSignal(linkeId, rechte, joinDates, gegenseite));
+        values.put(SIGNAL_MINING, miningSignal(linkeId, rechte, sources.mining(), gegenseite));
+        values.put(SIGNAL_ISK, iskSignal(linkeId, rechte, sources.isk(), gegenseite));
+        values.put(SIGNAL_CONTACT, contactSignal(linkeId, rechte, sources.contacts(), gegenseite));
+        values.put(SIGNAL_MAIL, mailSignal(linkeId, rechte, sources.mail(), gegenseite));
+        values.put(SIGNAL_PRESENCE, presenceSignal(linkeId, rechte, sources.presence(), gegenseite));
 
         int weightSum = 0;
         int weighted = 0;
@@ -390,15 +505,23 @@ public class AltDetectionService {
             case SIGNAL_NAME -> props.getWeightName();
             case SIGNAL_JOIN -> props.getWeightJoin();
             case SIGNAL_MINING -> props.getWeightMining();
+            case SIGNAL_ISK -> props.getWeightIsk();
+            case SIGNAL_CONTACT -> props.getWeightContact();
+            case SIGNAL_MAIL -> props.getWeightMail();
+            case SIGNAL_PRESENCE -> props.getWeightPresence();
             default -> 0;
         };
     }
 
-    private static String labelOf(String signal) {
+    static String labelOf(String signal) {
         return switch (signal) {
             case SIGNAL_NAME -> "Namensaehnlichkeit";
             case SIGNAL_JOIN -> "Beitritts-Cluster";
             case SIGNAL_MINING -> "Mining-Aktivitaet";
+            case SIGNAL_ISK -> "ISK-Ueberweisungen";
+            case SIGNAL_CONTACT -> "Kontaktliste";
+            case SIGNAL_MAIL -> "Nachrichtenanzahl";
+            case SIGNAL_PRESENCE -> "Gemeinsamer Aufenthalt";
             default -> signal;
         };
     }
@@ -627,14 +750,8 @@ public class AltDetectionService {
      * trotzdem gebaut und nicht kurzgeschlossen: sobald diese Zeilen kommen,
      * traegt das Signal dort sofort mit, ohne dass jemand daran denken muss.</p>
      */
-    private MiningIndex miningIndex(List<CharacterDtos.UnauthedCharDto> unauthed,
-                                    Map<Long, List<Character>> byAccount) {
-        List<Long> ids = new ArrayList<>(unauthed.stream()
-                .map(CharacterDtos.UnauthedCharDto::id).toList());
-        byAccount.values().forEach(members -> members.forEach(member -> ids.add(member.getId())));
-        byAccount.keySet().forEach(ids::add);
-
-        List<CharacterMining> rows = miningRepo.findByCharacterIdIn(ids.stream().distinct().toList());
+    private MiningIndex miningIndex(List<Long> ids) {
+        List<CharacterMining> rows = miningRepo.findByCharacterIdIn(ids);
 
         Map<Long, Set<String>> daysByCharacter = new HashMap<>();
         Map<String, Set<Long>> charactersPerDay = new HashMap<>();
@@ -698,6 +815,566 @@ public class AltDetectionService {
     private double rarity(String day, MiningIndex index) {
         int miners = Math.max(1, index.minersPerDay().getOrDefault(day, 1));
         return Math.pow(1.0 / miners, props.getMiningRarityExponent());
+    }
+
+    // ==================================================================
+    // Der gemeinsame Datenvorrat aller Signale
+    // ==================================================================
+
+    /**
+     * Alles, was die Signale einer Corporation an Daten brauchen - in einem
+     * Objekt und einmal je Ansicht geladen.
+     *
+     * <p>Ein eigener Typ und nicht sieben Parameter: {@code scorePair} laeuft im
+     * Kreuzprodukt und wird von drei Ansichten aufgerufen. Jedes neue Signal
+     * haette sonst jede dieser Signaturen verlaengert - und die Versuchung, die
+     * Daten stattdessen im Signal selbst nachzuladen, waere eine Datenbankabfrage
+     * je Paar, also Tausende je Seitenaufruf.</p>
+     */
+    record SourceIndex(MiningIndex mining, IskIndex isk, ContactIndex contacts,
+                       MailIndex mail, PresenceIndex presence) {}
+
+    /**
+     * Baut den Datenvorrat fuer die Kandidaten und die Konten dieser Corporation.
+     *
+     * <p>Vier Abfragen je Corporation, nicht vier je Paar. Die drei
+     * charakterbezogenen holen sich die Zeilen aller beteiligten IDs auf einmal;
+     * die Anwesenheit wird <b>corp-weit</b> geholt, weil ihre
+     * Seltenheitsgewichtung wissen muss, wieviele <em>andere</em> Mitglieder
+     * einen Ort je besucht haben.</p>
+     */
+    private SourceIndex sourceIndex(Long corporationId,
+                                    List<CharacterDtos.UnauthedCharDto> unauthed,
+                                    Map<Long, List<Character>> byAccount) {
+        List<Long> ids = new ArrayList<>(unauthed.stream()
+                .map(CharacterDtos.UnauthedCharDto::id).toList());
+        byAccount.values().forEach(members -> members.forEach(member -> ids.add(member.getId())));
+        byAccount.keySet().forEach(ids::add);
+        List<Long> distinct = ids.stream().filter(Objects::nonNull).distinct().toList();
+
+        return new SourceIndex(
+                miningIndex(distinct),
+                iskIndex(distinct),
+                contactIndex(distinct),
+                mailIndex(distinct),
+                presenceIndex(corporationId));
+    }
+
+    // ==================================================================
+    // Signal 4: ISK-Ueberweisungen
+    // ==================================================================
+
+    /**
+     * Die Journalzeilen je Journal-Eigner und dessen Zahl verschiedener
+     * Geldpartner.
+     *
+     * @param byOwner              Zeilen je registriertem Charakter, aus dessen
+     *                             Journal sie stammen
+     * @param counterpartiesByOwner wieviele <em>verschiedene</em> Charaktere in
+     *                             diesem Journal ueberhaupt vorkommen - der
+     *                             Nenner der Daempfung gegen Auszahlungslisten
+     */
+    record IskIndex(Map<Long, List<CharacterIskTransfer>> byOwner,
+                    Map<Long, Integer> counterpartiesByOwner) {}
+
+    private IskIndex iskIndex(List<Long> ids) {
+        Map<Long, List<CharacterIskTransfer>> byOwner = new HashMap<>();
+        Map<Long, Set<Long>> partners = new HashMap<>();
+        for (CharacterIskTransfer row : iskRepo.findByCharacterIdIn(ids)) {
+            if (row == null || row.getCharacterId() == null || row.getCounterpartyId() == null) {
+                continue;
+            }
+            byOwner.computeIfAbsent(row.getCharacterId(), id -> new ArrayList<>()).add(row);
+            partners.computeIfAbsent(row.getCharacterId(), id -> new HashSet<>())
+                    .add(row.getCounterpartyId());
+        }
+        Map<Long, Integer> counts = new HashMap<>();
+        partners.forEach((owner, set) -> counts.put(owner, set.size()));
+        return new IskIndex(byOwner, counts);
+    }
+
+    /**
+     * Wieviel Geld zwischen genau diesen beiden floss - und vor allem: wie oft.
+     *
+     * <h2>Warum die Wiederholung zaehlt und nicht die Hoehe</h2>
+     * <p>Eine einzelne grosse Ueberweisung ist zwischen Fremden der Normalfall:
+     * ein Schiff wechselt den Besitzer, ein Vertrag wird beglichen, ein
+     * Kopfgeld ausgezahlt. Waere die Hoehe das Signal, waere der teuerste
+     * Handel der Corporation zugleich ihr staerkster Alt-Verdacht. Der Betrag
+     * geht deshalb <b>gar nicht</b> in die Zahl ein; er steht in der
+     * Aufschluesselung, damit der Director sieht, worum es ging.</p>
+     *
+     * <p>Gezaehlt werden auch nicht die Ueberweisungen, sondern die
+     * <b>verschiedenen Tage</b>. Derselbe Schiffskauf in drei Raten ist dreimal
+     * derselbe Vorgang; drei Zahlungen an drei Tagen sind eine Gewohnheit. Nur
+     * die Gewohnheit ist selten genug, um zwei Menschen zu unterscheiden.</p>
+     *
+     * <h2>Was hier "nicht verfuegbar" heisst</h2>
+     * <p>Ein Journal gibt es nur mit dem Token seines Charakters. Hat keine der
+     * beiden Seiten je eines geliefert, wurde <em>nicht nachgesehen</em> - und
+     * das ist etwas anderes als "nachgesehen und nichts gefunden". Nur der
+     * zweite Fall ergibt einen Wert, und der ist dann eine ehrliche 0.</p>
+     */
+    private SignalValue iskSignal(Long linkeId, Set<Long> rechteIds,
+                                  IskIndex index, String gegenseite) {
+        boolean linkeGelesen = index.byOwner().containsKey(linkeId);
+        List<Long> rechteGelesen = rechteIds.stream()
+                .filter(index.byOwner()::containsKey).toList();
+        if (!linkeGelesen && rechteGelesen.isEmpty()) {
+            return SignalValue.missing(
+                    ("Kein Wallet-Journal fuer diesen Charakter und keines fuer %s - ein Journal "
+                     + "gibt es nur mit dem Token seines Charakters. Nicht nachgesehen, "
+                     + "nicht null.").formatted(gegenseite));
+        }
+
+        Set<LocalDate> tage = new LinkedHashSet<>();
+        BigDecimal summe = BigDecimal.ZERO;
+        int zeilen = 0;
+        boolean vonLinks = false;
+        boolean vonRechts = false;
+        int partner = 0;
+
+        if (linkeGelesen) {
+            for (CharacterIskTransfer row : index.byOwner().get(linkeId)) {
+                if (!rechteIds.contains(row.getCounterpartyId())) {
+                    continue;
+                }
+                zeilen++;
+                tage.add(tagVon(row));
+                summe = summe.add(betragVon(row));
+                if (row.getDirection() == IskTransferDirection.OUTGOING) {
+                    vonLinks = true;
+                } else {
+                    vonRechts = true;
+                }
+                partner = Math.max(partner,
+                        index.counterpartiesByOwner().getOrDefault(linkeId, 1));
+            }
+        }
+        for (Long owner : rechteGelesen) {
+            for (CharacterIskTransfer row : index.byOwner().get(owner)) {
+                if (!Objects.equals(row.getCounterpartyId(), linkeId)) {
+                    continue;
+                }
+                zeilen++;
+                tage.add(tagVon(row));
+                summe = summe.add(betragVon(row));
+                // Die Richtung im Journal ist immer die des Eigners. Fuer das
+                // Paar muss sie umgedreht werden, sonst saehe eine Zahlung des
+                // Mains an den Alt genauso aus wie eine des Alts an den Main -
+                // und der Wechselverkehr-Aufschlag traeffe jeden einseitigen
+                // Handel, den zwei Registrierte je hatten.
+                if (row.getDirection() == IskTransferDirection.OUTGOING) {
+                    vonRechts = true;
+                } else {
+                    vonLinks = true;
+                }
+                partner = Math.max(partner,
+                        index.counterpartiesByOwner().getOrDefault(owner, 1));
+            }
+        }
+
+        if (zeilen == 0) {
+            return SignalValue.of(0, ("Journal gelesen, aber keine Spieler-Ueberweisung zwischen "
+                    + "diesem Charakter und %s. Das ist eine Messung und kein fehlendes Signal.")
+                    .formatted(gegenseite));
+        }
+
+        int basis = (int) Math.round(100.0 * Math.min(1.0,
+                (double) tage.size() / Math.max(1, props.getIskFullDays())));
+        boolean beideRichtungen = vonLinks && vonRechts;
+        if (beideRichtungen) {
+            basis += props.getIskBothDirectionsBonus();
+        }
+        double faktor = geldDaempfung(partner);
+        int score = (int) Math.round(Math.min(100, basis) * faktor);
+
+        return SignalValue.of(score, ("%d Ueberweisung(en) an %d verschiedenen Tagen mit %s, "
+                + "zusammen %s ISK, %s. Gewertet wird die Wiederholung, NICHT die Hoehe - eine "
+                + "einzelne grosse Zahlung ist auch zwischen Fremden gewoehnlich.%s")
+                .formatted(zeilen, tage.size(), gegenseite, summe.toPlainString(),
+                        beideRichtungen ? "Geld floss in beide Richtungen" : "einseitig",
+                        faktor < 1.0
+                                ? " Gedaempft: diese Seite tauscht mit %d verschiedenen Charakteren Geld."
+                                        .formatted(partner)
+                                : ""));
+    }
+
+    private static LocalDate tagVon(CharacterIskTransfer row) {
+        Instant zeitpunkt = row.getOccurredAt() == null ? Instant.EPOCH : row.getOccurredAt();
+        return zeitpunkt.atZone(ZoneOffset.UTC).toLocalDate();
+    }
+
+    private static BigDecimal betragVon(CharacterIskTransfer row) {
+        return row.getAmount() == null ? BigDecimal.ZERO : row.getAmount();
+    }
+
+    /**
+     * Die Daempfung gegen Auszahlungslisten - dieselbe lineare Form wie
+     * {@link #dilute(int, int)} bei der Rekrutierungswelle.
+     *
+     * <p>Ein Director, der den Erz-Rueckkauf ausschuettet, ueberweist im Monat
+     * an fuenfzig Leute. Ohne diese Zeile stuende jeder von ihnen als Verdacht
+     * in der Liste - und zwar genau die Leute, die ohnehin in derselben
+     * Corporation sind.</p>
+     */
+    private double geldDaempfung(int partner) {
+        if (!props.isIskCounterpartyDilution()
+                || partner <= props.getIskCounterpartyFullCount()) {
+            return 1.0;
+        }
+        return Math.min(1.0, (double) props.getIskCounterpartyFullCount() / partner);
+    }
+
+    // ==================================================================
+    // Signal 5: Kontaktliste
+    // ==================================================================
+
+    /**
+     * Die Kontaktlisten je Eigner, samt ihrer Laenge.
+     *
+     * @param byOwner  je Eigner die Eintraege, nach der ID des Eingetragenen
+     * @param listSize je Eigner die <b>volle</b> Laenge seiner Liste - der Nenner
+     *                 der Daempfung. Sie ist der Grund, warum die Abfrage die
+     *                 ganze Liste holt und nicht nur die gesuchten Treffer.
+     */
+    record ContactIndex(Map<Long, Map<Long, CharacterContact>> byOwner,
+                        Map<Long, Integer> listSize) {}
+
+    private ContactIndex contactIndex(List<Long> ids) {
+        Map<Long, Map<Long, CharacterContact>> byOwner = new HashMap<>();
+        for (CharacterContact row : contactRepo.findByCharacterIdIn(ids)) {
+            if (row == null || row.getCharacterId() == null || row.getContactId() == null) {
+                continue;
+            }
+            byOwner.computeIfAbsent(row.getCharacterId(), id -> new HashMap<>())
+                    .put(row.getContactId(), row);
+        }
+        Map<Long, Integer> sizes = new HashMap<>();
+        byOwner.forEach((owner, entries) -> sizes.put(owner, entries.size()));
+        return new ContactIndex(byOwner, sizes);
+    }
+
+    /**
+     * Ob die beiden einander in der Kontaktliste fuehren - gewichtet nach der
+     * Groesse eben dieser Liste.
+     *
+     * <h2>Die Falle</h2>
+     * <p>Manche fuehren die halbe Corporation als Kontakt. Ein Eintrag bei
+     * jemandem mit fuenf Kontakten ist eine Auswahl; derselbe Eintrag bei
+     * jemandem mit dreihundert ist ein Adressbuch und sagt ueber das einzelne
+     * Paar nichts. Ohne die Daempfung an der Listenlaenge waere das dieselbe
+     * Verwechslung wie beim gemeinsamen Mining-Tag: ein Merkmal, das viele
+     * teilen, fuer einen Fingerabdruck zu halten. Bei einem beidseitigen
+     * Eintrag zaehlt die <em>groessere</em> der beiden Listen, sonst koennte ein
+     * sparsam gepflegtes Adressbuch ein ueppiges wieder aufwerten.</p>
+     */
+    private SignalValue contactSignal(Long linkeId, Set<Long> rechteIds,
+                                      ContactIndex index, String gegenseite) {
+        Map<Long, CharacterContact> linkeListe = index.byOwner().get(linkeId);
+        List<Long> rechteListen = rechteIds.stream()
+                .filter(index.byOwner()::containsKey).toList();
+        if (linkeListe == null && rechteListen.isEmpty()) {
+            return SignalValue.missing(("Weder fuer diesen Charakter noch fuer %s liegt eine "
+                    + "Kontaktliste vor - sie kommt nur mit dem Token ihres Eigners. "
+                    + "Nicht nachgesehen, nicht null.").formatted(gegenseite));
+        }
+
+        CharacterContact linksFuehrtRechts = null;
+        if (linkeListe != null) {
+            for (Long rechts : rechteIds) {
+                CharacterContact eintrag = linkeListe.get(rechts);
+                if (eintrag != null) {
+                    linksFuehrtRechts = eintrag;
+                    break;
+                }
+            }
+        }
+        CharacterContact rechtsFuehrtLinks = null;
+        Long fuehrenderRechts = null;
+        for (Long owner : rechteListen) {
+            CharacterContact eintrag = index.byOwner().get(owner).get(linkeId);
+            if (eintrag != null) {
+                rechtsFuehrtLinks = eintrag;
+                fuehrenderRechts = owner;
+                break;
+            }
+        }
+
+        if (linksFuehrtRechts == null && rechtsFuehrtLinks == null) {
+            return SignalValue.of(0, ("Kontaktliste liegt vor, %s steht nicht darin (und "
+                    + "umgekehrt ebenso wenig). Eine Messung, kein fehlendes Signal.")
+                    .formatted(gegenseite));
+        }
+
+        boolean gegenseitig = linksFuehrtRechts != null && rechtsFuehrtLinks != null;
+        int basis = gegenseitig ? 100 : props.getContactOneWayScore();
+        boolean hoheStanding = hoheStanding(linksFuehrtRechts) || hoheStanding(rechtsFuehrtLinks);
+        if (hoheStanding) {
+            basis += props.getContactStandingBonus();
+        }
+
+        int laenge = 0;
+        if (linksFuehrtRechts != null) {
+            laenge = Math.max(laenge, index.listSize().getOrDefault(linkeId, 1));
+        }
+        if (fuehrenderRechts != null) {
+            laenge = Math.max(laenge, index.listSize().getOrDefault(fuehrenderRechts, 1));
+        }
+        double faktor = kontaktDaempfung(laenge);
+        int score = (int) Math.round(Math.min(100, basis) * faktor);
+
+        return SignalValue.of(score, ("%s Eintrag mit %s%s. Laengste beteiligte Kontaktliste: "
+                + "%d Eintraege%s - ein Eintrag bei jemandem mit sehr vielen Kontakten sagt "
+                + "weniger als bei jemandem mit fuenf.")
+                .formatted(gegenseitig ? "Beidseitiger" : "Einseitiger", gegenseite,
+                        hoheStanding ? ", mit hoher Standing" : "",
+                        laenge, faktor < 1.0 ? ", deshalb gedaempft" : ""));
+    }
+
+    /**
+     * Eine <em>fehlende</em> Standing loest den Aufschlag nie aus.
+     *
+     * <p>ESI darf das Feld weglassen. Wer daraus 0 macht, verwandelt "unbekannt"
+     * in "bewusst neutral gesetzt"; wer daraus den Aufschlag macht, erfindet
+     * eine Zuneigung, die niemand eingetragen hat.
+     */
+    private boolean hoheStanding(CharacterContact eintrag) {
+        return eintrag != null && eintrag.getStanding() != null
+                && eintrag.getStanding() >= props.getContactStrongStanding();
+    }
+
+    private double kontaktDaempfung(int listenLaenge) {
+        if (listenLaenge <= props.getContactFullListSize() || listenLaenge <= 0) {
+            return 1.0;
+        }
+        return Math.min(1.0, (double) props.getContactFullListSize() / listenLaenge);
+    }
+
+    // ==================================================================
+    // Signal 6: Nachrichtenanzahl
+    // ==================================================================
+
+    /** Die Zaehlstaende je Postfach, nach der Gegenpartei. */
+    record MailIndex(Map<Long, Map<Long, CharacterMailCount>> byOwner) {}
+
+    private MailIndex mailIndex(List<Long> ids) {
+        Map<Long, Map<Long, CharacterMailCount>> byOwner = new HashMap<>();
+        for (CharacterMailCount row : mailRepo.findByCharacterIdIn(ids)) {
+            if (row == null || row.getCharacterId() == null || row.getCounterpartyId() == null) {
+                continue;
+            }
+            byOwner.computeIfAbsent(row.getCharacterId(), id -> new HashMap<>())
+                    .put(row.getCounterpartyId(), row);
+        }
+        return new MailIndex(byOwner);
+    }
+
+    /**
+     * Wieviele Nachrichten zwischen den beiden liefen - <b>und mehr steht hier
+     * auch nicht zur Verfuegung</b>.
+     *
+     * <p>Betreff und Text werden nicht gespeichert; die Zusage ist in
+     * {@code CharacterMailCount} in der Bauform durchgesetzt. Uebrig bleibt eine
+     * Zahl, und eine Zahl kann nicht zwischen "vier Mal wegen desselben Handels"
+     * und "vier Mal ueber Monate verteilt" unterscheiden. Deshalb hat dieses
+     * Signal das kleinste Gewicht aller sieben - es rundet das Bild ab, es traegt
+     * es nicht.</p>
+     *
+     * <p>Sehen beide Seiten dieselbe Unterhaltung (zwei registrierte
+     * Charaktere), zaehlt der <em>groessere</em> der beiden Staende und nicht die
+     * Summe. Beide Postfaecher zaehlen dieselben Nachrichten, nur von zwei
+     * Seiten; addiert waere jedes Paar zweier Registrierter doppelt so
+     * auffaellig wie dasselbe Paar mit einem Unregistrierten.</p>
+     */
+    private SignalValue mailSignal(Long linkeId, Set<Long> rechteIds,
+                                   MailIndex index, String gegenseite) {
+        Map<Long, CharacterMailCount> linkesPostfach = index.byOwner().get(linkeId);
+        List<Long> rechtePostfaecher = rechteIds.stream()
+                .filter(index.byOwner()::containsKey).toList();
+        if (linkesPostfach == null && rechtePostfaecher.isEmpty()) {
+            return SignalValue.missing(("Kein gezaehltes Postfach fuer diesen Charakter und "
+                    + "keines fuer %s. Nicht gezaehlt, nicht null.").formatted(gegenseite));
+        }
+
+        int ausSicht = 0;
+        Instant juengste = null;
+        if (linkesPostfach != null) {
+            for (Long rechts : rechteIds) {
+                CharacterMailCount stand = linkesPostfach.get(rechts);
+                if (stand != null) {
+                    ausSicht = Math.max(ausSicht, stand.getSentCount() + stand.getReceivedCount());
+                    juengste = juenger(juengste, stand.getLastMailAt());
+                }
+            }
+        }
+        for (Long owner : rechtePostfaecher) {
+            CharacterMailCount stand = index.byOwner().get(owner).get(linkeId);
+            if (stand != null) {
+                ausSicht = Math.max(ausSicht, stand.getSentCount() + stand.getReceivedCount());
+                juengste = juenger(juengste, stand.getLastMailAt());
+            }
+        }
+
+        if (ausSicht == 0) {
+            return SignalValue.of(0, ("Postfach gezaehlt, keine Nachricht mit %s. Eine Messung, "
+                    + "kein fehlendes Signal.").formatted(gegenseite));
+        }
+
+        int score = (int) Math.round(100.0 * Math.min(1.0,
+                (double) ausSicht / Math.max(1, props.getMailFullCount())));
+        return SignalValue.of(score, ("%d gezaehlte Nachricht(en) mit %s%s. Nur die Anzahl - "
+                + "Betreff und Text werden nicht gespeichert. Das schwaechste der sieben "
+                + "Signale: seinem eigenen Alt schreibt man nicht, man loggt ihn ein.")
+                .formatted(ausSicht, gegenseite,
+                        juengste == null ? "" : ", zuletzt am " + juengste));
+    }
+
+    private static Instant juenger(Instant bisher, Instant kandidat) {
+        if (kandidat == null) {
+            return bisher;
+        }
+        return bisher == null || kandidat.isAfter(bisher) ? kandidat : bisher;
+    }
+
+    // ==================================================================
+    // Signal 7: Gemeinsamer Aufenthalt
+    // ==================================================================
+
+    /**
+     * Ein Charakter war zu dieser Zeitscheibe an diesem Ort.
+     *
+     * <p>Die Zeitscheibe und nicht der Messzeitpunkt: die Erfassung schreibt
+     * eine Zeile nur bei <em>Aenderung</em>, mit einem Zeitpunkt je Corporation
+     * und Lauf. Zwei Charaktere, die zusammen umziehen, landen deshalb im selben
+     * Lauf - die Scheibe faengt zusaetzlich den Fall ab, dass zwei Laeufe knapp
+     * auseinanderliegen.</p>
+     */
+    record PresenceEvent(long bucket, long locationId) {}
+
+    /**
+     * Die Aufenthalte je Charakter und die Besucherzahl je Ort.
+     *
+     * @param eventsByCharacter je Charakter die beobachteten Zeitscheiben-Orte
+     * @param visitorsPerLocation wieviele <em>verschiedene</em> Mitglieder der
+     *                            Corporation an diesem Ort je gesehen wurden -
+     *                            der Nenner der Seltenheitsgewichtung und der
+     *                            Grund, warum corp-weit geladen wird
+     */
+    record PresenceIndex(Map<Long, Set<PresenceEvent>> eventsByCharacter,
+                         Map<Long, Integer> visitorsPerLocation) {}
+
+    private PresenceIndex presenceIndex(Long corporationId) {
+        if (corporationId == null) {
+            return new PresenceIndex(Map.of(), Map.of());
+        }
+        Duration lookback = props.getPresenceLookback();
+        Instant since = lookback == null || lookback.isZero() || lookback.isNegative()
+                ? Instant.EPOCH
+                : Instant.now().minus(lookback);
+        long scheibe = Math.max(1L, props.getPresenceBucket() == null
+                ? 1L : props.getPresenceBucket().toSeconds());
+
+        Map<Long, Set<PresenceEvent>> events = new HashMap<>();
+        Map<Long, Set<Long>> visitors = new HashMap<>();
+        for (CorporationMemberPresence row : presenceRepo.findByCorporationSince(corporationId, since)) {
+            // Ein fehlender Standort ist kein Standort. Eine Zeile ohne
+            // location_id gehoert nicht in die Reihe - sonst waere "unbekannt"
+            // ein Ort, an dem sich alle treffen, und damit das genaue Gegenteil
+            // eines seltenen Systems.
+            if (row == null || row.getCharacterId() == null || row.getLocationId() == null
+                    || row.getMeasuredAt() == null) {
+                continue;
+            }
+            long bucket = Math.floorDiv(row.getMeasuredAt().getEpochSecond(), scheibe);
+            events.computeIfAbsent(row.getCharacterId(), id -> new HashSet<>())
+                    .add(new PresenceEvent(bucket, row.getLocationId()));
+            visitors.computeIfAbsent(row.getLocationId(), id -> new HashSet<>())
+                    .add(row.getCharacterId());
+        }
+
+        Map<Long, Integer> counts = new HashMap<>();
+        visitors.forEach((location, seen) -> counts.put(location, seen.size()));
+        return new PresenceIndex(events, counts);
+    }
+
+    /**
+     * Ob die beiden zur selben Zeit am selben Ort waren - gewichtet nach der
+     * <b>Seltenheit</b> des Ortes.
+     *
+     * <h2>Hier sitzt die Gefahr, und sie ist gemessen worden</h2>
+     * <p>Mit dreissig Corpmates in Jita zu stehen sagt <em>nichts</em>: dort
+     * stehen alle. Mit genau einem anderen in einem abgelegenen System zu stehen
+     * sagt viel. Roh gezaehlt liefe dieses Signal deshalb genauso verkehrt herum
+     * wie die rohe Tagesueberschneidung beim Mining, wo fremde Paare gemessen
+     * <em>ueber</em> echten lagen. Jeder gemeinsame Aufenthalt wird darum mit
+     * {@code (1 / Besucher des Ortes)^Exponent} gewichtet.</p>
+     *
+     * <h2>Warum keine Ueberschneidungsquote</h2>
+     * <p>Der naheliegende Weg waere "gemeinsame Aufenthalte durch alle
+     * Aufenthalte", so wie beim Mining. Hier waere er ein Fehler: zwei
+     * Charaktere, die je genau einmal beobachtet wurden und beide in Jita,
+     * haetten die Quote 1,0 und damit den Hoechstwert - obwohl das die
+     * nichtssagendste Beobachtung ueberhaupt ist. Gezaehlt wird deshalb
+     * <b>absolute</b> gewichtete Evidenz, und die ist an einem vielbesuchten Ort
+     * winzig: dreissig gemeinsame Aufenthalte in Jita (200 Besucher) wiegen
+     * weniger als ein einziger in einem System, in dem nur diese beiden je
+     * gesehen wurden.</p>
+     *
+     * <h2>Was hier NICHT gebaut ist</h2>
+     * <p>Gleichzeitiges Online-Sein. Begruendung in
+     * {@link AltDetectionProperties#getPresenceRarityExponent()} und ausfuehrlich
+     * im Kopf dieser Klasse: beim Mining wird in dieser Corp multiboxt, dann
+     * sind Alts <em>gleichzeitig</em> online; wer sequenziell spielt, ist
+     * <em>nie</em> gleichzeitig online. Beide Extreme sind besetzt, und zwar von
+     * Alts <b>und</b> von Fremden. Eine Zahl, die in beide Richtungen deutet,
+     * ist Rauschen mit Nachkommastellen.</p>
+     */
+    private SignalValue presenceSignal(Long linkeId, Set<Long> rechteIds,
+                                       PresenceIndex index, String gegenseite) {
+        Set<PresenceEvent> linke = index.eventsByCharacter().get(linkeId);
+        if (linke == null || linke.isEmpty()) {
+            return SignalValue.missing(
+                    "Keine auswertbare Anwesenheitszeile fuer diesen Charakter - noch nicht lange "
+                    + "genug aufgezeichnet oder ESI nannte keinen Standort. Nicht gemessen, "
+                    + "nicht null.");
+        }
+        Set<PresenceEvent> rechte = new HashSet<>();
+        for (Long other : rechteIds) {
+            rechte.addAll(index.eventsByCharacter().getOrDefault(other, Set.of()));
+        }
+        if (rechte.isEmpty()) {
+            return SignalValue.missing(
+                    "Fuer %s liegt keine auswertbare Anwesenheitszeile vor.".formatted(gegenseite));
+        }
+
+        Set<PresenceEvent> gemeinsam = new LinkedHashSet<>(linke);
+        gemeinsam.retainAll(rechte);
+        if (gemeinsam.isEmpty()) {
+            return SignalValue.of(0, ("Beide wurden aufgezeichnet, aber nie zur selben Zeit am "
+                    + "selben Ort wie %s. Eine Messung, kein fehlendes Signal.")
+                    .formatted(gegenseite));
+        }
+
+        double evidenz = 0.0;
+        int seltensteBesucher = Integer.MAX_VALUE;
+        for (PresenceEvent event : gemeinsam) {
+            int besucher = besucher(event.locationId(), index);
+            seltensteBesucher = Math.min(seltensteBesucher, besucher);
+            evidenz += Math.pow(1.0 / besucher, props.getPresenceRarityExponent());
+        }
+        double voll = props.getPresenceFullEvidence() <= 0 ? 1.0 : props.getPresenceFullEvidence();
+        int score = (int) Math.round(100.0 * Math.min(1.0, evidenz / voll));
+
+        return SignalValue.of(score, ("%d gemeinsame Aufenthalt(e) mit %s; der seltenste Ort "
+                + "davon hat %d verschiedene Besucher. Nach Seltenheit gewichtet ergibt das %.3f "
+                + "von %.3f noetiger Evidenz - ein Handelsknotenpunkt zaehlt fast nichts, ein "
+                + "abgelegenes System viel.")
+                .formatted(gemeinsam.size(), gegenseite, seltensteBesucher, evidenz, voll));
+    }
+
+    private static int besucher(Long locationId, PresenceIndex index) {
+        return Math.max(1, index.visitorsPerLocation().getOrDefault(locationId, 1));
     }
 
     // ==================================================================
@@ -813,7 +1490,7 @@ public class AltDetectionService {
         }
 
         Map<Long, Instant> joinDates = joinDates(stats.corpId(), new HashMap<>());
-        MiningIndex mining = miningIndex(unauthed, Map.of());
+        SourceIndex sources = sourceIndex(stats.corpId(), unauthed, Map.of());
 
         // Alle Kanten oberhalb der Schwelle, Schluessel ist das Indexpaar.
         Map<Long, ScoredPair> edges = new HashMap<>();
@@ -826,7 +1503,7 @@ public class AltDetectionService {
                 CharacterDtos.UnauthedCharDto links = unauthed.get(i);
                 CharacterDtos.UnauthedCharDto rechts = unauthed.get(j);
                 ScoredPair scored = scorePair(links.name(), links.id(), rechts.name(),
-                        List.of(rechts.id()), joinDates, mining,
+                        List.of(rechts.id()), joinDates, sources,
                         "\"%s\"".formatted(rechts.name()));
                 if (scored == null || scored.probability() < schwelleFuer(scored.signalsUsed())) {
                     continue;
@@ -1061,7 +1738,52 @@ public class AltDetectionService {
                 kontoPaare.size(), unregistriertePaare.size(),
                 props.getMinProbability(), props.getMinProbabilitySingleSignal(),
                 props.getMinAvailableSignals(),
+                signalConfig(kontoPaare, unregistriertePaare),
                 konto, unregistriert);
+    }
+
+    /**
+     * Jedes Signal mit seinem Gewicht und der Zahl der Paare, in denen es
+     * ueberhaupt Daten hatte.
+     *
+     * <p><b>Ohne diese Liste ist ein neues Signal nicht einstellbar.</b> Wer das
+     * Gewicht der ISK-Ueberweisungen verstellt und danach dieselbe Liste sieht,
+     * kann daraus zweierlei schliessen: das Gewicht wirkt nicht, oder es gab in
+     * keinem einzigen Paar eine Ueberweisung. Der Unterschied ist der ganze
+     * Unterschied - und er ist genau die Frage, wegen der es diese Ansicht
+     * ueberhaupt gibt.</p>
+     *
+     * <p>Gezaehlt wird ueber <em>alle</em> gerechneten Paare und nicht ueber die
+     * gelieferten: die Lieferung ist auf {@code limit} gekuerzt und nach Wert
+     * sortiert, also gerade nicht repraesentativ dafuer, wo Daten lagen.</p>
+     */
+    private List<CharacterDtos.AltSignalConfigDto> signalConfig(
+            List<CharacterDtos.AltSuggestionDto> kontoPaare,
+            List<CharacterDtos.AltPairDto> unregistriertePaare) {
+
+        Map<String, Integer> verfuegbar = new LinkedHashMap<>();
+        SIGNALS.forEach(signal -> verfuegbar.put(signal, 0));
+        kontoPaare.forEach(pair -> zaehleVerfuegbare(verfuegbar, pair.signals()));
+        unregistriertePaare.forEach(pair -> zaehleVerfuegbare(verfuegbar, pair.signals()));
+
+        int gerechnet = kontoPaare.size() + unregistriertePaare.size();
+        return SIGNALS.stream()
+                .map(signal -> new CharacterDtos.AltSignalConfigDto(
+                        signal, labelOf(signal), weightOf(signal),
+                        verfuegbar.getOrDefault(signal, 0), gerechnet))
+                .toList();
+    }
+
+    private static void zaehleVerfuegbare(Map<String, Integer> verfuegbar,
+                                          List<CharacterDtos.AltSignalDto> signals) {
+        if (signals == null) {
+            return;
+        }
+        for (CharacterDtos.AltSignalDto signal : signals) {
+            if (signal != null && signal.available()) {
+                verfuegbar.merge(signal.signal(), 1, Integer::sum);
+            }
+        }
     }
 
     /**
@@ -1081,7 +1803,7 @@ public class AltDetectionService {
         }
 
         Map<Long, Instant> joinDates = joinDates(stats.corpId(), joinCache);
-        MiningIndex mining = miningIndex(unauthed, Map.of());
+        SourceIndex sources = sourceIndex(stats.corpId(), unauthed, Map.of());
 
         List<CharacterDtos.AltPairDto> result = new ArrayList<>();
         for (int i = 0; i < n; i++) {
@@ -1089,7 +1811,7 @@ public class AltDetectionService {
                 CharacterDtos.UnauthedCharDto links = unauthed.get(i);
                 CharacterDtos.UnauthedCharDto rechts = unauthed.get(j);
                 ScoredPair scored = scorePair(links.name(), links.id(), rechts.name(),
-                        List.of(rechts.id()), joinDates, mining,
+                        List.of(rechts.id()), joinDates, sources,
                         "\"%s\"".formatted(rechts.name()));
                 if (scored == null) {
                     continue;

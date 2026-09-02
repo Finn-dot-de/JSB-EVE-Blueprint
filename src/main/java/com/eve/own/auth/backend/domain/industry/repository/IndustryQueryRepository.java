@@ -712,12 +712,35 @@ public class IndustryQueryRepository {
      * ehrliche Antwort und nicht etwa eine grosse Zahl.</p>
      */
     public Map<Long, Integer> allJumpsFromJita() {
+        return allJumpsFrom(JITA_SYSTEM_ID);
+    }
+
+    /**
+     * Dieselbe Karte, aber von einem beliebigen System aus.
+     *
+     * <p>Warum das nicht mehr fest auf Jita zeigt: der Marktabzug muss
+     * beurteilen, ob ein Kaufgebot mit Reichweite "3" die <em>konfigurierte</em>
+     * Zielstation erreicht. Ist diese Station nicht Jita 4-4 - und sie ist
+     * konfigurierbar, {@code eve.market.station-id} -, dann waere eine fest auf
+     * Jita bezogene Karte keine Naeherung, sondern eine falsche Zahl: Gebote
+     * eines ganz anderen Winkels der Region wuerden mitgezaehlt und die
+     * naheliegenden fielen heraus.</p>
+     *
+     * <p>Die Karte zaehlt Spruenge <em>von</em> {@code fromSystemId} aus. Fuer
+     * die Frage "erreicht ein Gebot dort die Zielstation hier" ist das
+     * dieselbe Zahl: {@code mapSolarSystemJumps} fuehrt jedes Tor in beiden
+     * Richtungen, das Netz ist also ungerichtet.</p>
+     *
+     * @param fromSystemId Ausgangssystem
+     * @return Sprungzahl je erreichbarem System, das Ausgangssystem selbst mit 0
+     */
+    public Map<Long, Integer> allJumpsFrom(long fromSystemId) {
         Query query = em.createNativeQuery("""
                 WITH RECURSIVE reise AS (
                     -- CAST(...) statt der Kurzform ::bigint: die beiden
                     -- Doppelpunkte verschmelzen sonst mit dem Parameternamen,
-                    -- und Hibernate sucht nach einem Parameter "jita::bigint".
-                    SELECT CAST(:jita AS bigint) AS system_id, 0 AS spruenge
+                    -- und Hibernate sucht nach einem Parameter "start::bigint".
+                    SELECT CAST(:start AS bigint) AS system_id, 0 AS spruenge
                     UNION
                     SELECT j."toSolarSystemID", r.spruenge + 1
                     FROM reise r
@@ -726,7 +749,7 @@ public class IndustryQueryRepository {
                 )
                 SELECT system_id, MIN(spruenge) AS spruenge FROM reise GROUP BY system_id
                 """, Tuple.class);
-        query.setParameter("jita", JITA_SYSTEM_ID);
+        query.setParameter("start", fromSystemId);
         query.setParameter("maxJumps", MAX_JUMPS);
 
         List<Tuple> rows = query.getResultList();

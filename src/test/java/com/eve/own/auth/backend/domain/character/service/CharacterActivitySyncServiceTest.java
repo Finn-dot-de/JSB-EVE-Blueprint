@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +43,7 @@ class CharacterActivitySyncServiceTest {
     @Mock private EsiService esiService;
     @Mock private InvTypeRepository invTypeRepo;
     @Mock private AssetSyncService assetSyncService;
+    @Mock private IskTransferSyncService iskTransferSyncService;
 
     private CharacterActivitySyncService service;
     private Character character;
@@ -49,7 +51,7 @@ class CharacterActivitySyncServiceTest {
     @BeforeEach
     void setUp() {
         service = new CharacterActivitySyncService(esiService, invTypeRepo, assetSyncService,
-                new CorporationScope(MAIN_CORP, ""));
+                new CorporationScope(MAIN_CORP, ""), iskTransferSyncService);
 
         character = new Character();
         character.setId(CHARACTER_ID);
@@ -241,6 +243,42 @@ class CharacterActivitySyncServiceTest {
             service.sync(character, TOKEN);
 
             assertThat(capturedActivities()).hasSize(2);
+        }
+    }
+
+    @Nested
+    @DisplayName("Weitergabe an die Erfassung der Spieler-Ueberweisungen")
+    class HandoverToIskTransfers {
+
+        @Test
+        @DisplayName("reicht dasselbe Journal weiter, ohne es ein zweites Mal zu holen")
+        void handsOverTheSameJournal() {
+            EsiService.EsiJournalResponse[] entries = {
+                    journal("player_donation", -500_000_000.0, 2_112_000_001L, "hier")};
+            when(esiService.getWalletJournal(anyLong(), anyString()))
+                    .thenReturn(EsiResponse.changed(entries, null, null));
+
+            service.sync(character, TOKEN);
+
+            // Ohne diese Zeile koennte jemand die Ueberweisungs-Erfassung in einen
+            // eigenen Lauf ziehen. Sie waere dann fachlich gleich - und wuerde je
+            // Charakter einen ESI-Aufruf mehr kosten, alle zehn Minuten.
+            verify(esiService, times(1)).getWalletJournal(anyLong(), anyString());
+            verify(iskTransferSyncService).sync(CHARACTER_ID, entries);
+        }
+
+        @Test
+        @DisplayName("reicht bei ausgefallener Quelle gar nichts weiter")
+        void handsOverNothingWhenTheSourceFailed() {
+            when(esiService.getWalletJournal(anyLong(), anyString()))
+                    .thenReturn(EsiResponse.empty());
+
+            service.sync(character, TOKEN);
+
+            // Ohne diese Zeile bekaeme die Erfassung ein null-Feld gereicht und
+            // muesste den Ausfall selbst erkennen - zweimal dieselbe Regel an
+            // zwei Stellen ist die Bauart, bei der eine davon irgendwann fehlt.
+            verify(iskTransferSyncService, never()).sync(anyLong(), any());
         }
     }
 }

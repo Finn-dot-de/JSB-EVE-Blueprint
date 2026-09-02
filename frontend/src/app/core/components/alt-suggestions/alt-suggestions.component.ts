@@ -4,6 +4,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
   AltCalibrationDto,
   AltGroupDto,
+  AltSignalConfigDto,
   AltSignalDto,
   AltSuggestionDto,
   CharacterService,
@@ -139,6 +140,202 @@ export function signalBilanz(calibration: AltCalibrationDto): SignalBilanz[] {
 }
 
 /**
+ * In welchem Zustand ein Signal ist - und zwar in DREI Faellen, nicht zwei.
+ *
+ * <p>`ohne-daten` und `nichts-gerechnet` auseinanderzuhalten ist der ganze
+ * Zweck: "in keinem der 549 gerechneten Paare lag es vor" ist eine Messung,
+ * "es wurde ueberhaupt nichts gerechnet" ist keine. Beide zeigen eine 0, und
+ * wer sie zusammenwirft, liest aus einem Ausfall eine Aussage heraus.</p>
+ */
+export type SignalStand = 'gerechnet' | 'ohne-daten' | 'nichts-gerechnet';
+
+/**
+ * Eine Zeile der Signal-Uebersicht: das eingestellte Gewicht und daneben die
+ * Auskunft, ob das Signal ueberhaupt schon einmal Daten hatte.
+ *
+ * <p>`anteilProzent` ist bequem, aber nicht die Aussage - `verfuegbar` von
+ * `gerechnet` bleibt daneben stehen. 100 % aus einem einzigen gerechneten Paar
+ * und 100 % aus 549 sind dasselbe Prozent und nicht dieselbe Auskunft.</p>
+ */
+export interface SignalZeile {
+  signal: string;
+  label: string;
+  gewicht: number;
+  verfuegbar: number;
+  gerechnet: number;
+  anteilProzent: number;
+  stand: SignalStand;
+  auskunft: string;
+}
+
+/**
+ * Der Satz, der ueber der Signal-Uebersicht stehen MUSS - sichtbar, nicht als
+ * Kommentar.
+ *
+ * <p>Er ist der eigentliche Ertrag der Ansicht. Wer ein Gewicht verstellt und
+ * danach dieselbe Liste wiedersieht, kann daraus zweierlei lesen: das Gewicht
+ * wirkt nicht, oder das Signal hatte in keinem einzigen Paar Daten. Ohne diesen
+ * Hinweis sucht der Nutzer den Fehler bei sich, obwohl schlicht noch nichts
+ * erfasst ist - und das ist, solange die Erfassung erst Tage laeuft, der
+ * Regelfall und nicht die Ausnahme.</p>
+ */
+export const SIGNAL_UEBERSICHT_HINWEIS =
+  'Die Spalte "Daten in Paaren" ist die wichtigste. Wer ein Gewicht verstellt und danach ' +
+  'dieselbe Liste wiedersieht, kann daraus zweierlei lesen: das Gewicht wirkt nicht, oder das ' +
+  'Signal hatte in keinem einzigen Paar Daten. Solange die Erfassung erst Tage laeuft, ist der ' +
+  'zweite Fall der Regelfall. Ein Signal mit 0 von n Paaren ist deshalb nicht schwach, sondern ' +
+  'stumm - ein anderes Gewicht aendert daran nichts.';
+
+/**
+ * Was fuer die Erkennung erfasst wird und wie lange es bleibt.
+ *
+ * <p>Steht hier und nicht nur in der Vorlage, damit die Zusage zu Nachrichten
+ * pruefbar ist. Sie ist woertlich das, was der Code haelt: `CharacterMailCount`
+ * hat kein Textfeld und keine Mail-ID, und `EsiService.EsiMailHeaderResponse`
+ * liest nur Absender, Empfaenger und Zeitpunkt ein - der Betreff existiert im
+ * Prozess nie als Wert. Die Oberflaeche darf deshalb nirgends den Eindruck
+ * erwecken, Inhalte seien verfuegbar.</p>
+ *
+ * <p>Die Fristen sind ebenfalls nachgeschlagen und nicht geschaetzt:
+ * `eve.alt-sources.presence-retention` und `...isk-transfer-retention` stehen
+ * auf 90 Tagen, und `AltSourceRetentionScheduler` loescht taeglich. Kontakte
+ * und Nachrichtenanzahlen haben keine Frist, weil jeder Lauf sie vollstaendig
+ * ersetzt (`AltSourceStore.replaceContacts` / `replaceMailCounts`) - eine
+ * Aufbewahrungsfrist hinzuschreiben, die es nicht gibt, waere die schlimmere
+ * Ungenauigkeit.</p>
+ */
+export const ERFASSUNG_SAETZE: string[] = [
+  'Fuer diese Erkennung wird zu registrierten Charakteren erfasst: ISK-Ueberweisungen zwischen ' +
+    'Charakteren, die eigene Kontaktliste, die Anzahl gewechselter Nachrichten je Gegenueber und ' +
+    'in welchem System Corp-Mitglieder gesehen wurden.',
+  'Von Nachrichten wird ausschliesslich gezaehlt. Betreff und Text werden weder gespeichert noch ' +
+    'eingelesen, und es wird auch keine Mail-ID abgelegt - es gibt damit keinen Schluessel, mit ' +
+    'dem sich ein Inhalt spaeter nachladen liesse.',
+  // Bewusst OHNE Zahl: die Fristen stehen in eve.alt-sources.* und lassen sich
+  // ueber die .env aendern, ohne dass jemand diese Datei anfasst. Eine hier
+  // eingetragene "90" wuerde beim ersten Verstellen zur Falschaussage - und
+  // zwar in genau dem Kasten, dessen Zweck es ist, verlaesslich zu sein.
+  // Ebenfalls bewusst nicht mehr behauptet: dass jeder Lauf die Kontakte und
+  // Nachrichtenanzahlen vollstaendig ersetze. Das Ersetzen geschieht je
+  // Charakter und nur, wenn er im Lauf vorkommt; wer sein Token entzieht oder
+  // fuer wen die Quelle abgeschaltet ist, faellt heraus. Deshalb haben jetzt
+  // ALLE vier Quellen eine Frist und einen taeglichen Loeschlauf.
+  'Alle vier Quellen unterliegen einer Aufbewahrungsfrist: was aelter ist, wird taeglich ' +
+    'geloescht. Das gilt auch fuer Charaktere, die inzwischen aus der Erfassung herausgefallen ' +
+    'sind - ihre Daten bleiben nicht liegen.',
+];
+
+/**
+ * Die Signal-Uebersicht aus der Antwort des Servers.
+ *
+ * <p>Die Zahlen kommen unveraendert aus `signalConfig` und werden hier
+ * ausdruecklich NICHT aus den gelieferten Zeilen nachgerechnet: die Lieferung
+ * ist auf `limit` gekuerzt und nach Wert sortiert, also gerade nicht
+ * repraesentativ dafuer, wo Daten lagen. `signalBilanz` daneben zaehlt bewusst
+ * etwas anderes - die gezeigten Zeilen - und sagt das im Leerzustand auch
+ * dazu.</p>
+ */
+export function signalUebersicht(calibration: AltCalibrationDto): SignalZeile[] {
+  return (calibration.signalConfig ?? []).map((config) => zeileFuer(config));
+}
+
+/** Eine Zeile samt ihrer Auskunft - freie Funktion, damit der Satz pruefbar ist. */
+export function zeileFuer(config: AltSignalConfigDto): SignalZeile {
+  const stand: SignalStand =
+    config.examinedPairs === 0
+      ? 'nichts-gerechnet'
+      : config.availableInPairs === 0
+        ? 'ohne-daten'
+        : 'gerechnet';
+
+  return {
+    signal: config.signal,
+    label: config.label,
+    gewicht: config.weightPercent,
+    verfuegbar: config.availableInPairs,
+    gerechnet: config.examinedPairs,
+    anteilProzent:
+      config.examinedPairs === 0
+        ? 0
+        : Math.round((config.availableInPairs / config.examinedPairs) * 100),
+    stand,
+    auskunft: auskunftFuer(config, stand),
+  };
+}
+
+/**
+ * Was in der letzten Spalte steht.
+ *
+ * <p>Im Fall `ohne-daten` steht dort ausdruecklich "noch keine Daten" und
+ * nirgends "schwach": ein stummes Signal ist kein niedriger Wert, sondern gar
+ * keiner. Wer das verwechselt, dreht am Gewicht statt an der Erfassung.</p>
+ */
+function auskunftFuer(config: AltSignalConfigDto, stand: SignalStand): string {
+  if (stand === 'nichts-gerechnet') {
+    return (
+      'Es wurde kein einziges Paar gerechnet - ueber dieses Signal ist damit nichts gesagt, ' +
+      'weder gut noch schlecht.'
+    );
+  }
+  if (stand === 'ohne-daten') {
+    return (
+      `Noch keine Daten: in keinem der ${config.examinedPairs} gerechneten Paare lag dieses ` +
+      `Signal vor. Das Gewicht ${config.weightPercent} kann derzeit nichts bewirken - das ist ` +
+      'kein schwaches Signal, sondern ein stummes.'
+    );
+  }
+  return `Lag in ${config.availableInPairs} von ${config.examinedPairs} gerechneten Paaren vor.`;
+}
+
+/**
+ * Welche Signale schon Daten liefern und welche noch stumm sind.
+ *
+ * <p>Gehoert in den Leerzustand, weil dort die falsche Erklaerung droht: eine
+ * leere Vorschlagsliste sieht nach vier Wochen Erfassung wie ein Befund aus und
+ * nach drei Tagen wie ein Fehler - es ist beide Male dieselbe leere Liste. Nur
+ * diese Aufzaehlung sagt, welcher der beiden Faelle vorliegt.</p>
+ */
+export function signalStandSaetze(calibration: AltCalibrationDto): string[] {
+  const zeilen = signalUebersicht(calibration);
+  if (zeilen.length === 0) {
+    return [];
+  }
+
+  const gerechnet = zeilen[0].gerechnet;
+  if (gerechnet === 0) {
+    // Ohne gerechnete Paare traegt jede Zahl der Uebersicht eine 0, und keine
+    // davon bedeutet etwas. Ein "noch keine Daten" waere hier eine erfundene
+    // Messung - der Satz oben hat den Ausfall bereits benannt.
+    return [];
+  }
+
+  const saetze: string[] = [];
+  const mitDaten = zeilen.filter((zeile) => zeile.stand === 'gerechnet');
+  const stumm = zeilen.filter((zeile) => zeile.stand === 'ohne-daten');
+
+  saetze.push(
+    mitDaten.length === 0
+      ? `Kein einziges der ${zeilen.length} Signale hatte in den ${gerechnet} gerechneten Paaren ` +
+        'Daten. Die Erkennung rechnet dann zwar, hat aber nichts, womit sie rechnen koennte.'
+      : `Daten geliefert haben bisher: ` +
+        mitDaten
+          .map((zeile) => `${zeile.label} in ${zeile.verfuegbar} von ${gerechnet} Paaren`)
+          .join(', ') +
+        '.',
+  );
+
+  if (stumm.length > 0) {
+    saetze.push(
+      `Noch keine Daten hat: ${stumm.map((zeile) => zeile.label).join(', ')}. Diese Signale sind ` +
+        'nicht schwach, sondern stumm - solange die Erfassung erst wenige Tage laeuft, koennen ' +
+        'sie nichts beitragen, auch mit einem hoeheren Gewicht nicht.',
+    );
+  }
+
+  return saetze;
+}
+
+/**
  * Die Saetze, die im Leerzustand stehen muessen.
  *
  * <p>Der Leerzustand ist hier der <b>Regelfall</b> und nicht die Ausnahme. Vor
@@ -176,6 +373,14 @@ export function leerzustandSaetze(calibration: AltCalibrationDto): string[] {
       `${calibration.minAvailableSignals} vorliegenden Signalen wird ein Paar gar nicht erst ` +
       'bewertet.',
   );
+
+  // Welche Signale ueberhaupt schon Daten liefern - und zwar VOR der Bilanz
+  // ueber die gezeigten Zeilen. "Keine Vorschlaege" heisst bei frischer
+  // Erfassung etwas voellig anderes als nach vier Wochen: dort ist die Liste
+  // leer, weil die Haelfte der Signale noch stumm ist, hier waere sie ein
+  // Befund. Ohne diesen Unterschied liest der Nutzer aus demselben Bildschirm
+  // zwei gegensaetzliche Aussagen heraus.
+  saetze.push(...signalStandSaetze(calibration));
 
   const bilanz = signalBilanz(calibration);
   if (bilanz.length > 0) {
@@ -245,6 +450,12 @@ export class AltSuggestionsComponent implements OnInit {
 
   readonly hoheWahrscheinlichkeit = HOHE_WAHRSCHEINLICHKEIT;
 
+  /** Der Satz ueber der Signal-Uebersicht - sichtbar, nicht als Kommentar. */
+  readonly signalHinweis = SIGNAL_UEBERSICHT_HINWEIS;
+
+  /** Was erfasst wird und wie lange es bleibt. */
+  readonly erfassung = ERFASSUNG_SAETZE;
+
   suggestions = signal<AltSuggestionDto[]>([]);
   loading = signal<boolean>(true);
 
@@ -299,6 +510,19 @@ export class AltSuggestionsComponent implements OnInit {
    * Rechnung nicht - er sieht ja, dass es laeuft.</p>
    */
   nichtsGefunden = computed(() => this.isEmpty() && this.groupsEmpty());
+
+  /**
+   * Die Signal-Uebersicht - leer, solange die Kalibrierung nicht geladen ist.
+   *
+   * <p>Sie haengt bewusst an derselben Antwort wie alles andere in diesem
+   * Bereich: eine eigene Ladequelle koennte gefuellt sein, waehrend die Zeilen
+   * daneben fehlen, und dann stuenden Gewichte ueber Zahlen, die zu einem
+   * anderen Lauf gehoeren.</p>
+   */
+  signalZeilen = computed(() => {
+    const calibration = this.calibration();
+    return calibration === null ? [] : signalUebersicht(calibration);
+  });
 
   /** Die Saetze des Leerzustands - leer, solange die Zahlen fehlen. */
   leerzustand = computed(() => {

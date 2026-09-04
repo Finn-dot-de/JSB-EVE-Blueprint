@@ -1,0 +1,435 @@
+<div class="ping-reiter">
+
+  <!-- Nicht eingerichtet: der Reiter bleibt sichtbar und sagt, was fehlt.
+       Ihn wegzublenden wäre bequemer und ließe einen Direktor davor stehen,
+       ohne zu erfahren, welche Umgebungsvariable er setzen muss. -->
+  @if (status() && !verfuegbar()) {
+    <div class="hinweis warnung">
+      <i class="fa-solid fa-plug-circle-xmark"></i>
+      <span>
+        {{ status()?.hinweis || 'Für Flotten-Pings ist kein Discord-Kanal hinterlegt.' }}
+        Bis dahin lässt sich hier nichts absetzen.
+      </span>
+    </div>
+  }
+
+  <!-- ============================================================
+       Der eigene Ping, der noch im Kanal steht.
+       Absagen ist die dringlichste Handlung dieses Reiters - sie steht
+       deshalb ganz oben und nicht am Ende einer Zeile in einer Tabelle.
+       ============================================================ -->
+  @if (eigenerOffenerPing(); as offen) {
+    <div class="surface-panel offener-ping">
+      <div class="offener-kopf">
+        <span class="offen-marke"><i class="fa-solid fa-tower-broadcast"></i> Dein Ping steht im Kanal</span>
+        <span class="chip chip-still">{{ zustandsText(offen.zustand) }}</span>
+      </div>
+      <p class="offener-text">
+        <strong>{{ offen.fleetType }}</strong>
+        &middot; Treffpunkt {{ offen.formupLocation }}
+        &middot; Formup {{ formupText(offen) }}
+        &middot; Erwähnung
+        <span class="chip" [class.laut]="offen.erwaehnung !== 'STILL'">
+          {{ erwaehnungsWahl(offen.erwaehnung).titel }}
+        </span>
+      </p>
+      <div class="offene-aktionen">
+        <input
+          type="text"
+          class="grund-feld"
+          placeholder="Grund der Absage (optional)"
+          [ngModel]="absageGrund()"
+          (ngModelChange)="absageGrund.set($event)"
+        />
+        <button type="button" class="btn-secondary" (click)="bearbeitenStarten(offen)">
+          <i class="fa-solid fa-pen"></i> Ändern
+        </button>
+        <button type="button" class="btn-absage" (click)="absagen(offen)">
+          <i class="fa-solid fa-ban"></i> Flotte absagen
+        </button>
+      </div>
+    </div>
+  }
+
+  <div class="toolbar">
+    <button
+      type="button"
+      class="btn-primary"
+      [disabled]="!verfuegbar()"
+      (click)="formularOeffnen()"
+    >
+      <i class="fa-solid fa-satellite-dish"></i> Flotte pingen
+    </button>
+  </div>
+
+  <!-- ============================================================
+       Das Formular. Links die Angaben, rechts die Vorschau - beides
+       gleichzeitig sichtbar, weil eine Vorschau, für die man scrollen
+       muss, keine ist.
+       ============================================================ -->
+  @if (formularOffen()) {
+    <div class="modal-overlay">
+      <div class="surface-panel modal-content">
+
+        <h3>
+          @if (bearbeiteId() === null) { Flotte pingen } @else { Ping ändern }
+          <span class="leise">FC: {{ fcName() }}</span>
+        </h3>
+
+        <div class="formular-raster">
+
+          <!-- ---------------- Die Angaben ---------------- -->
+          <div class="felder">
+
+            <div class="form-group">
+              <label>Flottenart <span class="pflicht">Pflicht</span></label>
+              <div class="chip-reihe">
+                @for (art of FLOTTENARTEN; track art) {
+                  <button
+                    type="button"
+                    class="chip"
+                    [class.aktiv]="fleetType() === art"
+                    [attr.aria-pressed]="fleetType() === art"
+                    (click)="fleetType.set(art)"
+                  >{{ art }}</button>
+                }
+              </div>
+              <input
+                type="text"
+                [ngModel]="fleetType()"
+                (ngModelChange)="fleetType.set($event)"
+                placeholder="oder eigene Bezeichnung"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Treffpunkt <span class="pflicht">Pflicht</span></label>
+              <input
+                type="text"
+                [ngModel]="formupLocation()"
+                (ngModelChange)="formupLocation.set($event)"
+                placeholder="z. B. Jita IV - Moon 4 oder Home"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Doktrin</label>
+              <input
+                type="text"
+                list="ping-doktrinen"
+                [ngModel]="doctrine()"
+                (ngModelChange)="doctrine.set($event)"
+                placeholder="frei oder aus den gespeicherten Doktrinen"
+              />
+              <datalist id="ping-doktrinen">
+                @for (name of doktrinen(); track name) {
+                  <option [value]="name"></option>
+                }
+              </datalist>
+            </div>
+
+            <!-- ZEIT: EVE-Zeit ist UTC. Das steht am Feld, und darunter steht
+                 dieselbe Zeit in der Zone des Browsers als Gegenprobe. -->
+            <div class="form-group">
+              <label>Formup</label>
+              <div class="zeit-schalter">
+                <button
+                  type="button"
+                  class="chip"
+                  [class.aktiv]="sofort()"
+                  [attr.aria-pressed]="sofort()"
+                  (click)="sofort.set(true)"
+                >Jetzt</button>
+                <button
+                  type="button"
+                  class="chip"
+                  [class.aktiv]="!sofort()"
+                  [attr.aria-pressed]="!sofort()"
+                  (click)="sofort.set(false)"
+                >Zu einer Uhrzeit</button>
+              </div>
+
+              @if (!sofort()) {
+                <div class="zeit-felder">
+                  <input
+                    type="date"
+                    [ngModel]="formupDatum()"
+                    (ngModelChange)="formupDatum.set($event)"
+                  />
+                  <input
+                    type="time"
+                    [ngModel]="formupUhrzeit()"
+                    (ngModelChange)="formupUhrzeit.set($event)"
+                  />
+                  <span class="zeit-einheit">EVE-Zeit (UTC)</span>
+                </div>
+                @if (ortszeit(); as lokal) {
+                  <p class="feld-hinweis">
+                    Das ist <strong>{{ lokal }}</strong> in deiner eigenen Zeitzone.
+                    Trage oben die EVE-Zeit ein, nicht deine.
+                  </p>
+                } @else {
+                  <p class="feld-hinweis fehlt">Datum und Uhrzeit fehlen noch.</p>
+                }
+              }
+            </div>
+
+            <div class="form-group">
+              <label>Comms</label>
+              <input
+                type="text"
+                [ngModel]="comms()"
+                (ngModelChange)="comms.set($event)"
+                placeholder="wo zugehört wird"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>SRP</label>
+              <div class="chip-reihe">
+                <button type="button" class="chip" [class.aktiv]="srpWahl() === 'JA'"
+                        [attr.aria-pressed]="srpWahl() === 'JA'"
+                        (click)="srpWahl.set('JA')">gedeckt</button>
+                <button type="button" class="chip" [class.aktiv]="srpWahl() === 'NEIN'"
+                        [attr.aria-pressed]="srpWahl() === 'NEIN'"
+                        (click)="srpWahl.set('NEIN')">nicht gedeckt</button>
+                <button type="button" class="chip" [class.aktiv]="srpWahl() === 'OFFEN'"
+                        [attr.aria-pressed]="srpWahl() === 'OFFEN'"
+                        (click)="srpWahl.set('OFFEN')">nicht angegeben</button>
+              </div>
+              <p class="feld-hinweis">
+                "nicht angegeben" ist eine eigene Aussage und wird nicht als "nein" gelesen -
+                daran hängt, ob jemand den teuren Rumpf mitbringt.
+              </p>
+            </div>
+
+            <div class="form-group">
+              <label>Hinweis</label>
+              <textarea
+                rows="2"
+                [ngModel]="notes()"
+                (ngModelChange)="notes.set($event)"
+                placeholder="alles, was sonst nirgends hinpasst"
+              ></textarea>
+            </div>
+
+            <!-- ---------------- Die Erwähnung ---------------- -->
+            <div class="form-group erwaehnung-gruppe">
+              <label>Wer wird benachrichtigt?</label>
+              <div class="erwaehnung-wahl">
+                @for (wahl of ERWAEHNUNGEN; track wahl.wert) {
+                  <button
+                    type="button"
+                    class="erwaehnung-knopf"
+                    [class.aktiv]="erwaehnung() === wahl.wert"
+                    [class.laut]="wahl.wert !== 'STILL'"
+                    [class.gesperrt]="wahl.wert === 'ROLLE' && !rolleNutzbar()"
+                    [attr.aria-pressed]="erwaehnung() === wahl.wert"
+                    [attr.aria-disabled]="wahl.wert === 'ROLLE' && !rolleNutzbar()"
+                    [attr.title]="wahl.wert === 'ROLLE' && !rolleNutzbar()
+                      ? 'Gesperrt: im Auth ist keine Discord-Rolle verknüpft.' : null"
+                    (click)="waehleErwaehnung(wahl.wert)"
+                  >
+                    <span class="erw-titel">
+                      @if (wahl.wert === 'ROLLE' && !rolleNutzbar()) {
+                        <i class="fa-solid fa-lock"></i>
+                      } @else if (wahl.wert === 'STILL') {
+                        <i class="fa-solid fa-bell-slash"></i>
+                      } @else {
+                        <i class="fa-solid fa-bell"></i>
+                      }
+                      {{ wahl.titel }}
+                    </span>
+                    <span class="erw-kurz">{{ wahl.kurz }}</span>
+                  </button>
+                }
+              </div>
+              <!-- Die Begründung steht fest da und nicht erst nach dem Klick:
+                   Ein ausgegrautes Feld ohne Grund schickt den FC auf die Suche,
+                   und er sucht sie unter Zeitdruck an der falschen Stelle. Das
+                   `disabled`-Attribut fehlt mit Absicht - der Klick löst
+                   stattdessen dieselbe Auskunft als Meldung aus, denn ein
+                   Knopf, der auf nichts reagiert, sieht aus wie ein Fehler. -->
+              @if (!rolleNutzbar()) {
+                <p class="feld-hinweis fehlt">
+                  <i class="fa-solid fa-lock"></i>
+                  <strong>"Ping-Rolle" ist gesperrt:</strong> Im Auth ist keine
+                  Discord-Rolle verknüpft, die Auswahl bliebe wirkungslos. Verknüpft
+                  werden Rollen unter <code>/admin/discord</code>; danach stehen sie
+                  hier zur Wahl.
+                </p>
+              }
+
+              <!-- Welche Rolle. Erst sichtbar, wenn sie überhaupt etwas trifft. -->
+              @if (erwaehnung() === 'ROLLE') {
+                <div class="form-group rolle-gruppe">
+                  <label for="ping-rolle">Welche Rolle?</label>
+                  @if (rollenLaden()) {
+                    <p class="feld-hinweis">Die wählbaren Rollen werden geladen …</p>
+                  } @else if (rollen().length === 0) {
+                    <p class="feld-hinweis fehlt">
+                      Es steht keine Rolle zur Auswahl. Wählbar ist, was unter
+                      /admin/discord verknüpft ist und im Discord noch existiert.
+                    </p>
+                  } @else {
+                    <select
+                      id="ping-rolle"
+                      [value]="rolleId() ?? ''"
+                      (change)="waehleRolle($any($event.target).value)"
+                    >
+                      @for (rolle of rollen(); track rolle.discordRoleId) {
+                        <option [value]="rolle.discordRoleId">{{ rolle.name }}</option>
+                      }
+                    </select>
+                    <p class="feld-hinweis">
+                      Der Server nimmt nur Rollen an, die im Auth verknüpft sind - eine
+                      andere Kennung wird abgewiesen und nicht still ersetzt.
+                    </p>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- ---------------- Die Vorschau ---------------- -->
+          <div class="vorschau-spalte">
+            <div class="vorschau-kopf">
+              <span><i class="fa-solid fa-eye"></i> So steht es im Kanal</span>
+              <!-- Bei einer Rolle steht hier ihr Name und nicht "Ping-Rolle":
+                   die Stufe kennt der FC, die Gruppe muss er nachlesen können. -->
+              <span class="chip erw-marke" [class.laut]="erwaehnung() !== 'STILL'">
+                {{ erwaehnungsChip() }}
+              </span>
+            </div>
+
+            <pre class="vorschau-text" [class.laut]="erwaehnung() !== 'STILL'">{{ vorschauGanz() }}</pre>
+
+            <p class="feld-hinweis">{{ folgeText(gewaehlteErwaehnung()) }}</p>
+
+            <p class="feld-hinweis">
+              Discord ersetzt <code>&lt;t:…:R&gt;</code> beim Lesen durch die Ortszeit des Lesers
+              ("in 45 Minuten"). Die EVE-Zeit daneben bleibt stehen.
+            </p>
+
+            @if (erwaehnung() === 'ROLLE') {
+              <p class="feld-hinweis">
+                @if (gewaehlteRolle(); as rolle) {
+                  Gerufen wird die Rolle <strong>{{ rolle.name }}</strong>. Über die
+                  Leitung geht dafür die Kennung <code>&lt;&#64;&amp;{{ rolle.discordRoleId }}&gt;</code>,
+                  die Discord erst beim Leser zum hervorgehobenen Namen auflöst - die
+                  einzige Zeile dieser Vorschau, die nicht wörtlich ist.
+                } @else {
+                  Es ist noch keine Rolle gewählt; <code>&#64;Ping-Rolle</code> oben ist ein
+                  Platzhalter und kein Name. Solange er dort steht, lässt sich nicht
+                  absenden.
+                }
+              </p>
+            }
+
+            @if (entschaerftEtwas()) {
+              <div class="hinweis warnung">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>
+                  In deinem Text steht ein <code>&#64;everyone</code>, <code>&#64;here</code> oder
+                  eine kopierte Erwähnung. Sie wird entschärft und benachrichtigt niemanden -
+                  lesbar bleibt sie trotzdem. Wer wirklich geweckt wird, entscheidet
+                  ausschließlich die Auswahl oben.
+                </span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="modal-aktionen">
+          <button type="button" class="btn-secondary" (click)="formularSchliessen()">Abbrechen</button>
+          <button
+            type="button"
+            class="btn-primary"
+            [class.laut]="erwaehnung() !== 'STILL'"
+            [disabled]="sendet() || !eingabenVollstaendig() || !verfuegbar()"
+            (click)="absenden()"
+          >
+            @if (sendet()) {
+              <i class="fa-solid fa-spinner fa-spin"></i>
+            } @else if (bearbeiteId() === null) {
+              <i class="fa-solid fa-paper-plane"></i> Ping absetzen
+            } @else {
+              <i class="fa-solid fa-check"></i> Änderung übernehmen
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ============================================================
+       Die Rechenschaft: wer, wann, welche Erwähnung, welcher Zustand.
+       ============================================================ -->
+  <div class="section-divider"><span>Letzte Pings</span></div>
+
+  @if (laedt() && pings().length === 0) {
+    <div class="loading-container"><div class="loading-spinner"></div></div>
+  } @else if (pings().length === 0) {
+    <div class="empty-state">
+      <i class="fa-solid fa-satellite fa-2x"></i>
+      <p>Bisher wurde nichts gepingt.</p>
+      <span>Was hier steht, hat jemand im Discord-Kanal gelesen.</span>
+    </div>
+  } @else {
+    <div class="surface-panel table-panel">
+      <div class="table-scroll">
+        <table class="eve-table">
+          <thead>
+          <tr>
+            <th>FC</th>
+            <th>Abgesetzt</th>
+            <th>Flottenart</th>
+            <th>Treffpunkt</th>
+            <th>Formup</th>
+            <th>Erwähnung</th>
+            <th>Zustand</th>
+            <th class="rechts">Aktionen</th>
+          </tr>
+          </thead>
+          <tbody>
+            @for (ping of pings(); track ping.id) {
+              <tr [class.zeile-abgesagt]="ping.zustand === 'ABGESAGT'">
+                <td>{{ ping.fcCharacterName }}</td>
+                <td class="kurzzeile">{{ ping.createdAt | date:'dd.MM. HH:mm':'UTC' }} EVE</td>
+                <td>{{ ping.fleetType }}</td>
+                <td class="kurzzeile">{{ ping.formupLocation }}</td>
+                <td class="kurzzeile">{{ formupText(ping) }}</td>
+                <td>
+                  <span class="chip" [class.laut]="ping.erwaehnung !== 'STILL'"
+                        [class.chip-still]="ping.erwaehnung === 'STILL'">
+                    {{ erwaehnungsWahl(ping.erwaehnung).titel }}
+                  </span>
+                </td>
+                <td>
+                  <span class="chip"
+                        [class.chip-abgesagt]="ping.zustand === 'ABGESAGT'"
+                        [class.chip-still]="ping.zustand !== 'ABGESAGT'">
+                    {{ zustandsText(ping.zustand) }}
+                  </span>
+                  @if (ping.zustand === 'ABGESAGT' && ping.cancelReason) {
+                    <span class="leise"> ({{ ping.cancelReason }})</span>
+                  }
+                </td>
+                <td class="rechts">
+                  @if (darfAendern(ping)) {
+                    <button type="button" class="btn-secondary schmal"
+                            (click)="bearbeitenStarten(ping)">Ändern</button>
+                    <button type="button" class="btn-absage schmal"
+                            (click)="absagen(ping)">Absagen</button>
+                  } @else {
+                    <span class="leise">&mdash;</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</div>

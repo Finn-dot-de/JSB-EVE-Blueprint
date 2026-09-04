@@ -69,6 +69,16 @@ public class DiscordBotService {
     private final String clientSecret;
 
     /**
+     * Der Kanal, in den Flotten-Pings gehen - leer heisst "Funktion aus".
+     *
+     * <p>Ohne Vorgabewert in der Konfiguration ({@code :}), und das ist der
+     * Unterschied zwischen einer abgeschalteten Funktion und einer, die in
+     * irgendeinen geratenen Kanal schreibt. Es gibt keinen vernuenftigen
+     * Standardkanal; jeder geratene waere der falsche.</p>
+     */
+    private final String pingKanalId;
+
+    /**
      * Rollen, die Discord zuletzt mit 403 abgelehnt hat - je Konto und Rolle.
      *
      * <p>Nur im Arbeitsspeicher, wie {@link DiscordSyncStand}: Nach einem
@@ -107,10 +117,20 @@ public class DiscordBotService {
                              @Value("${discord.bot-token}") String botToken,
                              @Value("${discord.server-id}") String guildId,
                              @Value("${discord.client-id}") String clientId,
-                             @Value("${discord.client-secret}") String clientSecret) {
+                             @Value("${discord.client-secret}") String clientSecret,
+                             @Value("${discord.fleet-ping-channel-id:}") String pingKanalId) {
         this.guildId = guildId;
         this.clientId = clientId;
         this.clientSecret = clientSecret;
+        this.pingKanalId = pingKanalId == null ? "" : pingKanalId.trim();
+        if (this.pingKanalId.isBlank()) {
+            // Einmal beim Start und laut, statt bei jedem Versuch leise: Wer die
+            // Anwendung hochfaehrt, soll erfahren, dass die Flotten-Pings
+            // abgeschaltet sind - und nicht erst der FC, der um drei Uhr nachts
+            // auf den Knopf drueckt.
+            log.warn("discord.fleet-ping-channel-id ist nicht gesetzt - Flotten-Pings sind "
+                    + "abgeschaltet. Setze DISCORD_FLEET_PING_CHANNEL_ID, um sie einzuschalten.");
+        }
         // Client für Bot-Befehle (mit Bot-Token)
         this.botClient = builder.baseUrl("https://discord.com/api/v10")
                 .defaultHeader("Authorization", "Bot " + botToken)
@@ -657,5 +677,127 @@ public class DiscordBotService {
                     discordUserId, e.getMessage());
             return false;
         }
+    }
+
+    // ==================================================================
+    // Flotten-Pings: in einen festen Kanal posten, aendern, absagen
+    // ==================================================================
+
+    /** Die Antwort auf eine gepostete Nachricht - gebraucht wird nur die ID. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record GesendeteNachricht(String id) {}
+
+    /**
+     * Ob ein Ping-Kanal konfiguriert ist.
+     *
+     * <p>Oeffentlich, damit die Fachschicht die Funktion <em>vorher</em>
+     * abschalten kann statt hinterher einen Fehler zu erklaeren. Ein Knopf, der
+     * da ist und immer scheitert, ist schlechter als einer, der gar nicht da
+     * ist.</p>
+     */
+    public boolean istPingKanalKonfiguriert() {
+        return !pingKanalId.isBlank();
+    }
+
+    /**
+     * Postet eine Nachricht in den konfigurierten Flotten-Kanal.
+     *
+     * <p>Derselbe Weg wie {@link #sendDirectMessage} - {@code POST} auf
+     * {@code /channels/{id}/messages} - nur ohne den vorgeschalteten Schritt,
+     * der dort erst einen DM-Kanal oeffnet: Dieser Kanal existiert bereits.</p>
+     *
+     * <p><b>Der Unterschied zu {@link #sendDirectMessage}: hier wird nichts
+     * geschluckt.</b> Dort ist ein Fehlschlag hinnehmbar, weil ein Nutzer
+     * Direktnachrichten abgeschaltet haben darf und der Zeitplan weiterlaufen
+     * soll. Hier haengt am Ergebnis, ob ein Ping als abgesetzt gilt. Wer einen
+     * Fehlschlag in ein {@code false} einebnet, laedt den Aufrufer dazu ein, ihn
+     * zu uebersehen - und dann steht in der Datenbank eine Flotte, von der der
+     * Kanal nie erfahren hat.</p>
+     *
+     * <p>{@code allowed_mentions} ist ein Pflichtparameter und kein Feld mit
+     * Vorgabe. Zur Begruendung siehe {@link DiscordErwaehnungen} - kurz: fehlt
+     * das Feld, entscheidet der Fliesstext, wer geweckt wird.</p>
+     *
+     * @return die Discord-Nachrichten-ID; ohne sie liesse sich die Nachricht nie
+     *     wieder aendern oder absagen
+     * @throws IllegalStateException wenn kein Kanal konfiguriert ist. Ein
+     *     Aufrufer, der {@link #istPingKanalKonfiguriert()} uebergeht, hat einen
+     *     Programmierfehler und keinen Betriebszustand.
+     * @throws org.springframework.web.client.RestClientException wenn Discord
+     *     ablehnt - dem Bot fehlt ein Recht im Kanal, oder er bremst.
+     */
+    public String posteInKanal(String content, DiscordErwaehnungen erwaehnungen) {
+        String id = pflichtKanal();
+        Objects.requireNonNull(erwaehnungen, "allowed_mentions ist Pflicht - siehe DiscordErwaehnungen.");
+
+        GesendeteNachricht antwort = mitGeduld(() -> botClient.post()
+                .uri("/channels/{id}/messages", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(nachrichtenKoerper(content, erwaehnungen))
+                .retrieve()
+                .body(GesendeteNachricht.class));
+
+        if (antwort == null || antwort.id() == null || antwort.id().isBlank()) {
+            // Discord liefert die ID immer. Kaeme sie doch nicht, waere die
+            // Nachricht zwar im Kanal, aber fuer immer unerreichbar - das muss
+            // der Aufrufer als Fehlschlag sehen und nicht als halben Erfolg.
+            throw new IllegalStateException(
+                    "Discord hat die Nachricht angenommen, aber keine Nachrichten-ID geliefert.");
+        }
+        return antwort.id();
+    }
+
+    /**
+     * Schreibt eine bereits gepostete Nachricht um.
+     *
+     * <p>{@code PATCH} auf dieselbe Nachricht und nicht eine zweite daneben: Die
+     * Korrektur steht damit an genau der Stelle, an der jemand den Ping gelesen
+     * hat. Zwei Nachrichten im Kanal waeren zwei Wahrheiten, und wer nur die
+     * erste sieht, fliegt zu einer Flotte, die es nicht mehr gibt.</p>
+     *
+     * <p>Ein {@code PATCH} loest in Discord <b>keine</b> neue Benachrichtigung
+     * aus, auch nicht mit erlaubten Erwaehnungen. Das ist der Grund, warum eine
+     * Absage niemanden zweimal weckt - und zugleich die Grenze des Verfahrens:
+     * Wer den Kanal nicht noch einmal ansieht, erfaehrt die Absage nicht. Der
+     * Preis ist bewusst gezahlt; ein zweites {@code @here} fuer eine <em>nicht</em>
+     * stattfindende Flotte waere die schlechtere Stoerung.</p>
+     *
+     * <p>{@code allowed_mentions} wird trotzdem mitgeschickt: Es entscheidet
+     * auch beim Aendern darueber, welche Erwaehnungen Discord im neuen Text
+     * ueberhaupt aufloest.</p>
+     */
+    public void aendereImKanal(String messageId, String content, DiscordErwaehnungen erwaehnungen) {
+        String id = pflichtKanal();
+        Objects.requireNonNull(messageId, "Ohne Nachrichten-ID gibt es nichts zu aendern.");
+        Objects.requireNonNull(erwaehnungen, "allowed_mentions ist Pflicht - siehe DiscordErwaehnungen.");
+
+        mitGeduld(() -> botClient.patch()
+                .uri("/channels/{kanal}/messages/{nachricht}", id, messageId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(nachrichtenKoerper(content, erwaehnungen))
+                .retrieve()
+                .toBodilessEntity());
+    }
+
+    /**
+     * Der Rumpf jeder ausgehenden Kanalnachricht.
+     *
+     * <p>Eine Stelle, an der {@code allowed_mentions} gesetzt wird, und keine
+     * zweite. Zwei Baustellen fuer denselben Rumpf hiessen: eine davon vergisst
+     * das Feld irgendwann, und zwar die, die spaeter dazukommt.</p>
+     */
+    private Map<String, Object> nachrichtenKoerper(String content, DiscordErwaehnungen erwaehnungen) {
+        Map<String, Object> koerper = new HashMap<>();
+        koerper.put("content", content == null ? "" : content);
+        koerper.put("allowed_mentions", erwaehnungen.alsKoerperFeld());
+        return koerper;
+    }
+
+    private String pflichtKanal() {
+        if (pingKanalId.isBlank()) {
+            throw new IllegalStateException(
+                    "Es ist kein Flotten-Ping-Kanal konfiguriert (discord.fleet-ping-channel-id).");
+        }
+        return pingKanalId;
     }
 }

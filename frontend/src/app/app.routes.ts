@@ -4,6 +4,8 @@ import { authGuard, roleGuard } from './core/auth/auth.guard';
 /** Wer die Rechteverwaltung öffnen darf - dieselbe Grenze wie im Server. */
 const LEADERSHIP_OR_IT = ['ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN'];
 
+const FLEET_STAFF = ['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_69', 'ROLE_1337', 'ROLE_A38'];
+
 export const routes: Routes = [
   { path: '', redirectTo: 'home', pathMatch: 'full' },
   {
@@ -61,6 +63,14 @@ export const routes: Routes = [
     path: 'admin/navigation',
     canActivate: [roleGuard(LEADERSHIP_OR_IT)],
     loadComponent: () => import('./core/components/navigation-admin/navigation-admin.component').then(m => m.NavigationAdminComponent)
+  },
+  {
+    // Eigener Punkt in der Seitenleiste, nicht nur ein Reiter im Fleet
+    // Manager. Dieselbe Komponente in beiden Rollen - so wie es
+    // 'fleet/doctrines' mit den Doktrinen schon macht.
+    path: 'fleet/ping',
+    canActivate: [roleGuard(FLEET_STAFF)],
+    loadComponent: () => import('./core/components/fleet-ping/fleet-ping.component').then(m => m.FleetPingComponent)
   },
   {
     path: 'fleet/doctrines',

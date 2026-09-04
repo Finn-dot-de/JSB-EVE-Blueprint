@@ -1,5 +1,7 @@
 package com.eve.own.auth.backend.common;
 
+import com.eve.own.auth.backend.domain.fleet.service.FleetPingAbgeschaltetException;
+import com.eve.own.auth.backend.domain.fleet.service.FleetPingWartezeitException;
 import com.eve.own.auth.backend.esi.EsiAccessDeniedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -52,6 +54,39 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleEsiAccessDenied(EsiAccessDeniedException e) {
         log.info("ESI verweigert den Zugriff: {}", e.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ApiError(e.getMessage()));
+    }
+
+    /**
+     * Eine Funktion ist nicht eingerichtet - derzeit die Flotten-Pings ohne
+     * Discord-Kanal.
+     *
+     * <p>Ausdruecklich <b>503</b> und nicht die 500, die der Auffangbehandler
+     * daraus machte: Die Anwendung ist in Ordnung, es fehlt eine
+     * Umgebungsvariable. Als 500 liefe der Fehlerzaehler mit, im Protokoll
+     * stuende ein Stacktrace, und wer ihn untersucht, suchte den Fehler im Code
+     * statt in der Konfiguration. Die Meldung geht unveraendert nach aussen,
+     * weil sie genau sagt, welche Variable fehlt.</p>
+     */
+    @ExceptionHandler(FleetPingAbgeschaltetException.class)
+    public ResponseEntity<ApiError> handleAbgeschaltet(FleetPingAbgeschaltetException e) {
+        log.info("Abgeschaltete Funktion angefragt: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(new ApiError(e.getMessage()));
+    }
+
+    /**
+     * Eine Bremse hat gegriffen - derzeit die Wartezeit zwischen zwei
+     * Flotten-Pings.
+     *
+     * <p><b>429</b> und nicht die 500, die eine {@code IllegalStateException}
+     * ergaebe: Die Bremse hat funktioniert, wie sie soll. Als Serverfehler
+     * gemeldet liefe der Fehlerzaehler mit, und der Aufrufer wuesste nicht, ob
+     * seine Aktion nun ausgefuehrt wurde oder nicht - bei einem Ping die
+     * wichtigste aller Fragen.</p>
+     */
+    @ExceptionHandler(FleetPingWartezeitException.class)
+    public ResponseEntity<ApiError> handleWartezeit(FleetPingWartezeitException e) {
+        log.debug("Wartezeit greift: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(new ApiError(e.getMessage()));
     }
 
     /**

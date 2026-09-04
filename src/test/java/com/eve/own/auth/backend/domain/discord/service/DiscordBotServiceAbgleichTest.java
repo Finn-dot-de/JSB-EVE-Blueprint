@@ -65,7 +65,7 @@ class DiscordBotServiceAbgleichTest {
         private Instant uhr = Instant.now();
 
         PruefbarerBot(RestClient.Builder builder) {
-            super(builder, "token", GUILD, "cid", "secret");
+            super(builder, "token", GUILD, "cid", "secret", "");
         }
 
         @Override

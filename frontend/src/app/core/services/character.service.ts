@@ -37,8 +37,8 @@ export interface CorpStatsDto {
   registeredMains: number;
   registeredAlts: number;
   totalRegisteredChars: number;
-  authedMembers: AuthedMainDto[];       // <-- NEU
-  unauthedMembers: UnauthedCharDto[];   // <-- NEU
+  authedMembers: AuthedMainDto[];     
+  unauthedMembers: UnauthedCharDto[]; 
 }
 
 export interface AdminAccountCharDto {

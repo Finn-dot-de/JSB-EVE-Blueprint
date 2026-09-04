@@ -38,7 +38,7 @@ class DiscordBotServiceIstZustandTest {
     private DiscordBotService dienst() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        return new DiscordBotService(builder, "token", GUILD, "cid", "secret");
+        return new DiscordBotService(builder, "token", GUILD, "cid", "secret", "");
     }
 
     @Test

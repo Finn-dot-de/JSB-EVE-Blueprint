@@ -43,6 +43,11 @@ describe('Routen', () => {
     'admin/navigation',
     'admin/discord',
     'charlink/alt-suggestions',
+    // Als Reiter im Fleet Manager schuetzte `canPing` die Ping-Oberflaeche.
+    // Die eigene Route umgeht das, also braucht sie ihren eigenen Waechter -
+    // sonst bekaeme jeder Angemeldete das Formular und erfuehre erst beim
+    // Absenden, dass er nicht darf.
+    'fleet/ping',
   ];
 
   it('leitet die Wurzel auf die Startseite um', () => {

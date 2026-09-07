@@ -7,6 +7,11 @@
     <button class="tab-btn" [class.active]="activeTab() === 'FLEETS'" (click)="setTab('FLEETS')">
       <i class="fa-solid fa-satellite-dish"></i> Aktive Flotten
     </button>
+    @if (canSeeStats) {
+      <button class="tab-btn" [class.active]="activeTab() === 'STATS'" (click)="setTab('STATS')">
+        <i class="fa-solid fa-chart-simple"></i> FAT-Statistik
+      </button>
+    }
     @if (canSeeReadiness) {
       <button class="tab-btn" [class.active]="activeTab() === 'DOCTRINES'" (click)="setTab('DOCTRINES')">
         <i class="fa-solid fa-book"></i> Gespeicherte Doktrinen
@@ -188,6 +193,246 @@
         <p>In diesem Monat gab es noch keine Flottenaktivität.</p>
       </div>
     }
+  }
+
+  <!-- ======================== FAT-STATISTIK ======================== -->
+  @if (activeTab() === 'STATS' && canSeeStats) {
+    <div class="fat">
+
+      <!-- Zeitraumwahl. Kein "seit Anbeginn": die Zahl wuerde mit jedem Monat
+           traeger, und wer die Gesamthistorie will, will einen Export. -->
+      <div class="fat-zeitraum">
+        <span class="fat-zeitraum-titel">Zeitraum</span>
+        @for (tage of zeitraeume; track tage) {
+          <button class="chip" [class.aktiv]="statistikTage() === tage"
+                  [disabled]="loadingStatistik()" (click)="setStatistikTage(tage)">
+            {{ tage }} Tage
+          </button>
+        }
+        <button class="btn-icon fat-neu" title="Neu berechnen"
+                [disabled]="loadingStatistik()" (click)="loadStatistik()">
+          <i class="fa-solid fa-rotate" [class.fa-spin]="loadingStatistik()"></i>
+        </button>
+      </div>
+
+      @if (statistikFehler(); as fehler) {
+        <div class="hinweis fehler">
+          <i class="fa-solid fa-triangle-exclamation"></i> {{ fehler }}
+        </div>
+      }
+
+      @if (loadingStatistik() && !statistik()) {
+        <div class="fat-laedt">
+          <i class="fa-solid fa-spinner fa-spin"></i> Die Flotten des Zeitraums werden ausgewertet…
+        </div>
+      }
+
+      @if (statistik(); as s) {
+
+        <!-- ---------- DIE HAUPTAUSSAGE ----------
+             Ein Satz zuoberst, der sagt, ob die Zahlen darunter ueberhaupt
+             etwas bedeuten. Ohne ihn muesste der Leser die Fallzahlen selbst
+             gegen die Schwellen halten. -->
+        @if (leitsatz(); as satz) {
+          <div class="fat-leitsatz" [class.ist-leise]="satz.ton === 'leise'">
+            <i class="fa-solid"
+               [class.fa-comment]="satz.ton === 'leise'"
+               [class.fa-circle-check]="satz.ton === 'ruhig'"></i>
+            <div>
+              <p class="fat-leitsatz-text">{{ satz.text }}</p>
+              @if (satz.zusatz) {
+                <p class="fat-leitsatz-zusatz">{{ satz.zusatz }}</p>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- ---------- Die Grundlage ----------
+             Zuoberst und nicht im Fusstext: Jede Quote weiter unten bezieht
+             sich auf diese Flottenzahl. -->
+        <div class="kennzahlen">
+          <div class="kennzahl">
+            <strong>{{ s.kopf.flotten }}</strong>
+            <span>Flotten in {{ s.zeitraum.tageAusgewertet }} Tagen</span>
+          </div>
+          <!-- Zwei Zahlen, wo frueher eine stand: Die Tafel zaehlt je Account,
+               und eine Zahl, die ihre Einheit wechselt, ohne dass die
+               Beschriftung mitgeht, ist eine stille Falschaussage. Der
+               Abstand zwischen beiden ist ausserdem die einzige Stelle, an
+               der sichtbar wird, wie stark hier multiboxt wird. -->
+          <div class="kennzahl">
+            <strong>{{ s.kopf.accounts }}</strong>
+            <span>Accounts (Main + Alts)</span>
+          </div>
+          <div class="kennzahl">
+            <strong>{{ s.kopf.charaktere }}</strong>
+            <span>Charaktere dahinter</span>
+          </div>
+          <div class="kennzahl">
+            <strong>{{ s.kopf.fcs }}</strong>
+            <span>{{ s.kopf.fcs === 1 ? 'FC' : 'FCs' }}</span>
+          </div>
+          <div class="kennzahl">
+            <!-- Kein Prozentwert, und keine Nebensaechlichkeit: Bei einer
+                 LINK-Flotte steht nur in der Teilnahmetafel, wer den Link
+                 geklickt hat. Je kleiner diese Zahl, desto mehr misst die
+                 Tafel das Klicken und nicht das Fliegen. -->
+            <strong>{{ s.kopf.liveAnteil.zaehler }} <em>von {{ s.kopf.liveAnteil.nenner }}</em></strong>
+            <span>mit ESI-Erfassung (LIVE)</span>
+          </div>
+        </div>
+
+        <p class="fat-fussnote">
+          @if (s.kopf.doktrin.gereiht) {
+            Häufigste Doktrin-Angabe: <strong>{{ s.kopf.doktrin.haeufigste }}</strong>
+            ({{ s.kopf.doktrin.anteil.zaehler }} von {{ s.kopf.doktrin.anteil.nenner }} Flotten)
+            · ohne Angabe: {{ s.kopf.doktrin.ohneAngabe }}
+          } @else if (s.kopf.doktrin.hinweis) {
+            {{ s.kopf.doktrin.hinweis }}
+          }
+        </p>
+
+        @if (s.zeitraum.hinweis && leitsatz()?.zusatz !== s.zeitraum.hinweis) {
+          <div class="hinweis leise">
+            <i class="fa-solid fa-circle-info"></i> {{ s.zeitraum.hinweis }}
+          </div>
+        }
+
+        <!-- ---------- Leerzustand ----------
+             Nicht "keine Daten", sondern welcher der drei Gruende es ist. -->
+        @if (leerGrund(); as grund) {
+          <div class="fat-leer">
+            <i class="fa-solid fa-inbox fa-2x"></i>
+            <p>{{ grund }}</p>
+          </div>
+        } @else {
+
+          <!-- ---------- Teilnahme je Account ----------
+               Die Tafel selbst - ein Nachschlagewerk und keine Bestenliste.
+               Gezaehlt wird je ACCOUNT: Wer drei Alts in dieselbe Flotte
+               bringt, war einmal dabei. Sonst misst die Tafel Multiboxing
+               statt Beteiligung, und die Rangfolge waere die Anzahl der
+               Bildschirme.
+               Ohne Quotenspalte: Jeder Nenner waere entweder unfair (die
+               Gesamtzahl des Fensters) oder zirkulaer (ab seiner ersten
+               Flotte). Absolute Zahl plus erste und letzte Flotte - dann
+               sieht der Leser selbst, ob "4" wenig ist oder alles, was in
+               zwei Wochen ging. -->
+          <section class="surface-panel fat-panel">
+            <div class="fat-panel-kopf">
+              <div>
+                <h3><i class="fa-solid fa-list"></i> Teilnahme je Account</h3>
+                <p class="fat-frage">
+                  Ein Account ist eine Teilnahme - wer mit drei Alts dabei war, zählt einmal.
+                </p>
+              </div>
+              <button class="btn-secondary" (click)="toggleTeilnahmeSortierung()">
+                <i class="fa-solid fa-arrow-down-a-z"></i>
+                {{ teilnahmeSortierung() === 'NAME' ? 'nach Name' : 'nach Flotten' }}
+              </button>
+            </div>
+
+            <!-- &#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45; Der Vorbehalt, ohne den die Tafel genauer aussieht,
+                 als sie ist &#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;&#45;
+                 Die Gruppierung ist nur so gut wie die CharLink-Daten. Ein
+                 Alt, der nicht mit seinem Main verbunden ist, bekommt hier
+                 weiterhin eine eigene Zeile - und dann stimmt die Tafel
+                 genau fuer die Leute nicht, um deretwillen sie umgebaut
+                 wurde. Der Satz kommt fertig vom Server, damit dieselbe
+                 Aussage nicht an zwei Stellen steht und auseinanderdriftet.
+            @if (s.teilnahme.hinweis) {
+              <div class="hinweis leise fat-verbindung">
+                <i class="fa-solid fa-link-slash"></i>
+                <span>
+                  {{ s.teilnahme.hinweis }}
+                  @if (s.teilnahme.ohneVerbindung.zaehler > 0) {
+                    <a routerLink="/charlink/alt-suggestions">Zur Alt-Erkennung</a>
+                  }
+                </span>
+              </div>
+            }-->
+
+            @if (teilnahmeZeilen().length > 0) {
+              <table class="eve-table">
+                <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Flotten</th>
+                  <th>erste</th>
+                  <th>letzte</th>
+                </tr>
+                </thead>
+                <tbody>
+                  @for (zeile of teilnahmeZeilen(); track zeile.accountId) {
+                    <tr>
+                      <td>
+                        <!-- Aufklappbar und nicht immer sichtbar: Neben jedem
+                             Namen drei weitere zu fuehren macht das
+                             Nachschlagewerk unlesbar. Aufgeklappt beantwortet
+                             die Zeile die einzige Frage, die ein Direktor an
+                             eine Gruppierung hat - wer da geflogen ist. -->
+                        <button class="fat-namensknopf" (click)="toggleCharaktere(zeile.accountId)"
+                                [attr.aria-expanded]="zeigtCharaktere(zeile.accountId)">
+                          <i class="fa-solid fa-caret-right"
+                             [class.fa-rotate-90]="zeigtCharaktere(zeile.accountId)"></i>
+                          {{ nameOf(zeile) }}
+                          @if (zeile.charaktere.length > 1) {
+                            <span class="fat-charzahl">+{{ zeile.charaktere.length - 1 }}</span>
+                          }
+                          @if (!zeile.verbunden) {
+                            <!-- Kein Vorwurf, ein Vorbehalt: Diese Zeile kann
+                                 ein Einzelchar-Spieler sein oder ein Alt, der
+                                 nie verknuepft wurde. -->
+                            <i class="fa-solid fa-link-slash fat-unverbunden"
+                               title="Das Auth kennt zu diesem Account nur einen Charakter."></i>
+                          }
+                        </button>
+                        @if (zeigtCharaktere(zeile.accountId)) {
+                          <p class="fat-charaktere">{{ zeile.charaktere.join(', ') }}</p>
+                        }
+                      </td>
+                      <td class="fat-zahl">{{ zeile.flotten }}</td>
+                      <td>{{ zeile.ersteFlotte | date:'dd.MM.yy' }}</td>
+                      <td>{{ zeile.letzteFlotte | date:'dd.MM.yy' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+
+            @if (s.teilnahme.einmalige.length > 0) {
+              <button class="btn-secondary fat-aufklapp" (click)="toggleEinmalige()">
+                <i class="fa-solid" [class.fa-chevron-down]="!einmaligeGezeigt()"
+                   [class.fa-chevron-up]="einmaligeGezeigt()"></i>
+                {{ s.teilnahme.einmalige.length }}
+                {{ s.teilnahme.einmalige.length === 1 ? 'Account' : 'Accounts' }} mit einer Flotte
+              </button>
+
+              @if (einmaligeGezeigt()) {
+                <table class="eve-table">
+                  <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Charaktere</th>
+                    <th>dabei am</th>
+                  </tr>
+                  </thead>
+                  <tbody>
+                    @for (zeile of s.teilnahme.einmalige; track zeile.accountId) {
+                      <tr>
+                        <td>{{ nameOf(zeile) }}</td>
+                        <td class="fat-charaktere">{{ zeile.charaktere.join(', ') }}</td>
+                        <td>{{ zeile.letzteFlotte | date:'dd.MM.yy' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              }
+            }
+          </section>
+        }
+      }
+    </div>
   }
 
   <!-- ======================== GESPEICHERTE DOKTRINEN ======================== -->

@@ -5,13 +5,23 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 import java.time.Instant;
 
+/**
+ * Eine erfasste Flotte.
+ *
+ * <p>Der Index auf {@code start_time} ist die einzige Bedingung, nach der
+ * diese Tabelle je gefiltert wird - vom 10-Sekunden-Poll des FLEETS-Reiters
+ * ebenso wie von der FAT-Statistik ueber ein Quartal. Ohne ihn ist beides ein
+ * vollstaendiger Durchlauf.</p>
+ */
 @Entity
-@Table(name = "fleet_events")
+@Table(name = "fleet_events",
+        indexes = @Index(name = "idx_fleet_event_start", columnList = "start_time"))
 @Getter
 @Setter
 public class FleetEvent {

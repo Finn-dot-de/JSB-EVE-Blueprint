@@ -1,0 +1,327 @@
+// Die FAT-Statistik - der fuenfte Reiter des Fleet Managers.
+//
+// Ein eigenes Blatt und nicht unten an fleet-manager.component.scss angehaengt:
+// Die Komponente traegt schon vier Reiter, und ihr Blatt lag mit gut 19 kB knapp
+// unter der Budgetgrenze von 20 kB aus angular.json. Zusammen waeren es 23,66 kB
+// gewesen - der Bau haette gewarnt, und die Antwort darauf waere gewesen,
+// entweder das Budget zu heben oder Regeln zu streichen, die gebraucht werden.
+// Getrennt bleibt jedes Blatt unter der Grenze.
+//
+// Woertlich uebernommen, nicht neu erfunden: .hinweis, .chip und .eve-table aus
+// academy.component.scss, .kennzahlen/.kennzahl aus industry.component.scss.
+// Global ist im Projekt nur .surface-panel - jede Komponente fuehrt ihre
+// Bausteine selbst.
+//
+// Keine Diagramm-Bibliothek und kein einziger Balken: Die Seite zeigt Zahlen,
+// und "7 von 9" steht als Text da.
+
+.fat {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+// ---------- Zeitraumwahl ----------
+
+.fat-zeitraum {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fat-zeitraum-titel {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 0.25rem;
+}
+
+.fat-neu {
+  margin-left: auto;
+  background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  color: var(--text-secondary);
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.fat-laedt {
+  padding: 2.5rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+// ---------- Die Hauptaussage ----------
+// Sie steht über der Tafel und ist in fünf Sekunden gelesen: ob die Zahlen
+// darunter überhaupt etwas bedeuten.
+
+.fat-leitsatz {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1.15rem 1.35rem;
+  border-radius: 8px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--success-color);
+  color: var(--success-color);
+
+  > i { font-size: 1.35rem; line-height: 1.5; }
+
+  // Die einzige Abweichung vom Grundton: Die Grundlage trägt nicht. Rot gibt
+  // es hier nicht - nichts auf dieser Seite ist ein Befund über eine Person.
+  &.ist-leise {
+    border-left-color: var(--text-secondary);
+    color: var(--text-secondary);
+  }
+}
+
+.fat-leitsatz-text {
+  margin: 0;
+  font-size: 1.12rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.fat-leitsatz-zusatz {
+  margin: 0.35rem 0 0;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+
+// ---------- Kennzahlen (aus industry.component.scss) ----------
+
+.kennzahlen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem;
+}
+
+.kennzahl {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+
+  strong {
+    display: block;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+
+  // "7 von 9": Der Nenner steht im selben Element wie der Zähler und nicht in
+  // einer Legende - getrennt geht er beim Lesen verloren, und übrig bliebe
+  // eine Zahl, die sich für eine Aussage hält.
+  em {
+    font-style: normal;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+  }
+
+  span {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+}
+
+// ---------- Hinweise (aus academy.component.scss) ----------
+
+.hinweis {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+
+  &.fehler {
+    color: var(--danger-color);
+    background-color: color-mix(in srgb, var(--danger-color) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger-color) 35%, transparent);
+  }
+
+  &.leise {
+    color: var(--text-secondary);
+    background-color: color-mix(in srgb, var(--text-secondary) 8%, transparent);
+  }
+}
+
+// ---------- Die Tafel ----------
+
+.fat-panel {
+  padding: 1.25rem 1.4rem;
+
+  h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1.05rem;
+    color: var(--text-primary);
+    font-weight: 500;
+
+    i { color: var(--accent-color); margin-right: 0.5rem; }
+  }
+}
+
+.fat-panel-kopf {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+// Wofuer die Tafel da ist - nicht, was in ihr steht.
+.fat-frage {
+  margin: 0 0 1rem;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+
+.fat-fussnote {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+
+  &:empty { display: none; }
+}
+
+.fat-leer {
+  padding: 3rem 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+
+  i { opacity: 0.4; margin-bottom: 1rem; }
+  p { margin: 0 auto; max-width: 55ch; line-height: 1.6; }
+}
+
+.fat-aufklapp {
+  margin-top: 0.85rem;
+  width: 100%;
+  justify-content: center;
+}
+
+// ---------- Tabellen (aus academy.component.scss) ----------
+
+.eve-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-primary);
+
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--text-secondary) 12%, transparent);
+    font-size: 0.9rem;
+  }
+}
+
+.fat-zahl {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+// ---------- Je Account statt je Charakter ----------
+// Der Vorbehalt zur Gruppierung. Er steht ueber der Tafel und nicht als
+// Fussnote darunter: Wer die Tabelle liest, ohne zu wissen, dass ein nicht
+// verknuepfter Alt darin eine eigene Zeile hat, liest sie falsch. Bewusst in
+// .leise und nicht in Rot - es ist kein Fehler, sondern eine Grenze der Daten.
+.fat-verbindung {
+  align-items: flex-start;
+  line-height: 1.5;
+
+  a {
+    color: var(--accent-color);
+    margin-left: 0.4rem;
+    white-space: nowrap;
+  }
+}
+
+// Der Name als Schaltflaeche: dieselbe Zeile, nur aufklappbar. Sie sieht
+// deshalb aus wie Text und nicht wie ein Knopf - ein Knopf neben jedem Namen
+// machte aus dem Nachschlagewerk ein Bedienfeld.
+.fat-namensknopf {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+
+  i { color: var(--text-secondary); font-size: 0.75rem; transition: transform 0.15s; }
+
+  &:hover { color: var(--accent-color); }
+}
+
+// "+2" statt der Namen: Die Zahl passt in die Zeile, die Namen nicht.
+.fat-charzahl {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+// Der einzelne Charakter ohne Verknuepfung. Kein Rot: Er kann ein
+// Einzelchar-Spieler sein und ist dann voellig richtig gezaehlt.
+.fat-unverbunden {
+  opacity: 0.55;
+}
+
+.fat-charaktere {
+  margin: 0.3rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+// ---------- Chips (aus academy.component.scss) ----------
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 35%, transparent);
+  color: var(--accent-color);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+
+  &:hover { border-color: var(--accent-color); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  // Schrift in --accent-contrast und NIE in #fff - im MA-Thema läge die
+  // Beschriftung sonst bei 2,8:1.
+  &.aktiv {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: var(--accent-contrast);
+    font-weight: 600;
+  }
+}

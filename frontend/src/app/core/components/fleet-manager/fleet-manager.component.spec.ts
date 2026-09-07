@@ -8,6 +8,80 @@ import { FleetService } from '../../services/fleet.service';
 import { ReadinessService } from '../../services/readiness.service';
 import { ToastService } from '../../services/toast.service';
 import { AccountReadinessDto, DoctrineReadinessDto } from '../../services/readiness.service';
+import {
+  AccountZeile,
+  Anteil,
+  FatStatistik,
+  FleetStatisticsService,
+} from '../../services/fleet-statistics.service';
+
+/** Eine Quote, wie der Server sie liefert: Zähler und Nenner, nie ein Prozentwert. */
+function anteil(zaehler: number, nenner: number): Anteil {
+  return { zaehler, nenner };
+}
+
+/**
+ * Eine Zeile der Tafel - ein Account, nicht ein Charakter.
+ *
+ * <p>`name` ist der des Mains; `charaktere` sind die, die tatsächlich geflogen
+ * sind. Beides kann auseinanderfallen, und genau das prüfen die Tests unten.</p>
+ */
+function konto(name: string, flotten: number, over: Partial<AccountZeile> = {}): AccountZeile {
+  return {
+    accountId: name.length * 100 + flotten,
+    name,
+    charaktere: [name],
+    flotten,
+    ersteFlotte: '2026-06-10T18:00:00Z',
+    letzteFlotte: '2026-09-01T18:00:00Z',
+    verbunden: true,
+    ...over,
+  };
+}
+
+/**
+ * Eine tragfähige Statistik als Ausgangspunkt.
+ *
+ * <p>Jeder Test verändert davon genau das, worum es ihm geht. So steht in jedem
+ * Test nur die eine Abweichung, die die Aussage trägt.</p>
+ */
+function statistik(over: Partial<FatStatistik> = {}): FatStatistik {
+  return {
+    zeitraum: {
+      tageGewaehlt: 90,
+      tageAusgewertet: 90,
+      von: '2026-06-08T00:00:00Z',
+      bis: '2026-09-06T00:00:00Z',
+      ersteFlotteInsgesamt: '2026-05-01T18:00:00Z',
+      tageMitDaten: 90,
+      gekuerzt: false,
+      hinweis: null,
+    },
+    kopf: {
+      flotten: 40,
+      accounts: 22,
+      charaktere: 37,
+      fcs: 4,
+      liveAnteil: anteil(31, 40),
+      doktrin: {
+        gereiht: true,
+        haeufigste: 'Ferox',
+        anteil: anteil(11, 40),
+        ohneAngabe: 12,
+        hinweis: null,
+      },
+    },
+    auswertbar: true,
+    hinweis: null,
+    teilnahme: {
+      zeilen: [konto('Zeta Pilot', 12), konto('Alpha Pilot', 20), konto('Mitte Pilot', 12)],
+      einmalige: [konto('Gast Eins', 1), konto('Gast Zwei', 1)],
+      ohneVerbindung: anteil(3, 22),
+      hinweis: 'Bei 3 von 22 Accounts kennt das Auth nur einen einzigen Charakter.',
+    },
+    ...over,
+  };
+}
 
 /** Ein Account, wie ihn das Readiness-Board liefert. */
 function account(mainName: string, characterNames: string[] = []): AccountReadinessDto {
@@ -84,6 +158,7 @@ describe('FleetManagerComponent', () => {
   let toastService: Record<string, ReturnType<typeof vi.fn>>;
   let confirmService: { ask: ReturnType<typeof vi.fn> };
   let authService: { hasAnyRole: ReturnType<typeof vi.fn> };
+  let statisticsService: { statistik: ReturnType<typeof vi.fn> };
   let clipboard: { writeText: ReturnType<typeof vi.fn> };
 
   const fleet = { id: 55, fleetName: 'Roam', trackingType: 'LIVE', trackingCode: 'abc' };
@@ -106,6 +181,7 @@ describe('FleetManagerComponent', () => {
     toastService = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
     confirmService = { ask: vi.fn().mockResolvedValue(true) };
     authService = { hasAnyRole: vi.fn().mockReturnValue(true) };
+    statisticsService = { statistik: vi.fn().mockReturnValue(of(statistik())) };
 
     clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
     vi.stubGlobal('navigator', { clipboard });
@@ -118,6 +194,7 @@ describe('FleetManagerComponent', () => {
         { provide: ToastService, useValue: toastService },
         { provide: ConfirmService, useValue: confirmService },
         { provide: AuthService, useValue: authService },
+        { provide: FleetStatisticsService, useValue: statisticsService },
       ],
     });
     component = TestBed.runInInjectionContext(() => new FleetManagerComponent());
@@ -481,5 +558,387 @@ describe('FleetManagerComponent', () => {
       expect(component.isFleetCommander).toBe(true);
       expect(component.canSeeReadiness).toBe(true);
     });
+  });
+
+  /**
+   * Der Reiter FAT-Statistik.
+   *
+   * <p>Geprüft wird der Zustand, nicht das Aussehen: kein Fixture, keine
+   * DOM-Abfrage. Was hier zählt, ist ohnehin keine Frage der Darstellung,
+   * sondern eine der Redlichkeit - dass bei dünner Datenlage ein Satz dasteht
+   * und keine Quote, dass die Gästeliste zugeklappt beginnt und dass die Tafel
+   * als Nachschlagewerk öffnet und nicht als Bestenliste.</p>
+   */
+  describe('FAT-Statistik', () => {
+    it('lädt beim Wechsel auf den Reiter und füllt die Signale', () => {
+      component.setTab('STATS');
+
+      expect(statisticsService.statistik).toHaveBeenCalledWith(90);
+      expect(component.statistik()?.kopf.flotten).toBe(40);
+      expect(component.loadingStatistik()).toBe(false);
+      expect(component.statistikFehler()).toBeNull();
+    });
+
+    it('lädt nicht erneut, wenn die Zahlen schon dastehen', () => {
+      // Eine Quartalsauswertung ändert sich nicht beim Hin- und Herklicken.
+      component.setTab('STATS');
+      statisticsService.statistik.mockClear();
+
+      component.setTab('FLEETS');
+      component.setTab('STATS');
+
+      expect(statisticsService.statistik).not.toHaveBeenCalled();
+    });
+
+    it('rechnet den Reiter nicht im Sekundentakt nach', () => {
+      // Die Flottenliste wird gepollt, diese Seite nicht - sie flackerte sonst
+      // unter den Augen des Lesers, ohne dass sich etwas ändert.
+      component.ngOnInit();
+      component.setTab('STATS');
+      statisticsService.statistik.mockClear();
+
+      vi.advanceTimersByTime(60_000);
+
+      expect(statisticsService.statistik).not.toHaveBeenCalled();
+    });
+
+    it('lädt beim Zeitraumwechsel neu und merkt sich den gewählten Zeitraum', () => {
+      component.setTab('STATS');
+
+      component.setStatistikTage(30);
+
+      expect(component.statistikTage()).toBe(30);
+      expect(statisticsService.statistik).toHaveBeenLastCalledWith(30);
+    });
+
+    it('lädt nicht neu, wenn derselbe Zeitraum noch einmal geklickt wird', () => {
+      component.setTab('STATS');
+      statisticsService.statistik.mockClear();
+
+      component.setStatistikTage(90);
+
+      expect(statisticsService.statistik).not.toHaveBeenCalled();
+    });
+
+    it('klappt beim Zeitraumwechsel die Gästeliste wieder zu', () => {
+      // Ein anderer Zeitraum bringt eine andere Namensliste hervor. Die soll
+      // man aufschlagen, nicht vorfinden.
+      component.setTab('STATS');
+      component.toggleEinmalige();
+
+      component.setStatistikTage(180);
+
+      expect(component.einmaligeGezeigt()).toBe(false);
+    });
+
+    it('meldet einen Fehler und verwirft die alten Zahlen', () => {
+      // Zahlen aus einem anderen Zeitraum unter einer neuen Überschrift wären
+      // die schlimmere Auskunft als gar keine.
+      component.setTab('STATS');
+      expect(component.statistik()).not.toBeNull();
+
+      statisticsService.statistik.mockReturnValue(
+        throwError(() => ({ error: { message: 'Die FAT-Statistik sehen nur FCs und Direktoren.' } })),
+      );
+      component.setStatistikTage(30);
+
+      expect(toastService['error']).toHaveBeenCalledWith(
+        'Die FAT-Statistik sehen nur FCs und Direktoren.',
+      );
+      expect(component.statistikFehler()).toBe('Die FAT-Statistik sehen nur FCs und Direktoren.');
+      expect(component.statistik()).toBeNull();
+      expect(component.loadingStatistik()).toBe(false);
+    });
+
+    it('meldet auch einen Fehler ohne Text des Servers', () => {
+      statisticsService.statistik.mockReturnValue(throwError(() => new Error('offline')));
+
+      component.setTab('STATS');
+
+      expect(toastService['error']).toHaveBeenCalledWith(
+        'Die FAT-Statistik konnte nicht geladen werden.',
+      );
+      expect(component.statistikFehler()).not.toBeNull();
+    });
+
+    describe('Rechte', () => {
+      it('zeigt den Reiter nur der Flottenführung', () => {
+        expect(component.canSeeStats).toBe(true);
+        expect(authService.hasAnyRole).toHaveBeenCalledWith(
+          ['ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38'],
+        );
+      });
+
+      it('verbirgt den Reiter für alle anderen', () => {
+        authService.hasAnyRole.mockReturnValue(false);
+
+        expect(component.canSeeStats).toBe(false);
+      });
+
+      it('fragt genau den Rollenkreis des Servers ab, nicht den weiteren der Routen', () => {
+        // `AccessRules.FLEET_STAFF` im Server hat drei Rollen, die gleichnamige
+        // Konstante in app.routes.ts hat fünf. Der weitere Kreis hier hieße,
+        // dass ein CEO den Reiter sieht und beim Öffnen ein 403 bekommt.
+        authService.hasAnyRole.mockImplementation(
+          (rollen: string[]) => rollen.includes('ROLE_CEO'));
+
+        expect(component.canSeeStats).toBe(false);
+        expect(component.isFleetCommander).toBe(true);
+      });
+    });
+
+    describe('Die Hauptaussage', () => {
+      it('steht erst, wenn geladen ist', () => {
+        expect(component.leitsatz()).toBeNull();
+      });
+
+      it('nennt bei dünner Datenlage den Klartext statt einer Quote', () => {
+        // Der Kern dieser Seite: "2 Flotten, das reicht für keine Quote" ist
+        // eine bessere Auskunft als "100 %".
+        const satz = '3 Flotten seit dem 14.08. - zu wenig fuer eine Auswertung.';
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          auswertbar: false,
+          hinweis: satz,
+          kopf: {
+            ...statistik().kopf, flotten: 3, accounts: 5, charaktere: 9, fcs: 1,
+            liveAnteil: anteil(2, 3),
+          },
+        })));
+
+        component.setTab('STATS');
+
+        expect(component.leitsatz()?.text).toBe(satz);
+        expect(component.leitsatz()?.ton).toBe('leise');
+      });
+
+      it('nennt sonst nur die absoluten Zahlen der Kopfzeile', () => {
+        // Kein "alles in Ordnung": Diese Seite zählt Teilnahmen, sie misst
+        // nichts. Was hier steht, kann der Leser selbst nachzählen.
+        component.setTab('STATS');
+
+        expect(component.leitsatz()?.ton).toBe('ruhig');
+        expect(component.leitsatz()?.text)
+          .toBe('40 Flotten in 90 Tagen, 22 Accounts aus 37 Charakteren, 4 FCs.');
+        expect(component.leitsatz()?.zusatz).toBeNull();
+      });
+
+      it('reicht den Vorbehalt zur Spanne durch, statt ihn zu erfinden', () => {
+        const s = statistik();
+        const klammer = '90 Tage gewaehlt - Daten reichen 23 Tage zurueck.';
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          auswertbar: false,
+          hinweis: 'Zu wenig fuer eine Auswertung.',
+          zeitraum: { ...s.zeitraum, tageMitDaten: 23, hinweis: klammer },
+        })));
+
+        component.setTab('STATS');
+
+        expect(component.leitsatz()?.zusatz).toBe(klammer);
+      });
+    });
+
+    describe('Leerzustand', () => {
+      it('schweigt, solange es etwas zu zeigen gibt', () => {
+        component.setTab('STATS');
+
+        expect(component.leerGrund()).toBeNull();
+      });
+
+      it('unterscheidet: noch nie eine Flotte erfasst', () => {
+        const s = statistik();
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          auswertbar: false,
+          kopf: {
+            ...s.kopf, flotten: 0, accounts: 0, charaktere: 0, fcs: 0, liveAnteil: anteil(0, 0),
+          },
+          zeitraum: { ...s.zeitraum, ersteFlotteInsgesamt: null, tageMitDaten: null },
+        })));
+
+        component.setTab('STATS');
+
+        expect(component.leerGrund()).toContain('noch nie eine Flotte erfasst');
+      });
+
+      it('unterscheidet: keine im Fenster, ältere gibt es', () => {
+        // Hier hilft ein größerer Zeitraum - und genau das soll dastehen.
+        const s = statistik();
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          auswertbar: false,
+          kopf: {
+            ...s.kopf, flotten: 0, accounts: 0, charaktere: 0, fcs: 0, liveAnteil: anteil(0, 0),
+          },
+        })));
+
+        component.setTab('STATS');
+
+        expect(component.leerGrund()).toContain('größerer Zeitraum');
+      });
+
+      it('unterscheidet: Flotten ohne eine einzige Teilnahme', () => {
+        // Nicht das Fliegen ist das Problem, sondern die Erfassung.
+        const s = statistik();
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          kopf: { ...s.kopf, flotten: 6, accounts: 0, charaktere: 0, liveAnteil: anteil(6, 6) },
+        })));
+
+        component.setTab('STATS');
+
+        expect(component.leerGrund()).toContain('keine einzige erfasste Teilnahme');
+      });
+    });
+
+    describe('Zurückhaltung', () => {
+      it('hält die Accounts mit einer Flotte zugeklappt', () => {
+        component.setTab('STATS');
+
+        expect(component.einmaligeGezeigt()).toBe(false);
+        expect(component.statistik()?.teilnahme.einmalige).toHaveLength(2);
+
+        component.toggleEinmalige();
+        expect(component.einmaligeGezeigt()).toBe(true);
+      });
+
+      it('öffnet die Teilnahmetabelle nach Namen und nicht als Bestenliste', () => {
+        // Die Vorgabesortierung entscheidet, ob die Seite ein Nachschlagewerk
+        // ist oder eine Rangliste - und eine Rangliste hat immer ein unteres Ende.
+        component.setTab('STATS');
+
+        expect(component.teilnahmeSortierung()).toBe('NAME');
+        expect(component.teilnahmeZeilen().map(z => z.name))
+          .toEqual(['Alpha Pilot', 'Mitte Pilot', 'Zeta Pilot']);
+      });
+
+      it('sortiert auf Wunsch nach Flotten, bei Gleichstand nach Namen', () => {
+        component.setTab('STATS');
+
+        component.toggleTeilnahmeSortierung();
+
+        expect(component.teilnahmeSortierung()).toBe('FLOTTEN');
+        // 'Mitte Pilot' und 'Zeta Pilot' haben beide 12 - ohne den zweiten
+        // Vergleich spränge ihre Reihenfolge zwischen zwei Ladevorgängen.
+        expect(component.teilnahmeZeilen().map(z => z.name))
+          .toEqual(['Alpha Pilot', 'Mitte Pilot', 'Zeta Pilot']);
+        expect(component.teilnahmeZeilen()[0].flotten).toBe(20);
+      });
+
+      it('schaltet die Sortierung wieder zurück', () => {
+        component.toggleTeilnahmeSortierung();
+        component.toggleTeilnahmeSortierung();
+
+        expect(component.teilnahmeSortierung()).toBe('NAME');
+      });
+
+      it('kommt ohne geladene Zahlen mit einer leeren Tabelle zurecht', () => {
+        expect(component.teilnahmeZeilen()).toEqual([]);
+      });
+    });
+
+    /**
+     * Die Tafel zählt je Account. Was das Frontend davon tragen muss, ist
+     * nicht die Gruppierung selbst - die rechnet der Server -, sondern dass
+     * die Beschriftung mitgeht und der Vorbehalt sichtbar bleibt.
+     */
+    describe('Je Account', () => {
+      it('beschriftet die Kopfzahlen als Accounts und nennt die Charaktere daneben', () => {
+        // Eine Zahl, die ihre Einheit wechselt, ohne dass die Beschriftung
+        // mitgeht, ist eine stille Falschaussage: "37 Piloten" wäre nach dem
+        // Umbau falsch, "22 Accounts" allein verschwiege die 37 Fenster.
+        component.setTab('STATS');
+
+        expect(component.leitsatz()?.text).toContain('22 Accounts aus 37 Charakteren');
+      });
+
+      it('zählt im Singular richtig', () => {
+        const s = statistik();
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          kopf: { ...s.kopf, accounts: 1, charaktere: 1, fcs: 1 },
+        })));
+
+        component.setTab('STATS');
+
+        expect(component.leitsatz()?.text).toContain('1 Account aus 1 Charakter, 1 FC.');
+      });
+
+      it('reicht den Vorbehalt zur CharLink-Lage durch, statt ihn zu erfinden', () => {
+        // Die Gruppierung ist nur so gut wie die CharLink-Daten, und der Satz
+        // dazu kommt fertig vom Server. Hier zusammengesetzt stünde dieselbe
+        // Aussage an zwei Stellen und driftete auseinander.
+        component.setTab('STATS');
+
+        expect(component.statistik()?.teilnahme.hinweis).toContain('3 von 22');
+        expect(component.statistik()?.teilnahme.ohneVerbindung).toEqual(anteil(3, 22));
+      });
+
+      it('hält die Charakterliste einer Zeile zugeklappt und klappt sie einzeln auf', () => {
+        // Neben jedem Namen drei weitere zu führen macht das Nachschlagewerk
+        // unlesbar - aufgeklappt beantwortet die Zeile die einzige Frage, die
+        // ein Direktor an eine Gruppierung hat: wer da geflogen ist.
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          teilnahme: {
+            ...statistik().teilnahme,
+            zeilen: [konto('Haupt Charakter', 12, {
+              accountId: 5000,
+              charaktere: ['Erster Alt', 'Haupt Charakter', 'Zweiter Alt'],
+            })],
+          },
+        })));
+        component.setTab('STATS');
+
+        expect(component.zeigtCharaktere(5000)).toBe(false);
+
+        component.toggleCharaktere(5000);
+        expect(component.zeigtCharaktere(5000)).toBe(true);
+
+        component.toggleCharaktere(5000);
+        expect(component.zeigtCharaktere(5000)).toBe(false);
+      });
+
+      it('klappt beim Zeitraumwechsel die Charakterlisten wieder zu', () => {
+        // Ein anderer Zeitraum heißt andere Charaktere je Zeile. Eine offen
+        // gebliebene Zeile zeigte eine Liste, die zum neuen Zeitraum gar nicht
+        // gehört.
+        component.setTab('STATS');
+        component.toggleCharaktere(5000);
+
+        component.setStatistikTage(30);
+
+        expect(component.zeigtCharaktere(5000)).toBe(false);
+      });
+
+      it('sortiert nach dem Namen des Mains, auch wenn der selbst nie mitflog', () => {
+        // Der Name kommt aus `characters` und nicht aus den Teilnahmezeilen -
+        // sonst stünde hier der Alt, der zufällig zuerst beigetreten ist.
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          teilnahme: {
+            ...statistik().teilnahme,
+            zeilen: [
+              konto('Zeta Haupt', 3, { charaktere: ['Alpha Alt'] }),
+              konto('Alpha Haupt', 3, { charaktere: ['Zeta Alt'] }),
+            ],
+          },
+        })));
+        component.setTab('STATS');
+
+        expect(component.teilnahmeZeilen().map(z => z.name))
+          .toEqual(['Alpha Haupt', 'Zeta Haupt']);
+      });
+
+      it('sortiert eine Zeile ohne jeden Namen mit, statt daran zu scheitern', () => {
+        // Kennt das Auth den Account nicht und trug auch keine Teilnahmezeile
+        // einen Namen, bleibt das Feld leer. Ohne den Rückfall spränge das
+        // Sortieren mit einem Fehler heraus und die ganze Tafel bliebe leer.
+        statisticsService.statistik.mockReturnValue(of(statistik({
+          teilnahme: {
+            ...statistik().teilnahme,
+            zeilen: [konto('Alpha Haupt', 3), konto('x', 2, { name: null, charaktere: [] })],
+          },
+        })));
+        component.setTab('STATS');
+
+        expect(component.teilnahmeZeilen().map(z => component.nameOf(z)))
+          .toEqual(['Alpha Haupt', 'Unbekannt']);
+      });
+    });
+
   });
 });

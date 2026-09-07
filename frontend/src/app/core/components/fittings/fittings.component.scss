@@ -1,0 +1,58 @@
+/* Reiterleiste und Trennlinie wortgleich aus fleet-manager.component.scss. */
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 1.5rem 0 0.5rem 0;
+  &::before, &::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+  }
+  &::before { margin-right: 1.5rem; }
+  &::after { margin-left: 1.5rem; }
+}
+/* =========================================
+   TABS
+   ========================================= */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  &:hover { color: var(--text-primary); }
+  &.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+  }
+}
+
+/* Die Absage, wenn jemand ohne den Rollenkreis hier landet. Wortgleich der
+   .empty-state aus fleet-manager.component.scss - dieselbe Form fuer dieselbe
+   Aussage "hier steht nichts fuer dich". */
+.kein-zutritt {
+  text-align: center;
+  padding: 3.5rem 1rem;
+  color: var(--text-secondary);
+
+  i { opacity: 0.4; margin-bottom: 1rem; }
+  p { margin: 0 0 0.35rem 0; color: var(--text-primary); font-size: 1rem; }
+  span { font-size: 0.85rem; }
+}

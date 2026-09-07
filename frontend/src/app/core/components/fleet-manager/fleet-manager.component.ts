@@ -8,15 +8,6 @@ import { FleetService, FleetEvent, FleetAttendance } from '../../services/fleet.
 import { AuthService } from '../../services/auth.service';
 import { ToastService } from '../../services/toast.service';
 import { ConfirmService } from '../../services/confirm.service';
-import { DoctrinesComponent } from '../doctrines/doctrines.component';
-import {
-  ReadinessService,
-  CharacterReadinessDto,
-  DoctrineReadinessDto,
-  FitReadinessDto,
-  SandboxResultDto,
-  AccountReadinessDto
-} from '../../services/readiness.service';
 import {
   FleetStatisticsService,
   FatStatistik,
@@ -26,12 +17,17 @@ import {
   ZEITRAUM_VORGABE,
   ZeitraumTage
 } from '../../services/fleet-statistics.service';
-import { formatNumber } from '../../shared/eve-format.util';
-import { handlePortraitError, handleTypeImageError, portrait } from '../../shared/eve-image.util';
+import { portrait } from '../../shared/eve-image.util';
 import { copyText } from '../../shared/clipboard.util';
-import { toPlanLines, toSkillPlanText } from '../../shared/skill-plan.util';
 
-type TabId = 'FLEETS' | 'STATS' | 'DOCTRINES' | 'BOARD' | 'SANDBOX';
+/**
+ * Die zwei Reiter dieser Seite.
+ *
+ * <p>Gespeicherte Doktrinen, Readiness Board und Sandbox standen einmal
+ * daneben. Sie sind nach "Fittings und Doktrinen" gezogen: Sie beantworten
+ * "was fliegen wir und wer kann es" und nicht "wer war dabei".</p>
+ */
+type TabId = 'FLEETS' | 'STATS';
 
 /**
  * Der eine Satz, der ganz oben steht.
@@ -62,27 +58,25 @@ export type TeilnahmeSortierung = 'NAME' | 'FLOTTEN';
   // RouterLink nur fuer den einen Weg, den der Vorbehalt unter der
   // Teilnahmetafel anbietet: Wer dort liest, dass Accounts unverknuepft sind,
   // soll die Alt-Erkennung nicht erst suchen muessen.
-  imports: [CommonModule, FormsModule, RouterLink, DoctrinesComponent],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './fleet-manager.component.html',
   // Zwei Blätter, weil das Budget aus angular.json je Komponentenblatt gilt und
-  // nicht je Komponente: zusammen wären es 23,66 kB gegen eine Grenze von 20 -
-  // die Begründung steht ausführlich in fat-statistik.scss.
+  // nicht je Komponente. Seit dem Umzug der drei Fitting-Reiter reichte auch
+  // eines - die Trennung bleibt trotzdem, weil sie eine Sache trennt und nicht
+  // nur Bytes: die FAT-Statistik hat ihre eigene Formensprache. Die Begründung
+  // steht ausführlich in fat-statistik.scss.
   styleUrls: ['./fleet-manager.component.scss', './fat-statistik.scss']
 })
 export class FleetManagerComponent implements OnInit, OnDestroy {
   public authService = inject(AuthService);
   private fleetService = inject(FleetService);
-  private readinessService = inject(ReadinessService);
   private statisticsService = inject(FleetStatisticsService);
   private toastService = inject(ToastService);
   private confirmService = inject(ConfirmService);
 
-  // Formatierung und Bildadressen kommen aus den gemeinsamen Utilities -
-  // hier werden sie nur noch fuer das Template sichtbar gemacht.
-  protected readonly formatNumber = formatNumber;
+  // Bildadressen kommen aus den gemeinsamen Utilities - hier werden sie nur
+  // noch fuer das Template sichtbar gemacht.
   protected readonly portrait = portrait;
-  protected readonly onImgError = handleTypeImageError;
-  protected readonly onPortraitError = handlePortraitError;
 
   activeTab = signal<TabId>('FLEETS');
 
@@ -104,17 +98,6 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   selectedFleetObj = computed(() => {
     return this.recentFleets().find(f => f.id === this.selectedFleetId());
   });
-
-  // --- Readiness State ---
-  doctrineNames = signal<string[]>([]);
-  selectedDoctrine: string | null = null;
-  board = signal<DoctrineReadinessDto | null>(null);
-  loadingBoard = signal(false);
-
-  memberFilter = signal('');
-
-  expandedFits = signal<Set<number>>(new Set());
-  expandedAccounts = signal<Set<string>>(new Set()); // Key: "fitKey:mainId"
 
   // --- FAT-Statistik State ---
   readonly zeitraeume = ZEITRAEUME;
@@ -159,20 +142,8 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
    */
   teilnahmeSortierung = signal<TeilnahmeSortierung>('NAME');
 
-  // --- Sandbox State ---
-  sandboxInput = signal('');
-  sandboxResult = signal<SandboxResultDto | null>(null);
-  sandboxError = signal<string | null>(null);
-  loadingSandbox = signal(false);
-
   get isFleetCommander(): boolean {
     return this.authService.hasAnyRole(['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38', 'ROLE_69']);
-  }
-
-  get canSeeReadiness(): boolean {
-    return this.authService.hasAnyRole([
-      'ROLE_IT_ADMIN', 'ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_MANAGER', 'ROLE_69', 'ROLE_1337', 'ROLE_A38'
-    ]);
   }
 
   /**
@@ -243,14 +214,6 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     // unter den Augen des Lesers.
     if (tab === 'STATS' && !this.statistik() && !this.meineFat() && !this.loadingStatistik()) {
       this.loadStatistik();
-    }
-
-    if (tab === 'BOARD') {
-      if (this.doctrineNames().length === 0) {
-        this.loadDoctrineNames('BOARD');
-        return;
-      }
-      if (!this.board()) this.loadBoard();
     }
   }
 
@@ -571,172 +534,4 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   nameOf(zeile: { name?: string | null }): string {
     return zeile.name ?? 'Unbekannt';
   }
-
-  // ================= Readiness Logic =================
-
-  loadDoctrineNames(thenLoad?: TabId) {
-    this.readinessService.doctrines().subscribe({
-      next: (names) => {
-        this.doctrineNames.set(names);
-        if (names.length > 0 && !this.selectedDoctrine) {
-          this.selectedDoctrine = names[0];
-        }
-        if (thenLoad === 'BOARD') this.loadBoard();
-      },
-      error: () => this.toastService.error('Doktrinen konnten nicht geladen werden.')
-    });
-  }
-
-  onDoctrineChange() {
-    this.board.set(null);
-    this.expandedFits.set(new Set());
-    this.expandedAccounts.set(new Set());
-
-    if (this.activeTab() === 'BOARD') this.loadBoard();
-  }
-
-  loadBoard() {
-    if (!this.selectedDoctrine) return;
-    this.loadingBoard.set(true);
-    this.readinessService.checkBoard(this.selectedDoctrine).subscribe({
-      next: (data) => {
-        this.board.set(data);
-        this.loadingBoard.set(false);
-        if (data.fits.length > 0) this.expandedFits.set(new Set([this.fitKey(data.fits[0])]));
-      },
-      error: (err) => {
-        this.loadingBoard.set(false);
-        this.toastService.error(err.error?.message || 'Readiness-Check fehlgeschlagen.');
-      }
-    });
-  }
-
-  // ================= Sandbox Logic =================
-
-  runSandbox() {
-    const eft = this.sandboxInput().trim();
-    if (!eft) return;
-
-    this.loadingSandbox.set(true);
-    this.sandboxError.set(null);
-
-    this.readinessService.sandbox(eft).subscribe({
-      next: (data) => {
-        this.sandboxResult.set(data);
-        this.loadingSandbox.set(false);
-        this.expandedAccounts.set(new Set());
-      },
-      error: (err) => {
-        this.loadingSandbox.set(false);
-        this.sandboxResult.set(null);
-        this.sandboxError.set(err.error?.message || 'Das Fitting konnte nicht ausgewertet werden.');
-      }
-    });
-  }
-
-  clearSandbox() {
-    this.sandboxInput.set('');
-    this.sandboxResult.set(null);
-    this.sandboxError.set(null);
-  }
-
-  // ================= Aufklapp-Logik =================
-
-  /**
-   * Ein stabiler Schlüssel je Fit.
-   *
-   * Nicht die typeId: eine Doktrin kann zwei Fits derselben Hülle enthalten,
-   * die sich sonst den Aufklapp-Zustand teilen würden. Der Sandbox-Fit hat
-   * keine ID - er steht ohnehin allein und immer offen.
-   */
-  fitKey(fit: FitReadinessDto): number {
-    return fit.fitId ?? -fit.typeId;
-  }
-
-  toggleFit(key: number) {
-    this.expandedFits.update(current => {
-      const next = new Set(current);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  }
-
-  isFitExpanded(key: number): boolean {
-    return this.expandedFits().has(key);
-  }
-
-  toggleAccount(fitKey: number, mainId: number) {
-    const key = `${fitKey}:${mainId}`;
-    this.expandedAccounts.update(current => {
-      const next = new Set(current);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-  }
-
-  isAccountExpanded(fitKey: number, mainId: number): boolean {
-    return this.expandedAccounts().has(`${fitKey}:${mainId}`);
-  }
-
-  // ================= Filter =================
-
-  filterAccounts(accounts: AccountReadinessDto[]): AccountReadinessDto[] {
-    const q = this.memberFilter().trim().toLowerCase();
-    if (!q) return accounts;
-    return accounts.filter(a =>
-      a.mainName.toLowerCase().includes(q) ||
-      a.characters.some(c => c.characterName.toLowerCase().includes(q))
-    );
-  }
-
-  // ================= Utilities =================
-
-    percent(value: number): string {
-    return (value * 100).toFixed(0) + ' %';
-  }
-
-  coverageWidth(value: number): string {
-    return Math.max(0, Math.min(100, value * 100)).toFixed(0) + '%';
-  }
-
-  coverageClass(value: number): string {
-    if (value >= 0.75) return 'green';
-    if (value >= 0.4) return 'orange';
-    return 'red';
-  }
-
-  copyFitToClipboard(eft: string): Promise<void> {
-    return copyText(eft).then((ok) =>
-      ok
-        ? this.toastService.info(
-            'Fitting kopiert! Ingame das Fitting-Fenster öffnen und "Import from Clipboard" wählen.')
-        : this.toastService.error('Fehler beim Kopieren in die Zwischenablage.'));
-  }
-
-  /**
-   * Legt die fehlenden Skills eines Piloten als Plantext in die Zwischenablage.
-   *
-   * Beide Quellen zusammen - Voraussetzungen und Skillplan. So kann ein FC
-   * einem Piloten genau die Liste geben, die er ingame einfügen muss.
-   */
-  copyMissingSkills(character: CharacterReadinessDto): Promise<void> {
-    const text = toSkillPlanText(
-      toPlanLines([...character.missingSkills, ...character.missingPlanSkills]));
-    if (!text) {
-      this.toastService.info(`${character.characterName} fehlt nichts.`);
-      return Promise.resolve();
-    }
-
-    return copyText(text).then((ok) =>
-      ok
-        ? this.toastService.success(`Fehlende Skills von ${character.characterName} kopiert.`)
-        : this.toastService.error('Fehler beim Kopieren in die Zwischenablage.'));
-  }
-
-  /** Ob es bei diesem Piloten überhaupt etwas zu kopieren gibt. */
-  hasMissingSkills(character: CharacterReadinessDto): boolean {
-    return character.missingSkills.length + character.missingPlanSkills.length > 0;
-  }
-
-    
 }

@@ -6,6 +6,18 @@ const LEADERSHIP_OR_IT = ['ROLE_DIRECTOR', 'ROLE_CEO', 'ROLE_IT_ADMIN'];
 
 const FLEET_STAFF = ['ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_69', 'ROLE_1337', 'ROLE_A38'];
 
+/**
+ * Wer "Fittings und Doktrinen" öffnen darf.
+ *
+ * <p>Wortgleich der Kreis, der die drei Reiter im Fleet Manager sichtbar machte
+ * (`canSeeReadiness`). Alle drei zeigen Hangar- und Skilldaten der ganzen
+ * Corporation - als Reiter schützte sie die Anzeigegrenze, als eigene Route
+ * braucht es den Wächter dazu.</p>
+ */
+const READINESS_STAFF = [
+  'ROLE_IT_ADMIN', 'ROLE_CEO', 'ROLE_DIRECTOR', 'ROLE_MANAGER', 'ROLE_69', 'ROLE_1337', 'ROLE_A38'
+];
+
 export const routes: Routes = [
   { path: '', redirectTo: 'home', pathMatch: 'full' },
   {
@@ -73,9 +85,20 @@ export const routes: Routes = [
     loadComponent: () => import('./core/components/fleet-ping/fleet-ping.component').then(m => m.FleetPingComponent)
   },
   {
+    // Gespeicherte Doktrinen, Readiness Board und Sandbox - drei Reiter, die
+    // im Fleet Activity Tracking standen und dort nichts zu suchen hatten:
+    // sie sagen, was geflogen wird und wer es kann, nicht wer dabei war.
+    path: 'fittings',
+    canActivate: [roleGuard(READINESS_STAFF)],
+    loadComponent: () => import('./core/components/fittings/fittings.component').then(m => m.FittingsComponent)
+  },
+  {
+    // Die alte Adresse der Doktrinen. Sie steht in der Navigationsdatenbank und
+    // in Lesezeichen; ein toter Punkt im Menue waere die schlechtere Loesung
+    // als eine Weiterleitung, die genau dort ankommt, wo die Doktrinen jetzt
+    // liegen - naemlich auf deren Reiter.
     path: 'fleet/doctrines',
-    canActivate: [authGuard],
-    loadComponent: () => import('./core/components/doctrines/doctrines.component').then(m => m.DoctrinesComponent)
+    redirectTo: 'fittings'
   },
   {
     path: 'corp/mining',

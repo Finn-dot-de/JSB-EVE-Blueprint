@@ -1,0 +1,62 @@
+<!-- Doktrin-Auswahl + Pilotenfilter -->
+<div class="surface-panel toolbar">
+  <div class="form-group toolbar-select">
+    <label>Doktrin</label>
+    <select [(ngModel)]="selectedDoctrine" (ngModelChange)="onDoctrineChange()">
+      <option [ngValue]="null">-- Bitte wählen --</option>
+      @for (d of doctrineNames(); track d) {
+        <option [ngValue]="d">{{ d }}</option>
+      }
+    </select>
+  </div>
+  <div class="search-box">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <input type="text" placeholder="Pilot oder Account filtern..."
+           [ngModel]="memberFilter()" (ngModelChange)="memberFilter.set($event)">
+  </div>
+  <p class="toolbar-hint">Das ultimative Readiness Board: Kombiniert die Account-weiten Daten aus Hangar &amp; Skills.</p>
+</div>
+
+@if (!selectedDoctrine) {
+  <div class="empty-state">
+    <i class="fa-solid fa-hand-pointer fa-3x"></i>
+    <p>Keine Doktrin ausgewählt.</p>
+    <span>Wähle oben eine Doktrin, um die Auswertung zu starten.</span>
+  </div>
+} @else if (loadingBoard()) {
+  <div style="display: flex; justify-content: center; padding: 4rem;">
+    <i class="fa-solid fa-spinner fa-spin fa-3x" style="color: var(--accent-color);"></i>
+  </div>
+} @else if (board(); as data) {
+  @if (data.fits.length === 0) {
+    <div class="empty-state">
+      <i class="fa-solid fa-inbox fa-3x"></i>
+      <p>Für diese Doktrin sind keine Schiffshüllen hinterlegt.</p>
+      <span>Fittings lassen sich im Tab "Gespeicherte Doktrinen" anlegen.</span>
+    </div>
+  } @else {
+    <div class="kpi-grid" style="margin-bottom: 1.5rem;">
+      <div class="kpi-card accent">
+        <div class="kpi-label">Accounts insgesamt</div>
+        <div class="kpi-value">{{ data.accountsTotal }}</div>
+        <div class="kpi-sub">Mains inkl. ihrer Alts</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Geprüfte Fittings</div>
+        <div class="kpi-value">{{ data.fitsChecked }}</div>
+        <div class="kpi-sub">aus der Doktrin "{{ data.doctrineName }}"</div>
+      </div>
+    </div>
+
+    @for (fit of data.fits; track fitKey(fit)) {
+      <app-readiness-fit-panel
+        [fit]="fit"
+        [fitKey]="fitKey(fit)"
+        [expanded]="isFitExpanded(fitKey(fit))"
+        [memberFilter]="memberFilter()"
+        [openAccounts]="expandedAccounts()"
+        (fitToggled)="toggleFit(fitKey(fit))"
+        (accountToggled)="toggleAccount(fitKey(fit), $event)" />
+    }
+  }
+}

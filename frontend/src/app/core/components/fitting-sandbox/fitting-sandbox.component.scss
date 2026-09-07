@@ -1,0 +1,308 @@
+@use '../../shared/tokens' as tokens;
+
+/* Als Reiterinhalt stand der Block direkt im Fluss der Seite; als Komponente
+   steht ein Wirtselement davor. */
+:host {
+  display: block;
+}
+
+
+/* Wortgleich aus fleet-manager.component.scss uebernommen. */
+
+/* =========================================
+   READINESS: Farbwelt
+   -----------------------------------------
+   Jita-Grün = bereit, Rot = fehlt, Orange =
+   teilweise, Grau = keine Daten.
+   ========================================= */
+$ready: tokens.$success;
+$missing: tokens.$danger;
+$warn: tokens.$highlight;
+.search-box {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  width: 280px;
+  transition: border-color 0.2s;
+
+  i { color: var(--text-secondary); margin-right: 10px; }
+
+  input {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    outline: none;
+    width: 100%;
+    font-size: 0.95rem;
+  }
+
+  &:focus-within { border-color: var(--accent-color); }
+}
+
+/* =========================================
+   SANDBOX
+   ========================================= */
+.sandbox-input-panel {
+  margin-bottom: 1.5rem;
+
+  .panel-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 1.1rem;
+
+    > i {
+      font-size: 1.4rem;
+      color: var(--accent-color);
+      margin-top: 3px;
+    }
+
+    h3 {
+      margin: 0;
+      color: var(--text-primary);
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 3px 0 0 0;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+  }
+}
+
+.eft-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 1rem;
+  border-radius: 6px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+
+  &:focus { border-color: var(--accent-color); }
+}
+
+.sandbox-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 1rem;
+
+  .btn-secondary, .btn-primary {
+    padding: 0.7rem 1.4rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.sandbox-filter {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.inline-error,
+.inline-warning {
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.inline-error {
+  color: $missing;
+  background-color: rgba(255, 51, 102, 0.1);
+  border: 1px solid rgba(255, 51, 102, 0.28);
+}
+
+.inline-warning {
+  color: $warn;
+  background-color: rgba(245, 166, 35, 0.1);
+  border: 1px solid rgba(245, 166, 35, 0.28);
+  margin: 0 1.25rem 1rem;
+}
+
+/* --- Geparstes Fitting --- */
+.fit-panel {
+  padding: 0;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.fit-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+
+  .fit-render {
+    width: 88px;
+    height: 88px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+
+    img { width: 100%; height: 100%; object-fit: contain; }
+  }
+
+  .fit-title {
+    flex: 1;
+    min-width: 0;
+
+    h2 {
+      margin: 0;
+      font-size: 1.3rem;
+      color: var(--text-primary);
+    }
+
+    .hull-tag {
+      display: inline-block;
+      margin-top: 3px;
+      color: $ready;
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .fit-meta {
+      margin-top: 5px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+  }
+
+  .copy-fit { flex-shrink: 0; }
+}
+
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  padding: 1.25rem;
+}
+
+.slot-group {
+  .slot-group-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--accent-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 5px;
+    margin-bottom: 7px;
+
+    .slot-count {
+      margin-left: auto;
+      color: var(--text-secondary);
+      background-color: rgba(128, 128, 128, 0.14);
+      border-radius: 9px;
+      padding: 0 7px;
+      font-size: 0.72rem;
+    }
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+
+      img {
+        width: 26px;
+        height: 26px;
+        border-radius: 4px;
+        background-color: var(--bg-color);
+        flex-shrink: 0;
+      }
+
+      .mod-name {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .mod-charge {
+        font-size: 0.72rem;
+        color: var(--text-secondary);
+      }
+
+      .mod-qty {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--text-secondary);
+        font-variant-numeric: tabular-nums;
+      }
+    }
+  }
+}
+
+/* Wortgleich aus fleet-manager.component.scss: Die Knopf-Grundformen sind
+   dort nicht global, sondern je Komponentenblatt definiert - ein Knopf, der
+   mitzieht, muss seine Form mitnehmen. */
+.btn-primary {
+  background-color: var(--accent-color);
+  color: var(--accent-contrast);
+  border: none;
+  padding: 0.85rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+
+  &:hover:not(:disabled) { background-color: var(--accent-hover); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+.btn-secondary {
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 0.85rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  &:hover {
+    background-color: color-mix(in srgb, var(--text-primary) 5%, transparent);
+    color: var(--text-primary);
+  }
+}

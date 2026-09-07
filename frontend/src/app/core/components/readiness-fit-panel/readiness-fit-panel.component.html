@@ -1,0 +1,206 @@
+<div class="surface-panel readiness-panel">
+  <button class="hull-header" (click)="fitToggled.emit()" [disabled]="forceOpen">
+    <img class="hull-icon" [src]="fit.iconUrl" (error)="onImgError($event)" [alt]="fit.typeName" loading="lazy">
+    <div class="hull-title">
+      <div class="hull-name">
+        {{ fit.fitName || fit.typeName }}
+        @if (fit.fitName) { <span class="hull-tag">{{ fit.typeName }}</span> }
+      </div>
+      <div class="hull-sub">
+        <i class="fa-solid fa-graduation-cap"></i>
+        Benötigt {{ fit.requiredSkills.length }} Skills
+        @if (fit.moduleCount > 0) {
+          <span class="sub-detail">({{ fit.hullSkillsRequired }} für den Rumpf, Rest für die Module)</span>
+        }
+        &middot;
+        <i class="fa-solid fa-microchip" style="margin-left: 8px"></i> {{ fit.moduleCount }} Module &middot;
+        <i class="fa-solid fa-warehouse" style="margin-left: 8px"></i> {{ fit.hullsTotal }} in der Corp
+        @if (fit.planNames.length > 0) {
+          &middot;
+          <i class="fa-solid fa-graduation-cap" style="margin-left: 8px"></i>
+          {{ fit.planNames.join(', ') }}
+          <span class="sub-detail">(Pflicht)</span>
+        }
+      </div>
+    </div>
+    <div class="hull-coverage">
+      <div class="coverage-numbers">
+        <strong [class]="coverageClass(fit.coverage)">{{ fit.accountsReady }}</strong>
+        <span>/ {{ fit.accountsTotal }} Accounts Ready</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" [class]="coverageClass(fit.coverage)"
+             [style.width]="coverageWidth(fit.coverage)"></div>
+      </div>
+    </div>
+    <span class="coverage-pct" [class]="coverageClass(fit.coverage)">{{ percent(fit.coverage) }}</span>
+    @if (!forceOpen) {
+      <i class="fa-solid fa-chevron-down chevron" [class.open]="expanded"></i>
+    }
+  </button>
+
+  @if (forceOpen || expanded) {
+    @if (fit.unresolved.length > 0) {
+      <div class="inline-warning">
+        <i class="fa-solid fa-circle-question"></i>
+        Ungeprüft geblieben:
+        <strong>{{ fit.unresolved.join(', ') }}</strong>
+      </div>
+    }
+
+    <!-- Die benötigten Skills oben als Header anzeigen -->
+    <div class="required-skills">
+      <span class="required-label">Benötigt:</span>
+      @for (s of fit.requiredSkills; track s.skillTypeId) {
+        <span class="skill-pill">{{ s.skillName }} <b>{{ s.level }}</b></span>
+      }
+    </div>
+
+    @if (fit.planSkills.length > 0) {
+      <!-- Ebenfalls Pflicht, nur aus anderer Quelle: getrennt gezeigt, damit
+           erkennbar bleibt, was aus dem Fitting und was aus dem Plan kommt. -->
+      <div class="required-skills">
+        <span class="required-label">Skillplan:</span>
+        @for (s of fit.planSkills; track s.skillTypeId) {
+          <span class="skill-pill">{{ s.skillName }} <b>{{ s.level }}</b></span>
+        }
+      </div>
+    }
+
+    <div class="split-lists">
+      <!-- LINKE SPALTE: BEREIT -->
+      <div class="list-column ready">
+        <div class="column-head">
+          <i class="fa-solid fa-circle-check"></i> Einsatzbereit
+          <span class="count">{{ fit.ready.length }}</span>
+        </div>
+        @for (acc of filterAccounts(fit.ready); track acc.mainId) {
+          <ng-container [ngTemplateOutlet]="accountRow"
+                        [ngTemplateOutletContext]="{ acc: acc }"></ng-container>
+        }
+        @if (filterAccounts(fit.ready).length === 0) {
+          <div class="column-empty">Niemand gefunden.</div>
+        }
+      </div>
+
+      <!-- RECHTE SPALTE: NICHT BEREIT -->
+      <div class="list-column missing">
+        <div class="column-head">
+          <i class="fa-solid fa-circle-xmark"></i> Nicht bereit
+          <span class="count">{{ fit.notReady.length }}</span>
+        </div>
+        @for (acc of filterAccounts(fit.notReady); track acc.mainId) {
+          <ng-container [ngTemplateOutlet]="accountRow"
+                        [ngTemplateOutletContext]="{ acc: acc }"></ng-container>
+        }
+        @if (filterAccounts(fit.notReady).length === 0) {
+          <div class="column-empty">Niemand gefunden.</div>
+        }
+      </div>
+    </div>
+  }
+</div>
+
+<!-- Ein einzelner Account im Board (Kombiniert Hangar & Skills) -->
+<ng-template #accountRow let-acc="acc">
+  <div class="account-row" [class.open]="isAccountOpen(acc.mainId)">
+    <button class="account-head" (click)="accountToggled.emit(acc.mainId)">
+      <img class="portrait" [src]="acc.portraitUrl" (error)="onPortraitError($event)" [alt]="acc.mainName" loading="lazy">
+      <div class="account-meta">
+        <div class="account-name">{{ acc.mainName }}</div>
+        <div class="account-sub">{{ acc.corporationName || 'Unbekannte Corp' }}</div>
+      </div>
+
+      <div class="status-badges">
+        <!-- HANGAR BADGE -->
+        @if (acc.hasShip) {
+          <span class="qty-badge ready"><i class="fa-solid fa-warehouse"></i> {{ acc.owned }}&times;</span>
+        } @else {
+          <span class="qty-badge missing" title="Nicht im Hangar"><i class="fa-solid fa-warehouse"></i> Fehlt</span>
+        }
+
+        <!-- SKILL BADGE -->
+        @if (!acc.skillDataAvailable) {
+          <span class="qty-badge unknown" title="Keine Skilldaten"><i class="fa-solid fa-graduation-cap"></i> ?</span>
+        } @else if (acc.hasSkills) {
+          <span class="qty-badge ready" title="Kann geflogen werden"><i class="fa-solid fa-graduation-cap"></i> OK</span>
+        } @else {
+          <span class="qty-badge missing" title="Fehlende Skills"><i class="fa-solid fa-graduation-cap"></i> {{ acc.bestSkillsMet }}/{{ acc.skillsRequired }}</span>
+        }
+
+        <!-- Ohne diesen Hinweis stünden hier zwei grüne Abzeichen an einem
+             Account, der trotzdem in der Spalte "Nicht bereit" steht. -->
+        @if (acc.hasShip && acc.hasSkills && !acc.isReady) {
+          <span class="qty-badge missing"
+                title="Das Schiff liegt bei einem Charakter, die Skills hat ein anderer">
+            <i class="fa-solid fa-user-slash"></i> Getrennt
+          </span>
+        }
+      </div>
+
+      <i class="fa-solid fa-chevron-down chevron"></i>
+    </button>
+
+    @if (isAccountOpen(acc.mainId)) {
+      <div class="char-list">
+        @for (c of acc.characters; track c.characterId) {
+          <div class="char-row skill" [class.has]="c.owned > 0 && c.canFly">
+            <img class="portrait sm" [src]="c.portraitUrl" (error)="onPortraitError($event)" [alt]="c.characterName" loading="lazy">
+            <div class="char-body">
+              <span class="char-name">
+                {{ c.characterName }}
+                @if (c.main) { <span class="tag tag-main">MAIN</span> }
+              </span>
+              <div class="char-status-row">
+                <span [class]="c.owned > 0 ? 'text-ready' : 'text-missing'">
+                  <i class="fa-solid fa-warehouse"></i> {{ c.owned > 0 ? c.owned + 'x im Hangar' : 'Nicht im Hangar' }}
+                </span>
+                <span style="margin: 0 8px; color: var(--border-color)">|</span>
+                <span [class]="c.canFly ? 'text-ready' : (!c.skillDataAvailable ? 'text-unknown' : 'text-missing')">
+                  <i class="fa-solid fa-graduation-cap"></i>
+                  @if (!c.skillDataAvailable) { Keine Skilldaten }
+                  @else if (c.canFly) { Fliegt das komplette Fit }
+                  @else if (c.canFlyHull) {
+                    <!-- Wichtiger Unterschied: das Schiff geht, nur Module fehlen -
+                         das ist eine Frage von Tagen, kein Neuanfang. -->
+                    Rumpf ok &ndash; {{ c.missingSkills.length }} Modul-Skills fehlen
+                  }
+                  @else { {{ c.skillsMet }}/{{ c.skillsRequired }} Skills (Fehlt: {{ c.missingSkills.length }}) }
+                </span>
+              </div>
+              @if (!c.canFly && c.missingSkills.length > 0) {
+                <div class="missing-skills">
+                  @for (m of c.missingSkills; track m.skillTypeId) {
+                    <span class="skill-pill missing" [title]="'Aktuell Level ' + m.currentLevel">
+                      {{ m.skillName }} <b>{{ m.currentLevel }}/{{ m.requiredLevel }}</b>
+                    </span>
+                  }
+                </div>
+              }
+
+              @if (hasMissingSkills(c)) {
+                <button class="btn-secondary copy-skills" (click)="copyMissingSkills(c)"
+                        title="Als Skillplan zum Einfügen in EVE">
+                  <i class="fa-solid fa-copy"></i> Fehlende Skills kopieren
+                </button>
+              }
+
+              <!-- Getrennt gezeigt, damit die Herkunft erkennbar bleibt -
+                   fuer das Urteil zaehlen beide Listen gleich. -->
+              @if (c.missingPlanSkills.length > 0) {
+                <div class="missing-skills">
+                  <span class="plan-gap-label">Aus dem Skillplan:</span>
+                  @for (m of c.missingPlanSkills; track m.skillTypeId) {
+                    <span class="skill-pill missing" [title]="'Aktuell Level ' + m.currentLevel">
+                      {{ m.skillName }} <b>{{ m.currentLevel }}/{{ m.requiredLevel }}</b>
+                    </span>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</ng-template>

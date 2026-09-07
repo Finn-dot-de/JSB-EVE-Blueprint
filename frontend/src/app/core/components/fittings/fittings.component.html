@@ -1,0 +1,52 @@
+<div class="roles-container">
+  <div class="section-divider">
+    <span>Fittings und Doktrinen</span>
+  </div>
+
+  @if (!canSeeReadiness) {
+    <!-- Anzeigegrenze, nicht die Sperre: die steht am roleGuard der Route und
+         im Server. Wer trotzdem hier landet, soll den Grund lesen und nicht
+         eine leere Seite. -->
+    <div class="kein-zutritt">
+      <i class="fa-solid fa-lock fa-3x"></i>
+      <p>Diese Seite ist der Flottenführung vorbehalten.</p>
+      <span>Gespeicherte Doktrinen, Readiness Board und Sandbox zeigen die Hangar- und Skilldaten der ganzen Corporation.</span>
+    </div>
+  } @else {
+    <div class="tabs" style="margin-bottom: 1.5rem;">
+      <button class="tab-btn" [class.active]="activeTab() === 'DOCTRINES'" (click)="setTab('DOCTRINES')">
+        <i class="fa-solid fa-book"></i> Gespeicherte Doktrinen
+      </button>
+      <button class="tab-btn" [class.active]="activeTab() === 'BOARD'" (click)="setTab('BOARD')">
+        <i class="fa-solid fa-user-check"></i> Readiness Board
+      </button>
+      <button class="tab-btn" [class.active]="activeTab() === 'SANDBOX'" (click)="setTab('SANDBOX')">
+        <i class="fa-solid fa-flask"></i> Sandbox
+      </button>
+    </div>
+
+    <!--
+      Ein einmal geöffneter Reiter bleibt stehen und wird nur ausgeblendet.
+      Das ist keine Feinheit: Wer in der Sandbox ein Fitting eingefügt hat, im
+      Board etwas nachsieht und zurückkommt, fände sonst ein leeres Feld vor -
+      und das Board holte bei jedem Wiedereintritt dieselben Daten erneut.
+    -->
+    @if (wurdeGeoeffnet('DOCTRINES')) {
+      <div [hidden]="activeTab() !== 'DOCTRINES'">
+        <app-doctrines />
+      </div>
+    }
+
+    @if (wurdeGeoeffnet('BOARD')) {
+      <div [hidden]="activeTab() !== 'BOARD'">
+        <app-readiness-board />
+      </div>
+    }
+
+    @if (wurdeGeoeffnet('SANDBOX')) {
+      <div [hidden]="activeTab() !== 'SANDBOX'">
+        <app-fitting-sandbox />
+      </div>
+    }
+  }
+</div>

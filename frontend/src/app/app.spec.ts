@@ -48,6 +48,10 @@ describe('Routen', () => {
     // sonst bekaeme jeder Angemeldete das Formular und erfuehre erst beim
     // Absenden, dass er nicht darf.
     'fleet/ping',
+    // 'fittings' gehört dazu: Als Reiter im Fleet Manager schuetzte
+    // `canSeeReadiness` die drei Ansichten. Die eigene Route umgeht das - und
+    // dahinter stehen Hangar- und Skilldaten der ganzen Corporation.
+    'fittings',
   ];
 
   it('leitet die Wurzel auf die Startseite um', () => {

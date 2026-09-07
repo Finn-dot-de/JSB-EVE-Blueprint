@@ -20,6 +20,7 @@ import {
 import {
   FleetStatisticsService,
   FatStatistik,
+  MeineFat,
   AccountZeile,
   ZEITRAEUME,
   ZEITRAUM_VORGABE,
@@ -123,6 +124,17 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
   loadingStatistik = signal(false);
   statistikFehler = signal<string | null>(null);
 
+  /**
+   * Die eigene Sicht - ein eigenes Signal und kein zurechtgestutztes
+   * `statistik()`.
+   *
+   * <p>Derselbe Gedanke wie im Server: Zwei Zustände, die nicht dieselben
+   * Felder haben, können nicht versehentlich ineinander laufen. Wer die
+   * Corp-Tafel sieht, sieht sie ganz; wer sie nicht sieht, hat sie auch nicht
+   * im Speicher stehen.</p>
+   */
+  meineFat = signal<MeineFat | null>(null);
+
   /** Ob die Accounts mit genau einer Flotte ausgeklappt sind. */
   einmaligeGezeigt = signal(false);
 
@@ -182,6 +194,37 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     return this.authService.hasAnyRole(['ROLE_DIRECTOR', 'ROLE_1337', 'ROLE_A38']);
   }
 
+  /**
+   * Die Beschriftung des Reiters - und damit ein Versprechen.
+   *
+   * <p>"Meine FAT-Statistik" sagt vor dem Klick, was dahinter steht: die eigene
+   * Teilnahme und nicht die Tafel der Corporation. Stünde für alle dasselbe
+   * Wort da, erwartete ein Mitglied die Tafel und hielte die eine Zeile für
+   * einen Fehler. Dieselbe Grenze wie im Server - `AccessRules.FLEET_STAFF`
+   * gegen `AccessRules.AUTHENTICATED`.</p>
+   */
+  get statsReiterTitel(): string {
+    return this.canSeeStats ? 'FAT-Statistik' : 'Meine FAT-Statistik';
+  }
+
+  /**
+   * Ob diese Zeile der Tafel dem Betrachter selbst gehört.
+   *
+   * <p>Die Kennung des Accounts ist die des Mains, und genau die steht in der
+   * Sitzung - der JwtAuthenticationFilter setzt den Main als Principal. Die
+   * Hervorhebung ist keine Spielerei: In einer Tafel mit dreißig Namen sucht
+   * jeder zuerst sich selbst, und wer seine eigene Zahl findet, kann als
+   * Einziger beurteilen, ob die Zählung stimmt. Genau deshalb bekommt die
+   * Führung keine zweite, eigene Ansicht - zwei Zahlen für denselben
+   * Sachverhalt wären eine mehr als nötig.</p>
+   */
+  istEigeneZeile(zeile: AccountZeile): boolean {
+    const eigene = this.authService.currentUser()?.characterId;
+    // Die Prüfung auf null steht davor, weil sonst zwei fehlende Werte gleich
+    // wären und eine fremde Zeile die Markierung "das bist du" trüge.
+    return eigene != null && zeile.accountId === eigene;
+  }
+
   ngOnInit() {
     this.loadRecentFleets();
     this.pollingInterval = setInterval(() => this.loadRecentFleets(), 10000);
@@ -198,7 +241,7 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
     // Der 10-Sekunden-Takt der Flottenliste hat hier nichts zu suchen: eine
     // Quartalsauswertung ändert sich nicht in zehn Sekunden, sie flackerte nur
     // unter den Augen des Lesers.
-    if (tab === 'STATS' && !this.statistik() && !this.loadingStatistik()) {
+    if (tab === 'STATS' && !this.statistik() && !this.meineFat() && !this.loadingStatistik()) {
       this.loadStatistik();
     }
 
@@ -305,7 +348,24 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
 
   // ================= FAT-Statistik =================
 
+  /**
+   * Lädt die Sicht, die dem Betrachter zusteht.
+   *
+   * <p>Die Weiche steht hier und nicht in einem Endpunkt mit Schalter: Der
+   * Server hat zwei Adressen, und welche gefragt wird, entscheidet dieselbe
+   * Rollengrenze, die dort am `@PreAuthorize` steht. Ruft ein Mitglied die
+   * Corp-Adresse trotzdem auf, weist der Server ab - die Weiche hier ist
+   * Bequemlichkeit, keine Sicherung.</p>
+   */
   loadStatistik() {
+    if (this.canSeeStats) {
+      this.ladeCorpStatistik();
+    } else {
+      this.ladeMeineFat();
+    }
+  }
+
+  private ladeCorpStatistik() {
     this.loadingStatistik.set(true);
     this.statistikFehler.set(null);
 
@@ -328,6 +388,36 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
         // schlimmere Auskunft als gar keine.
         this.statistik.set(null);
         const meldung = err?.error?.message || 'Die FAT-Statistik konnte nicht geladen werden.';
+        this.statistikFehler.set(meldung);
+        this.toastService.error(meldung);
+      }
+    });
+  }
+
+  /**
+   * Die eigene Sicht.
+   *
+   * <p>Sie beantwortet eine andere Frage als die Tafel - "wie stehe ich da"
+   * statt "wer war dabei" - und kommt deshalb aus einer eigenen Adresse in ein
+   * eigenes Signal. Ein zurechtgestutztes `statistik()` wäre derselbe Fehler
+   * wie ein leergeräumtes DTO im Server.</p>
+   */
+  private ladeMeineFat() {
+    this.loadingStatistik.set(true);
+    this.statistikFehler.set(null);
+
+    this.statisticsService.meineStatistik(this.statistikTage()).subscribe({
+      next: (data) => {
+        this.meineFat.set(data);
+        this.loadingStatistik.set(false);
+      },
+      error: (err) => {
+        this.loadingStatistik.set(false);
+        // Wie oben: Zahlen aus einem anderen Zeitraum unter einer neuen
+        // Überschrift wären die schlimmere Auskunft als gar keine.
+        this.meineFat.set(null);
+        const meldung = err?.error?.message
+          || 'Deine FAT-Statistik konnte nicht geladen werden.';
         this.statistikFehler.set(meldung);
         this.toastService.error(meldung);
       }
@@ -375,6 +465,37 @@ export class FleetManagerComponent implements OnInit, OnDestroy {
         + `aus ${s.kopf.charaktere} ${s.kopf.charaktere === 1 ? 'Charakter' : 'Charakteren'}, `
         + `${s.kopf.fcs} ${s.kopf.fcs === 1 ? 'FC' : 'FCs'}.`,
       zusatz: s.zeitraum.hinweis
+    };
+  });
+
+  /**
+   * Derselbe Satz ganz oben, nur für die eigene Sicht.
+   *
+   * <p>Er sagt in einem Zug, was die Zahlen darunter bedeuten - und im Leerfall
+   * sagt er den Klartext des Servers, statt eine Null stehen zu lassen, die
+   * aussieht wie ein Befund über eine Person. Der Satz kommt fertig vom Server:
+   * dieselbe Aussage soll nicht an zwei Stellen entstehen und auseinanderdriften.</p>
+   */
+  meinLeitsatz = computed<Leitsatz | null>(() => {
+    const m = this.meineFat();
+    if (!m) return null;
+
+    if (!m.dabei) {
+      return {
+        ton: 'leise',
+        text: m.hinweis ?? 'Im gewählten Zeitraum ist keine Teilnahme von dir erfasst.',
+        zusatz: m.zeitraum.hinweis
+      };
+    }
+
+    // Mit Nenner, und ohne Prozentwert: "6" allein ist keine Aussage, "6 von
+    // 20" ist eine - und der Leser weiß selbst, wann er im Urlaub war.
+    return {
+      ton: 'ruhig',
+      text: `Du warst bei ${m.flotten.zaehler} von ${m.flotten.nenner} `
+        + `${m.flotten.nenner === 1 ? 'Flotte' : 'Flotten'} der letzten `
+        + `${m.zeitraum.tageAusgewertet} Tage dabei.`,
+      zusatz: m.zeitraum.hinweis
     };
   });
 

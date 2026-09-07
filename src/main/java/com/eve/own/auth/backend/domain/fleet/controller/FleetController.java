@@ -107,4 +107,31 @@ public class FleetController {
             @RequestParam(required = false) Integer tage) {
         return ResponseEntity.ok(fleetStatisticsService.statistik(CurrentUser.characterId(), tage));
     }
+
+    /**
+     * Die <b>eigene</b> FAT-Statistik - fuer jeden Angemeldeten.
+     *
+     * <h3>Warum ein zweiter Endpunkt und kein Schalter am ersten</h3>
+     * <p>Weil die Absicht so am {@code @PreAuthorize} ablesbar ist: Oben steht
+     * {@link AccessRules#FLEET_STAFF}, hier steht
+     * {@link AccessRules#AUTHENTICATED}, und wer die Datei liest, sieht in zwei
+     * Zeilen, welcher Kreis was bekommt. Ein Schalter in einem Endpunkt macht
+     * aus einem vergessenen Zweig eine Datenpreisgabe - die Antwort saehe
+     * richtig aus, traege aber die Namensliste der ganzen Corporation.</p>
+     *
+     * <h3>Der Account kommt aus der Sitzung</h3>
+     * <p>Diese Methode nimmt <b>nur</b> den Zeitraum entgegen. Es gibt keinen
+     * Parameter fuer eine Kennung - haette sie einen, waere sie ohne
+     * Rollenpruefung eine Auskunftsstelle ueber jeden anderen Piloten. Wer
+     * gemeint ist, steht im Sicherheitskontext und sonst nirgends.</p>
+     *
+     * @param tage 30, 90 oder 180; ohne Angabe 90
+     */
+    @PreAuthorize(AccessRules.AUTHENTICATED)
+    @GetMapping("/statistics/me")
+    public ResponseEntity<FleetStatisticsDtos.MeineFat> getMyFleetStatistics(
+            @RequestParam(required = false) Integer tage) {
+        return ResponseEntity.ok(
+                fleetStatisticsService.meineStatistik(CurrentUser.characterId(), tage));
+    }
 }

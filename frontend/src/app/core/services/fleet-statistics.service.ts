@@ -117,6 +117,44 @@ export interface FatStatistik {
 }
 
 /**
+ * Die eigene Teilnahme - und **nur** die eigene.
+ *
+ * <p>Ein eigener Datensatz und kein leergeräumtes {@link FatStatistik}: Ein
+ * Feld, das leer bleiben *soll*, füllt beim nächsten Umbau jemand versehentlich
+ * wieder, und dann steht die Namensliste der ganzen Corporation in der Antwort
+ * eines Mitglieds. Hier hat eine fremde Zeile schlicht keinen Platz - es gibt
+ * keine `AccountZeile`, keine `Teilnahme`, keine `Kopfzeile`. Die einzige Liste
+ * ist `charaktere`, und darin stehen die eigenen Namen.</p>
+ *
+ * <p>Der Zuschnitt geschieht im Server, nicht hier. Fremde Zeilen im Frontend
+ * auszublenden wäre keine Absicherung - sie stünden trotzdem in der Antwort,
+ * und jeder Browser zeigt sie mit zwei Klicks.</p>
+ */
+export interface MeineFat {
+  zeitraum: Zeitraum;
+  /**
+   * Die eigenen Teilnahmen von allen Flotten des Fensters.
+   *
+   * <p>Hier steht ein Nenner, wo die Tafel der Führung keinen hat: Dort wäre er
+   * eine Rangfolge über Menschen, hier gehört die eine Zeile dem Leser selbst.
+   * "6 von 20" ist für ihn die Einordnung, die "6" allein nicht hat.</p>
+   */
+  flotten: Anteil;
+  /** Ob überhaupt eine eigene Teilnahme im Fenster liegt - eine Null allein sähe aus wie ein Messwert. */
+  dabei: boolean;
+  /** Die eigenen Charaktere, die tatsächlich geflogen sind. */
+  charaktere: string[];
+  ersteFlotte: string | null;
+  letzteFlotte: string | null;
+  /** Ob das Auth mehr als einen Charakter zu diesem Account kennt. */
+  verbunden: boolean;
+  /** Der fertige Satz zur Leerauskunft - vom Server, damit er nicht zweimal existiert. */
+  hinweis: string | null;
+  /** Der Vorbehalt zu unverknüpften Alts, samt dem Weg zur Verknüpfung. */
+  verbindungsHinweis: string | null;
+}
+
+/**
  * Die wählbaren Zeiträume - dieselben drei wie im Server.
  *
  * <p>Kein "seit Anbeginn": Die Zahl würde mit jedem Monat träger (ein Pilot,
@@ -148,6 +186,24 @@ export class FleetStatisticsService {
    */
   statistik(tage: ZeitraumTage): Observable<FatStatistik> {
     return this.http.get<FatStatistik>(`${this.apiUrl}/statistics`, {
+      params: new HttpParams().set('tage', tage),
+    });
+  }
+
+  /**
+   * Die eigene Teilnahme - eine zweite Adresse und kein Schalter an der ersten.
+   *
+   * <p>Am Server hängt an `/statistics` die Rolle der Flottenführung und an
+   * `/statistics/me` nur die Anmeldung. Zwei Adressen, weil die Absicht dann
+   * ablesbar ist; ein Schalter in einem Endpunkt macht aus einem vergessenen
+   * Zweig eine Datenpreisgabe.</p>
+   *
+   * <p>Wer gemeint ist, steht in der Sitzung. Dieser Aufruf schickt deshalb nur
+   * den Zeitraum mit - eine Kennung mitzugeben gibt es nicht, und das ist die
+   * Eigenschaft, an der der ganze Zuschnitt hängt.</p>
+   */
+  meineStatistik(tage: ZeitraumTage): Observable<MeineFat> {
+    return this.http.get<MeineFat>(`${this.apiUrl}/statistics/me`, {
       params: new HttpParams().set('tage', tage),
     });
   }

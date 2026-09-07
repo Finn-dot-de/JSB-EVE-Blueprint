@@ -10,6 +10,7 @@ import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.Anteil;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.DoktrinAngabe;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.FatStatistik;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.Kopfzeile;
+import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.MeineFat;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.Teilnahme;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.Zeitraum;
 import com.eve.own.auth.backend.domain.fleet.repository.FleetStatisticsQueryRepository;
@@ -73,6 +74,14 @@ import org.springframework.transaction.annotation.Transactional;
  * anderer Dienst diese Methode direkt ruft. Dieselbe Ueberlegung wie im
  * {@link FleetPingService} - und hier haengt dran, dass eine Liste mit den
  * Namen aller Piloten samt ihrer Teilnahmezahl herausgeht.</p>
+ *
+ * <h2>Zwei Sichten, zwei Methoden</h2>
+ * <p>{@link #statistik} ist die corpweite Tafel und bleibt der Flottenfuehrung
+ * vorbehalten. {@link #meineStatistik} zeigt jedem Angemeldeten seine eigene
+ * Teilnahme - und nur seine. Getrennte Methoden mit getrennten Rueckgabetypen
+ * und nicht eine mit einem Schalter: Aus einem vergessenen Zweig wird sonst
+ * eine Datenpreisgabe, und ein {@link MeineFat} kann eine fremde Zeile gar
+ * nicht erst tragen.</p>
  */
 @Service
 public class FleetStatisticsService {
@@ -198,6 +207,61 @@ public class FleetStatisticsService {
     public FatStatistik statistik(Long actorId, Integer tage) {
         requireFleetStaff(actorId);
 
+        Fenster fenster = ladeFenster(tage);
+        return zusammensetzen(fenster.flotten(), fenster.zeitraum());
+    }
+
+    /**
+     * Die eigene Teilnahme - fuer jeden Angemeldeten, und ausschliesslich seine.
+     *
+     * <h3>Warum das eine zweite Methode ist und kein Schalter in der ersten</h3>
+     * <p>Ein Schalter macht aus einem vergessenen Zweig eine Datenpreisgabe:
+     * Wer beim naechsten Umbau eine Zeile vor die Fallunterscheidung schiebt,
+     * schickt einem Mitglied die Namensliste der ganzen Corporation, und nichts
+     * daran sieht falsch aus. Zwei Methoden mit zwei Rueckgabetypen koennen das
+     * nicht - {@link MeineFat} hat fuer eine fremde Zeile keinen Platz.</p>
+     *
+     * <h3>Woher der Account kommt</h3>
+     * <p>Aus dem uebergebenen Charakter der Sitzung, ueber
+     * {@link Character#getAccountId()}. Es gibt <b>keinen</b> Parameter, mit dem
+     * sich eine fremde Kennung anfragen liesse - haette diese Methode einen,
+     * waere sie eine Auskunftsstelle ueber jeden anderen, und die fehlende
+     * Rollenpruefung waere dann genau das Loch.</p>
+     *
+     * <p>Geladen wird dasselbe Fenster wie fuer die Fuehrung und erst danach
+     * zugeschnitten. Das ist Absicht: Die Flottenzahl im Nenner ist dieselbe,
+     * die der FC in seiner Kopfzeile sieht. Eine zweite, engere Abfrage waere
+     * schneller und wuerde frueher oder spaeter eine andere Zahl liefern -
+     * dieselbe Falle, wegen der es im Repository <em>ein</em> Skelett gibt und
+     * nicht zwei Aggregate.</p>
+     *
+     * @param actorId der angemeldete Charakter - er sieht sich selbst
+     * @param tage 30, 90 oder 180; {@code null} bedeutet {@link #TAGE_VORGABE}
+     * @throws IllegalArgumentException bei einem nicht waehlbaren Zeitraum oder
+     *     einem unbekannten Charakter
+     */
+    @Transactional(readOnly = true)
+    public MeineFat meineStatistik(Long actorId, Integer tage) {
+        // Keine Rollenpruefung, und das ist keine Auslassung: Der Zuschnitt
+        // unten IST die Pruefung. Wer hier ankommt, bekommt seine eigene Zeile
+        // und keine andere - unabhaengig davon, welche Rollen er traegt.
+        Character actor = characterRepo.findById(actorId).orElseThrow(
+                () -> new IllegalArgumentException("Charakter " + actorId + " ist unbekannt."));
+
+        Fenster fenster = ladeFenster(tage);
+        return eigeneSicht(fenster, actor.getAccountId());
+    }
+
+    /** Die geladenen Flotten des Fensters samt der Beschreibung des Fensters. */
+    private record Fenster(List<Flotte> flotten, Zeitraum zeitraum) {}
+
+    /**
+     * Laedt das Fenster - fuer beide Sichten dieselbe Menge.
+     *
+     * <p>Aus einer Quelle, damit die Flottenzahl, die ein Mitglied als Nenner
+     * sieht, dieselbe ist, die in der Kopfzeile des FC steht.</p>
+     */
+    private Fenster ladeFenster(Integer tage) {
         int gewaehlt = geprueftesFenster(tage);
         Instant bis = Instant.now();
         Instant angefragtesVon = bis.minus(gewaehlt, ChronoUnit.DAYS);
@@ -210,11 +274,8 @@ public class FleetStatisticsService {
         int ausgewertet = gekuerzt ? NOTFENSTER_TAGE : gewaehlt;
         Instant von = gekuerzt ? bis.minus(NOTFENSTER_TAGE, ChronoUnit.DAYS) : angefragtesVon;
 
-        List<Flotte> flotten = ladeFlotten(von);
-        Zeitraum zeitraum = zeitraum(gewaehlt, ausgewertet, von, bis,
-                vorab.ersteFlotteInsgesamt(), gekuerzt);
-
-        return zusammensetzen(flotten, zeitraum);
+        return new Fenster(ladeFlotten(von), zeitraum(gewaehlt, ausgewertet, von, bis,
+                vorab.ersteFlotteInsgesamt(), gekuerzt));
     }
 
     // ==================================================================
@@ -666,6 +727,112 @@ public class FleetStatisticsService {
                 + "nicht mit seinem Main verknuepft ist: Der bekommt hier eine eigene Zeile, "
                 + "und sein Account zaehlt doppelt. Die Alt-Erkennung unter CharLink schlaegt "
                 + "solche Verknuepfungen vor.";
+    }
+
+    // ==================================================================
+    // Die eigene Sicht
+    // ==================================================================
+
+    /**
+     * Schneidet aus dem Fenster genau eine Teilnahme heraus - die des
+     * Betrachters.
+     *
+     * <p>Was hier <em>nicht</em> gebaut wird, ist der Punkt: keine Kopfzeile
+     * (wie viele Accounts, wie viele Charaktere, wie viele FCs die Corporation
+     * hat, beantwortet keine Frage, die jemand ueber sich selbst hat), keine
+     * Tafel, keine Doktrin-Rangfolge. Uebrig bleibt die eine Zeile, die dem
+     * Leser gehoert, und die Flottenzahl als Nenner, ohne den sie nicht lesbar
+     * waere.</p>
+     */
+    private MeineFat eigeneSicht(Fenster fenster, Long account) {
+        Set<Long> eigeneFlotten = new LinkedHashSet<>();
+        Map<Long, String> eigeneCharaktere = new LinkedHashMap<>();
+        Instant erste = null;
+        Instant letzte = null;
+
+        for (Flotte f : fenster.flotten()) {
+            for (TeilnahmeZeile t : f.teilnehmer()) {
+                // ***Der Zuschnitt.*** Er steht hier und nicht im Frontend:
+                // Ausgeblendete Zeilen stuenden trotzdem in der Antwort, und
+                // jeder Browser zeigt sie mit zwei Klicks. Fremde Teilnahmen
+                // verlassen diesen Dienst gar nicht erst.
+                if (!account.equals(t.accountId())) {
+                    continue;
+                }
+                // Dieselbe MENGE wie in der Tafel der Fuehrung: Drei eigene
+                // Alts in derselben Flotte legen dreimal dieselbe ID hinein
+                // und ergeben EINEN FAT. Ein Zaehler an dieser Stelle wuerde
+                // die eigene Zahl gegenueber der Tafel des FC aufblasen - und
+                // von zwei Zahlen fuer denselben Sachverhalt glaubt der Leser
+                // die groessere.
+                eigeneFlotten.add(f.id());
+                eigeneCharaktere.merge(t.characterId(), t.characterName(),
+                        FleetStatisticsService::bessererName);
+                erste = frueher(erste, f.start());
+                letzte = spaeter(letzte, f.start());
+            }
+        }
+
+        long imFenster = fenster.flotten().size();
+        long eigene = eigeneFlotten.size();
+        boolean dabei = eigene > 0;
+
+        AccountInfo info = accountInfos(Set.of(account)).get(account);
+        boolean verbunden = info != null && info.charaktere() > 1;
+
+        return new MeineFat(fenster.zeitraum(), new Anteil(eigene, imFenster), dabei,
+                // Sortiert und nicht in Beitrittsreihenfolge - sonst sieht
+                // dieselbe Auskunft bei jedem Laden anders aus.
+                eigeneCharaktere.values().stream().sorted().toList(),
+                erste, letzte, verbunden,
+                leerauskunft(dabei, imFenster, fenster.zeitraum()),
+                eigenerVerbindungsHinweis(verbunden, info));
+    }
+
+    /**
+     * Der Satz fuer den, der im Zeitraum nirgends dabei war.
+     *
+     * <p>Eine nackte 0 saehe aus wie ein Messwert ueber eine Person. Sie kann
+     * aber zweierlei heissen, und der Unterschied ist der ganze Inhalt dieses
+     * Satzes: Entweder ist gar keine Flotte gefahren worden - dann sagt
+     * die Null nichts ueber den Leser -, oder es gab welche, und dann kann es
+     * ebenso gut an der Erfassung liegen wie am Fliegen.</p>
+     */
+    private static String leerauskunft(boolean dabei, long imFenster, Zeitraum zeitraum) {
+        if (dabei) {
+            return null;
+        }
+        if (imFenster == 0) {
+            return "In den letzten " + zeitraum.tageAusgewertet() + " Tagen ist ueberhaupt keine "
+                    + "Flotte erfasst worden. Die Null oben ist deshalb eine Aussage ueber den "
+                    + "Zeitraum und keine ueber dich.";
+        }
+        return "In den letzten " + zeitraum.tageAusgewertet() + " Tagen sind " + imFenster
+                + " Flotten gefahren worden, bei keiner davon bist du erfasst. Erfasst wird, wer "
+                + "den Teilnahme-Link geklickt hat oder beim ESI-Abgleich in der Flotte stand - "
+                + "bist du mitgeflogen und stehst hier trotzdem nicht, fehlt die Erfassung und "
+                + "nicht die Teilnahme.";
+    }
+
+    /**
+     * Der Vorbehalt zu den eigenen Alts - hier schaerfer als in der Tafel.
+     *
+     * <p>Dort ist die Zahl eine Fehlerobergrenze ueber viele Zeilen, hier
+     * betrifft sie die eine Zahl, die der Leser gerade anschaut: Wer seine
+     * Alts nicht verknuepft hat, sieht eine zu niedrige eigene Zahl und haelt
+     * sie fuer seine. Deshalb steht der Weg zur Verknuepfung im Satz und nicht
+     * nur in einem Hilfetext irgendwo.</p>
+     */
+    private static String eigenerVerbindungsHinweis(boolean verbunden, AccountInfo info) {
+        if (!verbunden) {
+            return "Das Auth kennt zu dir nur einen einzigen Charakter. Fliegst du mit Alts, "
+                    + "zaehlt hier nur der eine mit, und deine Zahl waere zu niedrig. Unter "
+                    + "CharLink verknuepfst du deine Charaktere - danach zaehlt jede Flotte "
+                    + "einmal, gleich mit welchem von ihnen du dabei warst.";
+        }
+        return info.charaktere() + " Charaktere sind unter CharLink mit dir verknuepft, ihre "
+                + "Flotten sind oben mitgezaehlt. Wer mit drei Alts in derselben Flotte war, "
+                + "hat einmal teilgenommen.";
     }
 
     // ==================================================================

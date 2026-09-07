@@ -13,6 +13,7 @@ import {
   Anteil,
   FatStatistik,
   FleetStatisticsService,
+  MeineFat,
 } from '../../services/fleet-statistics.service';
 
 /** Eine Quote, wie der Server sie liefert: Zähler und Nenner, nie ein Prozentwert. */
@@ -79,6 +80,29 @@ function statistik(over: Partial<FatStatistik> = {}): FatStatistik {
       ohneVerbindung: anteil(3, 22),
       hinweis: 'Bei 3 von 22 Accounts kennt das Auth nur einen einzigen Charakter.',
     },
+    ...over,
+  };
+}
+
+/**
+ * Die eigene Sicht, wie der Server sie liefert.
+ *
+ * <p>Sie hat andere Felder als {@link statistik} - kein `kopf`, keine
+ * `teilnahme`, keine Liste von Zeilen. Das ist der Punkt: Eine fremde Zeile
+ * hat hier keinen Platz, und ein Test hält das weiter unten am Datensatz
+ * fest.</p>
+ */
+function meineFat(over: Partial<MeineFat> = {}): MeineFat {
+  return {
+    zeitraum: statistik().zeitraum,
+    flotten: anteil(6, 20),
+    dabei: true,
+    charaktere: ['Ich Selbst', 'Mein Erster Alt'],
+    ersteFlotte: '2026-06-12T18:00:00Z',
+    letzteFlotte: '2026-09-02T18:00:00Z',
+    verbunden: true,
+    hinweis: null,
+    verbindungsHinweis: '2 Charaktere sind unter CharLink mit dir verknuepft.',
     ...over,
   };
 }
@@ -157,8 +181,14 @@ describe('FleetManagerComponent', () => {
   let readinessService: Record<string, ReturnType<typeof vi.fn>>;
   let toastService: Record<string, ReturnType<typeof vi.fn>>;
   let confirmService: { ask: ReturnType<typeof vi.fn> };
-  let authService: { hasAnyRole: ReturnType<typeof vi.fn> };
-  let statisticsService: { statistik: ReturnType<typeof vi.fn> };
+  let authService: {
+    hasAnyRole: ReturnType<typeof vi.fn>;
+    currentUser: ReturnType<typeof vi.fn>;
+  };
+  let statisticsService: {
+    statistik: ReturnType<typeof vi.fn>;
+    meineStatistik: ReturnType<typeof vi.fn>;
+  };
   let clipboard: { writeText: ReturnType<typeof vi.fn> };
 
   const fleet = { id: 55, fleetName: 'Roam', trackingType: 'LIVE', trackingCode: 'abc' };
@@ -180,8 +210,16 @@ describe('FleetManagerComponent', () => {
     };
     toastService = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
     confirmService = { ask: vi.fn().mockResolvedValue(true) };
-    authService = { hasAnyRole: vi.fn().mockReturnValue(true) };
-    statisticsService = { statistik: vi.fn().mockReturnValue(of(statistik())) };
+    authService = {
+      hasAnyRole: vi.fn().mockReturnValue(true),
+      // Das Principal ist die Kennung des Mains - und die ist zugleich die
+      // accountId der Tafel. Nur deshalb lässt sich die eigene Zeile finden.
+      currentUser: vi.fn().mockReturnValue({ characterId: 5000, roles: [] }),
+    };
+    statisticsService = {
+      statistik: vi.fn().mockReturnValue(of(statistik())),
+      meineStatistik: vi.fn().mockReturnValue(of(meineFat())),
+    };
 
     clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
     vi.stubGlobal('navigator', { clipboard });
@@ -937,6 +975,164 @@ describe('FleetManagerComponent', () => {
 
         expect(component.teilnahmeZeilen().map(z => component.nameOf(z)))
           .toEqual(['Alpha Haupt', 'Unbekannt']);
+      });
+    });
+
+    /**
+     * Die eigene Sicht.
+     *
+     * <p>Die Absicherung steht im Server: Ein Mitglied bekommt die fremden
+     * Zeilen gar nicht erst geschickt. Was hier zu prüfen bleibt, ist die
+     * Weiche - dass ein Mitglied die eigene Adresse fragt und die corpweite
+     * nicht, dass die Beschriftung vor dem Klick sagt, was dahinter steht, und
+     * dass eine Leerauskunft eine Auskunft bleibt statt einer Null.</p>
+     */
+    describe('Die eigene Sicht', () => {
+
+      /** Jemand ohne jede Führungsrolle - der Regelfall in der Corporation. */
+      function alsMitglied() {
+        authService.hasAnyRole.mockReturnValue(false);
+      }
+
+      it('zeigt den Reiter jedem Angemeldeten und sagt in der Beschriftung, was dahinter steht', () => {
+        // Stünde für alle dasselbe Wort da, erwartete ein Mitglied die Tafel
+        // der Corporation und hielte seine eine Zeile für einen Fehler.
+        expect(component.statsReiterTitel).toBe('FAT-Statistik');
+
+        alsMitglied();
+
+        expect(component.statsReiterTitel).toBe('Meine FAT-Statistik');
+      });
+
+      it('fragt als Mitglied die eigene Adresse - und die corpweite gar nicht', () => {
+        // DIE REGEL: Der Zuschnitt hängt an der Adresse, nicht an einer
+        // Anzeige. Würde hier die corpweite Adresse gefragt und das Ergebnis
+        // im Frontend gefiltert, stünden die fremden Zeilen trotzdem in der
+        // Antwort - und jeder Browser zeigt sie mit zwei Klicks.
+        alsMitglied();
+
+        component.setTab('STATS');
+
+        expect(statisticsService.meineStatistik).toHaveBeenCalledWith(90);
+        expect(statisticsService.statistik).not.toHaveBeenCalled();
+        expect(component.meineFat()?.flotten).toEqual(anteil(6, 20));
+        expect(component.statistik()).toBeNull();
+      });
+
+      it('lädt für die Führung weiterhin die volle Tafel und nicht die eigene Sicht', () => {
+        component.setTab('STATS');
+
+        // Ohne diese Zeile könnte der Umbau die Führung stillschweigend auf
+        // die eigene Zeile setzen - sie hielte die Tafel dann für kaputt.
+        expect(statisticsService.statistik).toHaveBeenCalledWith(90);
+        expect(statisticsService.meineStatistik).not.toHaveBeenCalled();
+        expect(component.statistik()?.teilnahme.zeilen).toHaveLength(3);
+        expect(component.meineFat()).toBeNull();
+      });
+
+      it('trägt im eigenen Datensatz keine fremde Zeile - und kann gar keine tragen', () => {
+        // Strukturell am Datensatz und nicht am Zufall eines Testbestands:
+        // Es gibt kein `kopf`, keine `teilnahme`, keine Liste von Zeilen. Die
+        // einzige Liste sind die eigenen Namen. Ohne diese Zeile genügt beim
+        // nächsten Umbau ein zusätzliches Feld, und die Namensliste der
+        // Corporation stünde in der Antwort eines Mitglieds.
+        alsMitglied();
+        component.setTab('STATS');
+        const m = component.meineFat()!;
+
+        expect(Object.keys(m)).not.toContain('kopf');
+        expect(Object.keys(m)).not.toContain('teilnahme');
+        for (const [feld, wert] of Object.entries(m)) {
+          if (Array.isArray(wert)) {
+            expect(wert.every(eintrag => typeof eintrag === 'string'))
+              .toBe(true);
+            expect(feld).toBe('charaktere');
+          }
+        }
+      });
+
+      it('nennt die eigene Zahl mit ihrem Nenner, weil "6" allein keine Aussage ist', () => {
+        alsMitglied();
+
+        component.setTab('STATS');
+
+        expect(component.meinLeitsatz()?.ton).toBe('ruhig');
+        expect(component.meinLeitsatz()?.text)
+          .toBe('Du warst bei 6 von 20 Flotten der letzten 90 Tage dabei.');
+      });
+
+      it('sagt bei keiner einzigen Teilnahme den Klartext des Servers statt einer Null', () => {
+        // Eine 0 sähe aus wie ein Befund über eine Person. Sie kann aber
+        // ebenso gut heißen, dass die Erfassung fehlt - und das steht im Satz,
+        // der fertig vom Server kommt.
+        alsMitglied();
+        const satz = 'In den letzten 90 Tagen sind 20 Flotten gefahren worden, '
+          + 'bei keiner davon bist du erfasst.';
+        statisticsService.meineStatistik.mockReturnValue(of(meineFat({
+          flotten: anteil(0, 20),
+          dabei: false,
+          charaktere: [],
+          ersteFlotte: null,
+          letzteFlotte: null,
+          hinweis: satz,
+        })));
+
+        component.setTab('STATS');
+
+        expect(component.meinLeitsatz()?.ton).toBe('leise');
+        expect(component.meinLeitsatz()?.text).toBe(satz);
+      });
+
+      it('steht erst, wenn geladen ist', () => {
+        expect(component.meinLeitsatz()).toBeNull();
+      });
+
+      it('lädt beim Zeitraumwechsel die eigene Sicht neu, nicht die corpweite', () => {
+        alsMitglied();
+        component.setTab('STATS');
+
+        component.setStatistikTage(180);
+
+        expect(statisticsService.meineStatistik).toHaveBeenLastCalledWith(180);
+        expect(statisticsService.statistik).not.toHaveBeenCalled();
+      });
+
+      it('verwirft bei einem Fehler die eigenen Zahlen, statt alte stehen zu lassen', () => {
+        alsMitglied();
+        component.setTab('STATS');
+        expect(component.meineFat()).not.toBeNull();
+
+        statisticsService.meineStatistik.mockReturnValue(throwError(() => new Error('offline')));
+        component.setStatistikTage(30);
+
+        // Zahlen aus einem anderen Zeitraum unter einer neuen Überschrift
+        // wären die schlimmere Auskunft als gar keine.
+        expect(component.meineFat()).toBeNull();
+        expect(component.statistikFehler())
+          .toBe('Deine FAT-Statistik konnte nicht geladen werden.');
+        expect(component.loadingStatistik()).toBe(false);
+      });
+
+      it('hebt in der Tafel der Führung genau die eigene Zeile hervor', () => {
+        // Wer seine eigene Zahl findet, kann als Einziger beurteilen, ob die
+        // Zählung stimmt. Genau deshalb bekommt die Führung keine zweite,
+        // eigene Ansicht - zwei Zahlen für denselben Sachverhalt wären eine
+        // zu viel.
+        const eigene = konto('Ich Selbst', 12, { accountId: 5000 });
+        const fremde = konto('Jemand Anders', 12, { accountId: 5001 });
+
+        expect(component.istEigeneZeile(eigene)).toBe(true);
+        expect(component.istEigeneZeile(fremde)).toBe(false);
+      });
+
+      it('hebt keine Zeile hervor, solange niemand angemeldet ist', () => {
+        // Ohne den Rückfall verglichen sich `undefined` und eine fehlende
+        // accountId zu true, und eine fremde Zeile trüge die Markierung "das
+        // bist du".
+        authService.currentUser.mockReturnValue(null);
+
+        expect(component.istEigeneZeile(konto('Jemand Anders', 3, { accountId: 5000 })))
+          .toBe(false);
       });
     });
 

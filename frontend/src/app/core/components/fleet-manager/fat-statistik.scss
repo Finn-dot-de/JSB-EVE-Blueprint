@@ -238,6 +238,19 @@
   font-weight: 600;
 }
 
+// Die eigene Zeile in der Tafel der Fuehrung.
+// Ein Balken links und ein Hauch Hintergrund - kein Rahmen, keine Farbe, die
+// nach Bewertung aussieht: Diese Tafel bewertet niemanden, sie zaehlt. Die
+// Hervorhebung sagt nur "das bist du" und ist der Grund, warum ein FC keine
+// zweite, eigene Ansicht braucht: Er findet seine Zahl hier.
+.fat-eigene {
+  background-color: color-mix(in srgb, var(--accent-color) 7%, transparent);
+
+  td:first-child {
+    box-shadow: inset 3px 0 0 var(--accent-color);
+  }
+}
+
 // ---------- Je Account statt je Charakter ----------
 // Der Vorbehalt zur Gruppierung. Er steht ueber der Tafel und nicht als
 // Fussnote darunter: Wer die Tabelle liest, ohne zu wissen, dass ein nicht

@@ -7,11 +7,13 @@
     <button class="tab-btn" [class.active]="activeTab() === 'FLEETS'" (click)="setTab('FLEETS')">
       <i class="fa-solid fa-satellite-dish"></i> Aktive Flotten
     </button>
-    @if (canSeeStats) {
-      <button class="tab-btn" [class.active]="activeTab() === 'STATS'" (click)="setTab('STATS')">
-        <i class="fa-solid fa-chart-simple"></i> FAT-Statistik
-      </button>
-    }
+    <!-- Fuer JEDEN Angemeldeten - was dahinter steht, sagt die Beschriftung:
+         "Meine FAT-Statistik" ohne Fuehrungsrolle, "FAT-Statistik" mit. Ein
+         Mitglied, dem hier dasselbe Wort angeboten wuerde, erwartete die Tafel
+         der Corporation und hielte seine eine Zeile fuer einen Fehler. -->
+    <button class="tab-btn" [class.active]="activeTab() === 'STATS'" (click)="setTab('STATS')">
+      <i class="fa-solid fa-chart-simple"></i> {{ statsReiterTitel }}
+    </button>
     @if (canSeeReadiness) {
       <button class="tab-btn" [class.active]="activeTab() === 'DOCTRINES'" (click)="setTab('DOCTRINES')">
         <i class="fa-solid fa-book"></i> Gespeicherte Doktrinen
@@ -196,7 +198,11 @@
   }
 
   <!-- ======================== FAT-STATISTIK ======================== -->
-  @if (activeTab() === 'STATS' && canSeeStats) {
+  <!-- Der Reiter steht jedem Angemeldeten offen; welche der beiden Sichten
+       geladen wird, entscheidet dieselbe Rollengrenze wie am Server. Die
+       Corp-Tafel haengt deshalb an statistik(), die eigene an meineFat() -
+       gefuellt ist immer nur eines von beiden. -->
+  @if (activeTab() === 'STATS') {
     <div class="fat">
 
       <!-- Zeitraumwahl. Kein "seit Anbeginn": die Zahl wuerde mit jedem Monat
@@ -364,7 +370,14 @@
                 </thead>
                 <tbody>
                   @for (zeile of teilnahmeZeilen(); track zeile.accountId) {
-                    <tr>
+                    <!-- Die eigene Zeile hervorgehoben: In einer Tafel mit
+                         dreissig Namen sucht jeder zuerst sich selbst, und wer
+                         seine eigene Zahl findet, kann als Einziger
+                         beurteilen, ob die Zaehlung stimmt. Deshalb bekommt
+                         die Fuehrung auch keine zweite, eigene Ansicht - zwei
+                         Zahlen fuer denselben Sachverhalt waeren eine zu
+                         viel. -->
+                    <tr [class.fat-eigene]="istEigeneZeile(zeile)">
                       <td>
                         <!-- Aufklappbar und nicht immer sichtbar: Neben jedem
                              Namen drei weitere zu fuehren macht das
@@ -404,8 +417,13 @@
               <button class="btn-secondary fat-aufklapp" (click)="toggleEinmalige()">
                 <i class="fa-solid" [class.fa-chevron-down]="!einmaligeGezeigt()"
                    [class.fa-chevron-up]="einmaligeGezeigt()"></i>
+                <!-- "Accounts mit einer Flotte" las sich wie "elf Accounts in
+                     DERSELBEN Flotte" - genau so wurde es auch verstanden.
+                     Gemeint ist die Anzahl der Teilnahmen je Account, nicht
+                     eine gemeinsame Flotte. -->
                 {{ s.teilnahme.einmalige.length }}
-                {{ s.teilnahme.einmalige.length === 1 ? 'Account' : 'Accounts' }} mit einer Flotte
+                {{ s.teilnahme.einmalige.length === 1 ? 'Account war' : 'Accounts waren' }}
+                nur bei einer einzigen Flotte dabei
               </button>
 
               @if (einmaligeGezeigt()) {
@@ -419,7 +437,7 @@
                   </thead>
                   <tbody>
                     @for (zeile of s.teilnahme.einmalige; track zeile.accountId) {
-                      <tr>
+                      <tr [class.fat-eigene]="istEigeneZeile(zeile)">
                         <td>{{ nameOf(zeile) }}</td>
                         <td class="fat-charaktere">{{ zeile.charaktere.join(', ') }}</td>
                         <td>{{ zeile.letzteFlotte | date:'dd.MM.yy' }}</td>
@@ -430,6 +448,86 @@
               }
             }
           </section>
+        }
+      }
+
+      <!-- ======================== DIE EIGENE SICHT ========================
+           Kein abgespeckter Tabellenkopf: Die Frage lautet "wie stehe ich da",
+           und die beantwortet man mit Kennzahlen und nicht mit einer Tabelle,
+           die genau eine Zeile hat.
+           Was hier fehlt, ist ebenso Absicht wie das, was dasteht: keine
+           Kopfzahlen der Corporation (wie viele Accounts, wie viele
+           Charaktere, wie viele FCs beantwortet keine Frage, die jemand ueber
+           sich selbst hat) und keine fremde Zeile - die steht nicht einmal in
+           der Antwort des Servers. -->
+      @if (meineFat(); as m) {
+
+        @if (meinLeitsatz(); as satz) {
+          <div class="fat-leitsatz" [class.ist-leise]="satz.ton === 'leise'">
+            <i class="fa-solid"
+               [class.fa-comment]="satz.ton === 'leise'"
+               [class.fa-circle-check]="satz.ton === 'ruhig'"></i>
+            <div>
+              <p class="fat-leitsatz-text">{{ satz.text }}</p>
+              @if (satz.zusatz) {
+                <p class="fat-leitsatz-zusatz">{{ satz.zusatz }}</p>
+              }
+            </div>
+          </div>
+        }
+
+        <div class="kennzahlen">
+          <div class="kennzahl">
+            <!-- Der Nenner steht im selben Element wie der Zaehler: "6" allein
+                 ist keine Aussage, "6 von 20" ist eine. Die Flottenzahl ist
+                 nichts Geheimes - dieselben Flotten stehen im Reiter "Aktive
+                 Flotten". Und weiterhin kein Prozentwert. -->
+            <strong>{{ m.flotten.zaehler }} <em>von {{ m.flotten.nenner }}</em></strong>
+            <span>Flotten in {{ m.zeitraum.tageAusgewertet }} Tagen</span>
+          </div>
+          @if (m.dabei) {
+            <div class="kennzahl">
+              <strong>{{ m.ersteFlotte | date:'dd.MM.yy' }}</strong>
+              <span>erste Teilnahme im Zeitraum</span>
+            </div>
+            <div class="kennzahl">
+              <strong>{{ m.letzteFlotte | date:'dd.MM.yy' }}</strong>
+              <span>letzte Teilnahme im Zeitraum</span>
+            </div>
+            <div class="kennzahl">
+              <!-- Nicht wie viele Charaktere du HAST, sondern mit wie vielen du
+                   tatsaechlich geflogen bist - nur die stecken in der Zahl
+                   links. -->
+              <strong>{{ m.charaktere.length }}</strong>
+              <span>{{ m.charaktere.length === 1 ? 'eigener Charakter' : 'eigene Charaktere' }} dabei</span>
+            </div>
+          }
+        </div>
+
+        @if (m.dabei) {
+          <p class="fat-fussnote">
+            Gezählt wird je Account: Wer mit drei Alts in derselben Flotte war, hat
+            <strong>einmal</strong> teilgenommen. Mitgezählt sind
+            <strong>{{ m.charaktere.join(', ') }}</strong>.
+          </p>
+        }
+
+        <!-- Der Vorbehalt gilt hier schaerfer als in der Tafel der Fuehrung:
+             Dort ist er eine Fehlerobergrenze ueber viele Zeilen, hier
+             betrifft er die eine Zahl, die der Leser gerade anschaut. Wer
+             seine Alts nicht verknuepft hat, sieht eine zu niedrige eigene
+             Zahl - deshalb steht der Weg dorthin gleich daneben. -->
+        @if (m.verbindungsHinweis) {
+          <div class="hinweis leise fat-verbindung">
+            <i class="fa-solid" [class.fa-link-slash]="!m.verbunden"
+               [class.fa-link]="m.verbunden"></i>
+            <span>
+              {{ m.verbindungsHinweis }}
+              @if (!m.verbunden) {
+                <a routerLink="/charlink">Zu CharLink</a>
+              }
+            </span>
+          </div>
         }
       }
     </div>

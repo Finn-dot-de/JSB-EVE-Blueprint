@@ -17,6 +17,18 @@ package com.eve.own.auth.backend.common;
  */
 public final class AccessRules {
 
+    /**
+     * Jeder Angemeldete - fuer Endpunkte, die ausschliesslich die eigenen Daten
+     * des Anfragenden liefern.
+     *
+     * <p>Der Sicherheitsfilter verlangt fuer alle {@code /api}-Pfade ohnehin
+     * eine Anmeldung; diese Konstante sichert also nichts zusaetzlich ab. Sie
+     * steht trotzdem an der Methode, weil sie die Absicht ausspricht: An einem
+     * Endpunkt ohne jede Annotation laesst sich nicht unterscheiden, ob der
+     * weite Kreis gewollt ist oder ob jemand die Annotation vergessen hat.</p>
+     */
+    public static final String AUTHENTICATED = "isAuthenticated()";
+
     /** Fuehrung der Corporation. */
     public static final String LEADERSHIP = "hasAnyRole('ROLE_DIRECTOR', 'ROLE_CEO')";
 

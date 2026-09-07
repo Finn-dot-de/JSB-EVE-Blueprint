@@ -178,4 +178,64 @@ public class FleetStatisticsDtos {
      */
     public record FatStatistik(Zeitraum zeitraum, Kopfzeile kopf, boolean auswertbar,
                                String hinweis, Teilnahme teilnahme) {}
+
+    // ==================================================================
+    // Die eigene Sicht
+    // ==================================================================
+
+    /**
+     * Die eigene Teilnahme - und <b>nur</b> die eigene.
+     *
+     * <h3>Warum das ein eigener Datensatz ist und kein leergeraeumtes
+     * {@link FatStatistik}</h3>
+     * <p>Weil ein Feld, das leer bleiben <em>soll</em>, beim naechsten Umbau
+     * jemand versehentlich fuellt - und dann steht die Namensliste der ganzen
+     * Corporation in der Antwort eines Mitglieds, ohne dass irgendetwas rot
+     * wird. Dieser Datensatz hat fuer eine fremde Zeile schlicht keinen Platz:
+     * Er fuehrt keine {@link AccountZeile}, keine {@link Teilnahme}, keine
+     * {@link Kopfzeile} und ueberhaupt keine Liste von Datensaetzen. Die
+     * einzige Liste ist {@link #charaktere()}, und darin stehen die eigenen
+     * Namen. Derselbe Gedanke wie bei der Mail-Zaehlung, die kein Textfeld
+     * <em>hat</em>, statt eines zu fuehren, das leer bleiben soll.</p>
+     *
+     * <h3>Warum hier ein Nenner steht, wo die Tafel der Fuehrung keinen hat</h3>
+     * <p>{@link AccountZeile} traegt bewusst keine Quote: In einer Tafel mit
+     * zwanzig Zeilen ist ein Nenner eine Rangfolge ueber Menschen, und er ist
+     * unfair gegen jeden, der vor drei Wochen beigetreten ist. Hier steht
+     * genau <em>eine</em> Zeile, und sie gehoert dem Leser selbst. Er weiss,
+     * wann er beigetreten ist und wann er im Urlaub war - "6 von 20" ist fuer
+     * ihn die Einordnung, die "6" allein nicht hat. Die Flottenzahl ist dabei
+     * nichts Geheimes: Dieselben Flotten stehen im Reiter "Aktive Flotten".</p>
+     *
+     * @param zeitraum welches Fenster ausgewertet wurde und wie weit die Daten
+     *     ueberhaupt zurueckreichen. Eine Aussage ueber die Daten, keine ueber
+     *     Personen - und ohne sie waere die Zahl daneben nicht lesbar.
+     * @param flotten die eigenen Teilnahmen von allen Flotten des Fensters.
+     *     Zaehler und Nenner getrennt, wie ueberall hier - eine fertige
+     *     Prozentzahl gibt es in diesen Datensaetzen nicht.
+     * @param dabei ob ueberhaupt eine eigene Teilnahme im Fenster liegt. Eine
+     *     Null ohne dieses Feld saehe aus wie ein Messwert; sie ist aber
+     *     womoeglich nur eine Erfassungsluecke, und der {@link #hinweis()} sagt
+     *     das aus.
+     * @param charaktere die <em>eigenen</em> Charaktere, die tatsaechlich
+     *     geflogen sind, nach Namen sortiert. Ohne sie kann der Leser nicht
+     *     pruefen, ob die Zahl seine Alts einschliesst - und eine Zahl, die
+     *     man nicht pruefen kann, muss man glauben.
+     * @param ersteFlotte erste eigene Teilnahme im Fenster; {@code null}, wenn
+     *     keine
+     * @param letzteFlotte letzte eigene Teilnahme im Fenster; {@code null},
+     *     wenn keine
+     * @param verbunden ob das Auth zu diesem Account mehr als einen Charakter
+     *     kennt. False heisst nicht "Fehler", sondern: falls es Alts gibt, die
+     *     nicht verknuepft sind, ist die Zahl oben zu niedrig.
+     * @param hinweis der fertige Satz zur Leerauskunft - vom Server, damit
+     *     dieselbe Aussage nicht im Frontend ein zweites Mal entsteht
+     * @param verbindungsHinweis der Vorbehalt zu unverknuepften Alts, samt dem
+     *     Weg zur Verknuepfung. Er gilt hier schaerfer als in der Tafel der
+     *     Fuehrung: Dort ist er eine Fehlerobergrenze ueber viele Zeilen, hier
+     *     betrifft er die eine Zahl, die der Leser gerade liest.
+     */
+    public record MeineFat(Zeitraum zeitraum, Anteil flotten, boolean dabei,
+                           List<String> charaktere, Instant ersteFlotte, Instant letzteFlotte,
+                           boolean verbunden, String hinweis, String verbindungsHinweis) {}
 }

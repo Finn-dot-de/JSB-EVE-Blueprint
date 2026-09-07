@@ -12,9 +12,11 @@ import com.eve.own.auth.backend.domain.fleet.TrackingType;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.Anteil;
 import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.FatStatistik;
+import com.eve.own.auth.backend.domain.fleet.dto.FleetStatisticsDtos.MeineFat;
 import com.eve.own.auth.backend.domain.fleet.repository.FleetStatisticsQueryRepository;
 import com.eve.own.auth.backend.testsupport.FakeTuple;
 import jakarta.persistence.Tuple;
+import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -122,6 +124,22 @@ class FleetStatisticsServiceTest {
         Character c = new Character();
         c.setId(id);
         c.setName(name);
+        c.setRoles(Set.of(rollen));
+        when(characterRepo.findById(id)).thenReturn(Optional.of(c));
+    }
+
+    /**
+     * Ein Alt, wie er sich anmeldet: eigene Kennung, aber der Account des
+     * Mains.
+     *
+     * <p>Genau daran haengt, dass die eigene Sicht den Account aufloest und
+     * nicht den angemeldeten Charakter als Filter nimmt.</p>
+     */
+    private void charakterMitMain(Long id, String name, Long mainId, String... rollen) {
+        Character c = new Character();
+        c.setId(id);
+        c.setName(name);
+        c.setMainCharacterId(mainId);
         c.setRoles(Set.of(rollen));
         when(characterRepo.findById(id)).thenReturn(Optional.of(c));
     }
@@ -922,8 +940,350 @@ class FleetStatisticsServiceTest {
     }
 
     // ==================================================================
+    // Die eigene Sicht
+    // ==================================================================
+
+    /**
+     * Was ein Mitglied ueber sich selbst erfaehrt - und vor allem, was es
+     * <em>nicht</em> ueber andere erfaehrt.
+     *
+     * <p>Der Punkt, an dem dieser Umbau scheitern koennte, ist nicht die
+     * Anzeige: Fremde Zeilen im Frontend auszublenden waere keine Absicherung,
+     * sie stuenden trotzdem in der Antwort. Der Zuschnitt geschieht deshalb
+     * hier, und zwei Tests halten ihn strukturell fest - einer am Typ des
+     * Datensatzes, einer am Inhalt einer Antwort mit vielen Fremden im
+     * Fenster.</p>
+     */
+    @Nested
+    @DisplayName("Eigene Sicht")
+    class EigeneSicht {
+
+        private static final Long ICH = 6000L;
+        private static final Long MEIN_ALT = 6001L;
+        private static final Long MEIN_ZWEITER_ALT = 6002L;
+        private static final Long FREMDER = 6100L;
+        private static final Long FREMDER_ALT = 6101L;
+        private static final Long NOCH_EIN_FREMDER = 6200L;
+
+        /**
+         * Ein Mitglied ohne jede Fuehrungsrolle, mit zwei verknuepften Alts.
+         *
+         * <p>Angemeldet ist der Main - so setzt der JwtAuthenticationFilter das
+         * Principal.</p>
+         */
+        private void ichOhneAmt() {
+            charakter(ICH, "Ich Selbst", SystemRoles.USER, SystemRoles.MEMBER);
+            registriert(ICH, "Ich Selbst", ICH);
+            registriert(MEIN_ALT, "Mein Erster Alt", ICH);
+            registriert(MEIN_ZWEITER_ALT, "Mein Zweiter Alt", ICH);
+        }
+
+        /** Zwei andere Accounts, die im selben Fenster fleissig geflogen sind. */
+        private void andereImselbenFenster() {
+            registriert(FREMDER, "Fremder Pilot", FREMDER);
+            registriert(FREMDER_ALT, "Fremder Alt", FREMDER);
+            registriert(NOCH_EIN_FREMDER, "Zweiter Fremder", NOCH_EIN_FREMDER);
+            for (long f = 1; f <= 8; f++) {
+                dabei(f, FREMDER, "Fremder Pilot");
+                dabei(f, FREMDER_ALT, "Fremder Alt");
+                dabei(f, NOCH_EIN_FREMDER, "Zweiter Fremder");
+            }
+        }
+
+        /** Acht Flotten im Fenster - genug, dass die Corp-Sicht auswertbar waere. */
+        private void achtFlotten() {
+            for (int i = 1; i <= 8; i++) {
+                flotte(i, umUtc(40 - i, 19), FC_EINS, "Erster FC");
+            }
+        }
+
+        @Test
+        @DisplayName("der Datensatz der eigenen Sicht kann eine fremde Zeile gar nicht tragen")
+        void keinPlatzFuerFremdeZeilen() {
+            // Ohne diese Zeile genuegt beim naechsten Umbau ein
+            // "List<AccountZeile> tafel" in MeineFat, und die Namensliste der
+            // ganzen Corporation steht in der Antwort eines Mitglieds, ohne
+            // dass irgendwo etwas rot wird. Geprueft wird der TYP und nicht der
+            // Inhalt eines Testbestands: Ein Bestand kann zufaellig leer sein,
+            // ein Typ nicht.
+            for (RecordComponent bestandteil : MeineFat.class.getRecordComponents()) {
+                String wo = "MeineFat." + bestandteil.getName();
+                assertThat(bestandteil.getType())
+                        .as(wo + " darf keinen Datensatz ueber Menschen tragen")
+                        .isNotIn(FleetStatisticsDtos.AccountZeile.class,
+                                FleetStatisticsDtos.Teilnahme.class,
+                                FleetStatisticsDtos.Kopfzeile.class,
+                                FatStatistik.class);
+                if (Collection.class.isAssignableFrom(bestandteil.getType())) {
+                    // Die einzige Sammlung ist die der EIGENEN Charakternamen.
+                    // Eine Liste von Datensaetzen waere genau der Platz, an dem
+                    // eine fremde Zeile wieder hineinpasste.
+                    assertThat(bestandteil.getGenericType().getTypeName())
+                            .as(wo + " darf nur Namen fuehren, keine Datensaetze")
+                            .isEqualTo("java.util.List<java.lang.String>");
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("in der eigenen Antwort steht kein fremder Name, obwohl andere im Fenster flogen")
+        void keinFremderNameInDerAntwort() {
+            ichOhneAmt();
+            achtFlotten();
+            andereImselbenFenster();
+            dabei(1, ICH, "Ich Selbst");
+            dabei(2, MEIN_ALT, "Mein Erster Alt");
+
+            MeineFat meine = dienst.meineStatistik(ICH, null);
+
+            List<String> texte = new ArrayList<>();
+            sammleTexte("meine", meine, texte);
+            // Der zweite Teil des Zuschnitts: nicht nur kein Feld fuer fremde
+            // Zeilen, sondern auch kein fremder Name in irgendeinem Text. Ohne
+            // diese Zeile koennte ein Hinweissatz "Fremder Pilot war 8 mal
+            // dabei" lauten und der Datensatz saehe weiterhin harmlos aus.
+            assertThat(texte).as("Texte der eigenen Antwort: " + texte)
+                    .noneMatch(text -> text.contains("Fremder")
+                            || text.contains("Zweiter Fremder"));
+            assertThat(meine.charaktere()).containsExactly("Ich Selbst", "Mein Erster Alt");
+        }
+
+        @Test
+        @DisplayName("ein Mitglied ohne Fuehrungsrolle bekommt die eigene Sicht, aber nicht die corpweite")
+        void mitgliedSiehtNurSichSelbst() {
+            ichOhneAmt();
+            achtFlotten();
+            andereImselbenFenster();
+            dabei(1, ICH, "Ich Selbst");
+
+            // Ohne diese beiden Zeilen nebeneinander waere nicht festgehalten,
+            // dass die Grenze zwischen den SICHTEN verlaeuft und nicht zwischen
+            // "darf die Seite oeffnen" und "darf nicht": Dasselbe Mitglied
+            // bekommt das eine und nicht das andere.
+            assertThat(dienst.meineStatistik(ICH, null).flotten().zaehler()).isEqualTo(1);
+            assertThatThrownBy(() -> dienst.statistik(ICH, null))
+                    .isInstanceOf(AccessDeniedException.class)
+                    .hasMessageContaining("FCs und Direktoren");
+        }
+
+        @Test
+        @DisplayName("der eigene Account kommt aus der Sitzung - eine fremde Kennung laesst sich nicht anfragen")
+        void accountKommtAusDerSitzung() {
+            // Strukturell, weil es den Parameter nicht GIBT, den dieser Test
+            // sonst pruefen wuerde: Die Methode nimmt den Handelnden und den
+            // Zeitraum, sonst nichts. Haette sie eine zweite Kennung, waere sie
+            // ohne Rollenpruefung eine Auskunftsstelle ueber jeden anderen -
+            // und genau diese Zeile faellt beim naechsten Umbau auf.
+            List<Method> methoden = Stream.of(FleetStatisticsService.class.getMethods())
+                    .filter(m -> m.getName().equals("meineStatistik"))
+                    .toList();
+            assertThat(methoden).hasSize(1);
+            assertThat(methoden.getFirst().getParameterTypes())
+                    .containsExactly(Long.class, Integer.class);
+
+            // Und die Wirkung davon: Wer sich mit einem Alt anmeldet, sieht die
+            // Zahl seines Accounts - der Charakter der Sitzung wird zum Account
+            // aufgeloest und nicht als Filter verwendet.
+            ichOhneAmt();
+            charakterMitMain(MEIN_ALT, "Mein Erster Alt", ICH, SystemRoles.USER);
+            achtFlotten();
+            dabei(1, ICH, "Ich Selbst");
+            dabei(2, MEIN_ALT, "Mein Erster Alt");
+
+            assertThat(dienst.meineStatistik(MEIN_ALT, null).flotten())
+                    .isEqualTo(dienst.meineStatistik(ICH, null).flotten())
+                    .isEqualTo(new Anteil(2, 8));
+        }
+
+        @Test
+        @DisplayName("drei eigene Alts in EINER Flotte ergeben auch hier EINEN FAT")
+        void dreiEigeneAltsEinFat() {
+            ichOhneAmt();
+            achtFlotten();
+            dabei(1, ICH, "Ich Selbst");
+            dabei(1, MEIN_ALT, "Mein Erster Alt");
+            dabei(1, MEIN_ZWEITER_ALT, "Mein Zweiter Alt");
+
+            MeineFat meine = dienst.meineStatistik(ICH, null);
+
+            // Ohne die Menge stuende hier eine 3, waehrend der FC in seiner
+            // Tafel eine 1 sieht - und von zwei Zahlen fuer denselben
+            // Sachverhalt glaubt der Leser die groessere.
+            assertThat(meine.flotten()).isEqualTo(new Anteil(1, 8));
+            assertThat(meine.charaktere())
+                    .containsExactly("Ich Selbst", "Mein Erster Alt", "Mein Zweiter Alt");
+            assertThat(meine.ersteFlotte()).isEqualTo(meine.letzteFlotte());
+        }
+
+        @Test
+        @DisplayName("wer im Zeitraum nirgends dabei war, bekommt eine ehrliche Leerauskunft")
+        void nirgendsDabei() {
+            ichOhneAmt();
+            achtFlotten();
+            andereImselbenFenster();
+
+            MeineFat meine = dienst.meineStatistik(ICH, null);
+
+            // Ohne diesen Zweig stuende eine nackte 0 da, und die saehe aus wie
+            // ein Befund ueber eine Person. Sie kann aber ebenso gut heissen,
+            // dass die Erfassung fehlt - der Satz sagt beides.
+            assertThat(meine.dabei()).isFalse();
+            assertThat(meine.flotten()).isEqualTo(new Anteil(0, 8));
+            assertThat(meine.ersteFlotte()).isNull();
+            assertThat(meine.charaktere()).isEmpty();
+            assertThat(meine.hinweis()).contains("8 Flotten").contains("Erfassung");
+        }
+
+        @Test
+        @DisplayName("liegt gar keine Flotte im Zeitraum, sagt die Auskunft das - und nicht 'du warst nicht dabei'")
+        void garKeineFlotteImZeitraum() {
+            ichOhneAmt();
+
+            MeineFat meine = dienst.meineStatistik(ICH, null);
+
+            // Der Unterschied, den eine Null nicht ausdruecken kann: Hier ist
+            // niemand geflogen. Ohne diese Unterscheidung liest ein Mitglied
+            // eine Aussage ueber sich, wo eine ueber den Zeitraum steht.
+            assertThat(meine.flotten()).isEqualTo(new Anteil(0, 0));
+            assertThat(meine.hinweis()).contains("keine")
+                    .contains("Aussage ueber den Zeitraum");
+        }
+
+        @Test
+        @DisplayName("wer seine Alts nicht verknuepft hat, bekommt den Vorbehalt samt Weg dorthin")
+        void unverknuepfteAltsWerdenGesagt() {
+            // Der Vorbehalt gilt hier schaerfer als in der Tafel der Fuehrung:
+            // Dort ist er eine Fehlerobergrenze ueber viele Zeilen, hier
+            // betrifft er die eine Zahl, die der Leser gerade anschaut - sie
+            // waere zu niedrig, und er hielte sie fuer seine.
+            charakter(ICH, "Ich Selbst", SystemRoles.USER);
+            registriert(ICH, "Ich Selbst", ICH);
+            achtFlotten();
+            dabei(1, ICH, "Ich Selbst");
+
+            MeineFat ohneVerknuepfung = dienst.meineStatistik(ICH, null);
+
+            assertThat(ohneVerknuepfung.verbunden()).isFalse();
+            assertThat(ohneVerknuepfung.verbindungsHinweis())
+                    .contains("nur einen einzigen Charakter")
+                    .contains("CharLink");
+
+            registriert(MEIN_ALT, "Mein Erster Alt", ICH);
+            MeineFat mitVerknuepfung = dienst.meineStatistik(ICH, null);
+
+            assertThat(mitVerknuepfung.verbunden()).isTrue();
+            assertThat(mitVerknuepfung.verbindungsHinweis()).contains("2 Charaktere");
+        }
+
+        @Test
+        @DisplayName("die eigene Sicht nennt den Nenner, weil '6' allein keine Aussage ist")
+        void nennerStehtDabei() {
+            ichOhneAmt();
+            achtFlotten();
+            for (long f : List.of(1L, 2L, 3L, 4L, 5L, 6L)) {
+                dabei(f, ICH, "Ich Selbst");
+            }
+
+            MeineFat meine = dienst.meineStatistik(ICH, null);
+
+            // Ohne den Nenner ist "6" so viel wert wie "irgendetwas zwischen
+            // allem und fast nichts". Und weiterhin kein Prozentwert: Zaehler
+            // und Nenner gehen getrennt hinaus, wie ueberall auf dieser Seite.
+            assertThat(meine.flotten()).isEqualTo(new Anteil(6, 8));
+            assertThat(MeineFat.class.getRecordComponents())
+                    .noneMatch(b -> b.getName().toLowerCase(Locale.ROOT).contains("prozent"));
+        }
+
+        @Test
+        @DisplayName("die eigene Sicht traegt keine Kopfzahlen der Corporation")
+        void keineCorpKopfzahlen() {
+            ichOhneAmt();
+            achtFlotten();
+            andereImselbenFenster();
+            dabei(1, ICH, "Ich Selbst");
+
+            MeineFat meine = dienst.meineStatistik(ICH, null);
+
+            // Wie viele Accounts, Charaktere und FCs die Corporation hat,
+            // beantwortet keine Frage, die jemand ueber sich selbst hat - es
+            // ist Corp-Struktur. Die Flottenzahl bleibt, weil sie der Nenner
+            // ist und im Reiter "Aktive Flotten" ohnehin dasteht.
+            List<String> felder = Stream.of(MeineFat.class.getRecordComponents())
+                    .map(RecordComponent::getName).toList();
+            assertThat(felder).doesNotContain("kopf", "accounts", "charaktereGesamt", "fcs",
+                    "teilnahme");
+            assertThat(felder).contains("flotten", "charaktere");
+        }
+
+        @Test
+        @DisplayName("die Fuehrung sieht weiterhin die volle Tafel")
+        void fuehrungBehaeltDieTafel() {
+            ichOhneAmt();
+            achtFlotten();
+            andereImselbenFenster();
+            dabei(1, ICH, "Ich Selbst");
+
+            FatStatistik corpweit = dienst.statistik(DIREKTOR, null);
+
+            // Ohne diese Zeile koennte der Umbau die corpweite Sicht
+            // stillschweigend mit zuschneiden - der FC saehe dann nur noch
+            // sich selbst und haelte die Tafel fuer kaputt.
+            assertThat(corpweit.kopf().accounts()).isEqualTo(3);
+            assertThat(Stream.concat(corpweit.teilnahme().zeilen().stream(),
+                            corpweit.teilnahme().einmalige().stream())
+                    .map(FleetStatisticsDtos.AccountZeile::accountId))
+                    .containsExactlyInAnyOrder(ICH, FREMDER, NOCH_EIN_FREMDER);
+
+            // Und ein Direktor bekommt in SEINER eigenen Sicht trotzdem nur
+            // sich selbst: Der Zuschnitt haengt an der Methode, nicht an der
+            // Rolle des Anfragenden.
+            MeineFat seine = dienst.meineStatistik(DIREKTOR, null);
+            assertThat(seine.flotten()).isEqualTo(new Anteil(0, 8));
+            assertThat(seine.charaktere()).isEmpty();
+        }
+    }
+
+    // ==================================================================
     // Hilfsmittel
     // ==================================================================
+
+    /**
+     * Sammelt jeden Text aus dem Ergebnisbaum.
+     *
+     * <p>Reflektiv wie {@link #sammleAnteile}: Ein spaeter hinzugefuegtes Feld
+     * soll an dieser Pruefung nicht vorbeikommen, ohne dass jemand den Test
+     * anfasst.</p>
+     */
+    private static void sammleTexte(String pfad, Object wert, List<String> ziel) {
+        switch (wert) {
+            case null -> {
+                return;
+            }
+            case String text -> {
+                ziel.add(pfad + ": " + text);
+                return;
+            }
+            case Collection<?> sammlung -> {
+                int i = 0;
+                for (Object element : sammlung) {
+                    sammleTexte(pfad + "[" + i++ + "]", element, ziel);
+                }
+                return;
+            }
+            default -> { }
+        }
+        if (!wert.getClass().isRecord()) {
+            return;
+        }
+        for (RecordComponent bestandteil : wert.getClass().getRecordComponents()) {
+            try {
+                sammleTexte(pfad + "." + bestandteil.getName(),
+                        bestandteil.getAccessor().invoke(wert), ziel);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("Datensatz nicht lesbar: " + pfad, e);
+            }
+        }
+    }
 
     /**
      * Sammelt alle {@link Anteil} aus dem Ergebnisbaum als "Pfad (x von y)".

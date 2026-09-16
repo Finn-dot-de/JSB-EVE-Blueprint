@@ -1,0 +1,171 @@
+package spring.and.scim.de.prototype.service;
+
+import com.unboundid.scim2.common.messages.ListResponse;
+import com.unboundid.scim2.common.messages.PatchOperation;
+import com.unboundid.scim2.common.messages.PatchRequest;
+import com.unboundid.scim2.common.types.UserResource;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import spring.and.scim.de.prototype.oig.OigScimClient;
+import spring.and.scim.de.prototype.scim.ScimErrorException;
+import spring.and.scim.de.prototype.scim.ScimLocationRewriter;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static spring.and.scim.de.prototype.scim.ScimResourceType.USER;
+
+/**
+ * Prueft die Ablauflogik des Services isoliert: OIG-Client und
+ * Location-Rewriter sind Mocks. Getestet wird nur, was der Service selbst
+ * beitraegt — Vorabpruefung, Delegation an den richtigen Typ und dass jede
+ * Antwort durch den Rewriter laeuft.
+ * <p>
+ * Da {@link ScimGroupService} ausschliesslich die drei Haken anders belegt,
+ * reicht der User-Service als Vertreter fuer {@link ScimResourceService}.
+ */
+@ExtendWith(MockitoExtension.class)
+class ScimUserServiceTest {
+
+    @Mock
+    private OigScimClient oig;
+
+    @Mock
+    private ScimLocationRewriter locations;
+
+    private ScimUserService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new ScimUserService(oig, locations);
+    }
+
+    private static UserResource user(String id, String userName) {
+        UserResource user = new UserResource().setUserName(userName);
+        user.setId(id);
+        return user;
+    }
+
+    /** Der Rewriter markiert die Ressource, damit sichtbar ist, dass er lief. */
+    private void rewriterGibtMarkiertZurueck() {
+        when(locations.relocate(eq(USER), any(UserResource.class)))
+                .thenAnswer(inv -> {
+                    UserResource r = inv.getArgument(1);
+                    r.setExternalId("relocated");
+                    return r;
+                });
+    }
+
+    @Test
+    void createOhneUserNameGehtGarNichtErstZuOig() {
+        assertThatThrownBy(() -> service.create(new UserResource()))
+                .isInstanceOfSatisfying(ScimErrorException.class, ex -> {
+                    assertThat(ex.error().getStatus()).isEqualTo(400);
+                    assertThat(ex.error().getScimType()).isEqualTo("invalidValue");
+                    assertThat(ex.error().getDetail()).contains("userName");
+                });
+
+        verifyNoInteractions(oig, locations);
+    }
+
+    @Test
+    void createMitLeeremUserNameZaehltAlsFehlend() {
+        assertThatThrownBy(() -> service.create(new UserResource().setUserName("   ")))
+                .isInstanceOf(ScimErrorException.class);
+
+        verifyNoInteractions(oig);
+    }
+
+    @Test
+    void createDelegiertAnOigUndSchreibtLocationUm() {
+        UserResource eingang = new UserResource().setUserName("maria");
+        UserResource vonOig = user("4711", "maria");
+        when(oig.create(USER, UserResource.class, eingang)).thenReturn(vonOig);
+        rewriterGibtMarkiertZurueck();
+
+        UserResource ergebnis = service.create(eingang);
+
+        assertThat(ergebnis.getId()).isEqualTo("4711");
+        assertThat(ergebnis.getExternalId()).isEqualTo("relocated");
+        verify(locations).relocate(USER, vonOig);
+    }
+
+    @Test
+    void findByIdDelegiertUndSchreibtLocationUm() {
+        UserResource vonOig = user("4711", "maria");
+        when(oig.get(USER, UserResource.class, "4711")).thenReturn(vonOig);
+        rewriterGibtMarkiertZurueck();
+
+        UserResource ergebnis = service.findById("4711");
+
+        assertThat(ergebnis.getExternalId()).isEqualTo("relocated");
+    }
+
+    @Test
+    void searchSchreibtJedeTrefferLocationUmUndBehaeltPagingWerte() {
+        List<UserResource> treffer = List.of(user("1", "a"), user("2", "b"));
+        when(oig.search(USER, UserResource.class, "userName sw \"x\"", 5, 2))
+                .thenReturn(new ListResponse<>(42, treffer, 5, 2));
+        rewriterGibtMarkiertZurueck();
+
+        ListResponse<UserResource> ergebnis = service.search("userName sw \"x\"", 5, 2);
+
+        assertThat(ergebnis.getTotalResults()).isEqualTo(42);
+        assertThat(ergebnis.getStartIndex()).isEqualTo(5);
+        assertThat(ergebnis.getItemsPerPage()).isEqualTo(2);
+        assertThat(ergebnis.getResources())
+                .extracting(UserResource::getExternalId)
+                .containsExactly("relocated", "relocated");
+    }
+
+    @Test
+    void searchOhneFilterReichtNullDurch() {
+        when(oig.search(eq(USER), eq(UserResource.class), isNull(), eq(1), eq(100)))
+                .thenReturn(new ListResponse<>(0, List.of(), 1, 100));
+
+        ListResponse<UserResource> ergebnis = service.search(null, 1, 100);
+
+        assertThat(ergebnis.getResources()).isEmpty();
+        verifyNoInteractions(locations);
+    }
+
+    @Test
+    void patchReichtDenPatchRequestUnveraendertWeiter() {
+        PatchRequest patch = new PatchRequest(List.of(PatchOperation.replace("active", false)));
+        UserResource vonOig = user("4711", "maria");
+        when(oig.patch(USER, UserResource.class, "4711", patch)).thenReturn(vonOig);
+        rewriterGibtMarkiertZurueck();
+
+        UserResource ergebnis = service.patch("4711", patch);
+
+        assertThat(ergebnis.getExternalId()).isEqualTo("relocated");
+        verify(oig).patch(USER, UserResource.class, "4711", patch);
+    }
+
+    @Test
+    void deleteDelegiertNurAnOig() {
+        service.delete("4711");
+
+        verify(oig).delete(USER, "4711");
+        verifyNoInteractions(locations);
+    }
+
+    @Test
+    void fehlerAusOigWerdenUnveraendertDurchgereicht() {
+        ScimErrorException oigFehler = ScimErrorException.badGateway("OIG ist nicht erreichbar.");
+        when(oig.get(USER, UserResource.class, "4711")).thenThrow(oigFehler);
+
+        assertThatThrownBy(() -> service.findById("4711")).isSameAs(oigFehler);
+    }
+}
+

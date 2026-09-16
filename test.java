@@ -1,101 +1,138 @@
-import com.unboundid.scim2.common.BaseScimResource;
-import com.unboundid.scim2.common.messages.ErrorResponse;
 import com.unboundid.scim2.common.messages.ListResponse;
-import com.unboundid.scim2.common.messages.PatchRequest;
-import com.unboundid.scim2.common.utils.JsonUtils;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.Nullable;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.core.ResolvableType;
-import org.springframework.stereotype.Component;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
-import de.bund.bamf.debev.ng.idm.oig.client.scim.ScimErrorException;
-import de.bund.bamf.debev.ng.idm.oig.client.scim.ScimResourceType;
+import com.unboundid.scim2.common.types.UserResource;
+import de.bund.bamf.debev.ng.idm.oig.client.config.OigClientConfiguration;
+import de.bund.bamf.debev.ng.idm.oig.client.oig.OigScimClient;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.restclient.test.autoconfigure.RestClientTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.client.MockRestServiceServer;
 
-import java.util.Objects;
-import java.util.Optional;
-import java.util.function.Supplier;
+import static de.bund.bamf.debev.ng.idm.oig.client.scim.ScimResourceType.USER;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-@Slf4j
-@Component
-public class OigScimClient {
+@RestClientTest(OigScimClient.class)
+@Import(OigClientConfiguration.class)
+@TestPropertySource(properties = {
+        "oig.base-url=" + OigScimClientUserQueryTest.BASE_URL,
+        "oig.username=xelsysadm",
+        "oig.password=geheim"
+})
+class OigScimClientUserQueryTest {
 
-    private final RestClient rest;
+    static final String BASE_URL = "https://oig.example/iam/governance/scim/v1";
+    private static final MediaType SCIM_JSON = MediaType.parseMediaType("application/scim+json");
 
-    public OigScimClient(RestClient oigRestClient) {
-        this.rest = oigRestClient;
+    @Autowired
+    private MockRestServiceServer oig;
+
+    @Autowired
+    private OigScimClient client;
+
+    @AfterEach
+    void alleErwartungenErfuellt() {
+        oig.verify();
     }
 
-    public <R extends BaseScimResource> R create(ScimResourceType type, Class<R> resourceClass, R resource) {
-        return call(() -> rest.post()
-                .uri(type.remotePath())
-                .body(resource)
-                .retrieve()
-                .body(resourceClass));
+    private static String user(String id, String userName, String givenName, String familyName) {
+        return """
+                {
+                  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+                  "id": "%s",
+                  "userName": "%s",
+                  "name": { "givenName": "%s", "familyName": "%s" },
+                  "active": true,
+                  "meta": { "resourceType": "User", "location": "%s/Users/%s" }
+                }""".formatted(id, userName, givenName, familyName, BASE_URL, id);
     }
 
-    public <R extends BaseScimResource> R get(ScimResourceType type, Class<R> resourceClass, String id) {
-        return call(() -> rest.get()
-                .uri(type.remotePath() + "/{id}", id)
-                .retrieve()
-                .body(resourceClass));
+    private static String listResponse(int total, String... resources) {
+        return """
+                {
+                  "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+                  "totalResults": %d,
+                  "startIndex": 1,
+                  "itemsPerPage": %d,
+                  "Resources": [ %s ]
+                }""".formatted(total, resources.length, String.join(",", resources));
     }
 
-    public <R extends BaseScimResource> ListResponse<R> search(ScimResourceType type, Class<R> resourceClass,
-                                                              @Nullable String filter, int startIndex, int count) {
-        ParameterizedTypeReference<ListResponse<R>> listType = ParameterizedTypeReference.forType(
-                ResolvableType.forClassWithGenerics(ListResponse.class, resourceClass).getType());
+    private static final String MARIA = user("4711", "m.schneider@example.de", "Maria", "Schneider");
+    private static final String THOMAS = user("4712", "t.weber@example.de", "Thomas", "Weber");
 
-        return call(() -> rest.get()
-                .uri(builder -> builder.path(type.remotePath())
-                        .queryParamIfPresent("filter", Optional.ofNullable(filter))
-                        .queryParam("startIndex", startIndex)
-                        .queryParam("count", count)
-                        .build())
-                .retrieve()
-                .body(listType));
+    @Test
+    @DisplayName("Get User details by userid")
+    void getUserById() {
+        oig.expect(requestTo(BASE_URL + "/Users/4711"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(MARIA, SCIM_JSON));
+
+        UserResource user = client.get(USER, UserResource.class, "4711");
+
+        assertThat(user.getId()).isEqualTo("4711");
+        assertThat(user.getUserName()).isEqualTo("m.schneider@example.de");
+        assertThat(user.getName().getGivenName()).isEqualTo("Maria");
     }
 
-    public <R extends BaseScimResource> R patch(ScimResourceType type, Class<R> resourceClass,
-                                                String id, PatchRequest patchRequest) {
-        return call(() -> rest.patch()
-                .uri(type.remotePath() + "/{id}", id)
-                .body(patchRequest)
-                .retrieve()
-                .body(resourceClass));
+    @Test
+    @DisplayName("Get User Details by userName")
+    void getUserByUserName() {
+        String filter = "userName eq \"m.schneider@example.de\"";
+
+        oig.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getPath()).endsWith("/Users"))
+                .andExpect(request -> assertThat(request.getURI().getQuery()).contains("filter=" + filter))
+                .andExpect(queryParam("count", "1"))
+                .andRespond(withSuccess(listResponse(1, MARIA), SCIM_JSON));
+
+        ListResponse<UserResource> ergebnis = client.search(USER, UserResource.class, filter, 1, 1);
+
+        assertThat(ergebnis.getTotalResults()).isEqualTo(1);
+        assertThat(ergebnis.getResources()).singleElement()
+                .satisfies(u -> assertThat(u.getUserName()).isEqualTo("m.schneider@example.de"));
     }
 
-    public void delete(ScimResourceType type, String id) {
-        call(() -> rest.delete()
-                .uri(type.remotePath() + "/{id}", id)
-                .retrieve()
-                .toBodilessEntity());
+    @Test
+    @DisplayName("Get User details by search criteria")
+    void getUsersBySearchCriteria() {
+        String filter = "name.familyName sw \"Sch\" and active eq true";
+
+        oig.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getQuery()).contains("filter=" + filter))
+                .andRespond(withSuccess(listResponse(1, MARIA), SCIM_JSON));
+
+        ListResponse<UserResource> ergebnis = client.search(USER, UserResource.class, filter, 1, 100);
+
+        assertThat(ergebnis.getResources())
+                .extracting(UserResource::getName)
+                .extracting(n -> n.getFamilyName())
+                .containsExactly("Schneider");
     }
 
-    private <T> T call(Supplier<@Nullable T> request) {
-        try {
-            return Objects.requireNonNull(request.get(), "OIG hat eine leere Antwort geliefert");
-        } catch (RestClientResponseException e) {
-            throw ScimErrorException.from(toErrorResponse(e));
-        } catch (ResourceAccessException e) {
-            log.error("OIG nicht erreichbar", e);
-            throw ScimErrorException.badGateway("OIG ist nicht erreichbar.");
-        }
-    }
+    @Test
+    @DisplayName("Search User")
+    void searchUsers() {
+        oig.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getPath()).endsWith("/Users"))
+                .andExpect(request -> assertThat(request.getURI().getQuery()).doesNotContain("filter"))
+                .andExpect(queryParam("startIndex", "1"))
+                .andExpect(queryParam("count", "10"))
+                .andRespond(withSuccess(listResponse(2, MARIA, THOMAS), SCIM_JSON));
 
-    private ErrorResponse toErrorResponse(RestClientResponseException e) {
-        int status = e.getStatusCode().value();
-        try {
-            return JsonUtils.getObjectReader()
-                    .forType(ErrorResponse.class)
-                    .readValue(e.getResponseBodyAsString());
-        } catch (RuntimeException parseFailure) {
-            log.warn("OIG-Fehlerantwort ({}) ist kein SCIM-JSON: {}", status, e.getResponseBodyAsString());
-            ErrorResponse error = new ErrorResponse(status);
-            error.setDetail("OIG hat mit Status %d geantwortet.".formatted(status));
-            return error;
-        }
+        ListResponse<UserResource> ergebnis = client.search(USER, UserResource.class, null, 1, 10);
+
+        assertThat(ergebnis.getTotalResults()).isEqualTo(2);
+        assertThat(ergebnis.getResources())
+                .extracting(UserResource::getId)
+                .containsExactly("4711", "4712");
     }
 }

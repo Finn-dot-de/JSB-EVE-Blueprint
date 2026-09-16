@@ -1,107 +1,116 @@
-package com.example.idmhub.controller;
+@RestClientTest(OigScimClient.class)
+@Import(OigClientConfiguration.class)
+@TestPropertySource(properties = {
+        "oig.base-url=" + OigScimClientUserQueryTest.BASE_URL,
+        "oig.username=xelsysadm",
+        "oig.password=geheim"
+})
+class OigScimClientUserQueryTest {
 
-import com.example.idmhub.entity.UserEntity;
-import com.example.idmhub.repository.UserRepository;
-import com.unboundid.scim2.common.types.Email;
-import com.unboundid.scim2.common.types.Meta;
-import com.unboundid.scim2.common.types.UserResource;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+    static final String BASE_URL = "https://oig.example/iam/governance/scim/v1";
+    private static final MediaType SCIM_JSON = MediaType.parseMediaType("application/scim+json");
 
-import java.net.URI;
-import java.util.Calendar;
-import java.util.Optional;
-import java.util.UUID;
+    @Autowired
+    private MockRestServiceServer oig;
 
-@RestController
-@RequestMapping(value = "/scim/v2/Users", produces = "application/scim+json")
-@Tag(name = "SCIM 2.0 User Provisioning", description = "Endpunkte für das Verwalten von Benutzern im IDM Hub")
-public class ScimUserController {
+    @Autowired
+    private OigScimClient client;
 
-    private final UserRepository userRepository;
-
-    // Dependency Injection via Konstruktor
-    public ScimUserController(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    @AfterEach
+    void alleErwartungenErfuellt() {
+        oig.verify();
     }
 
-    @PostMapping(consumes = "application/scim+json")
-    @Operation(summary = "Neuen Benutzer anlegen", description = "Speichert einen SCIM-Benutzer in Postgres.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Benutzer erfolgreich angelegt", 
-                         content = @Content(schema = @Schema(implementation = UserResource.class))),
-            @ApiResponse(responseCode = "400", description = "Ungültiges Format")
-    })
-    public ResponseEntity<UserResource> createUser(@RequestBody UserResource incomingUser) {
-        
-        System.out.println("Speichere User in DB: " + incomingUser.getUserName());
-
-        // 1. ID generieren
-        String newId = UUID.randomUUID().toString();
-        
-        // 2. Primäre E-Mail aus dem SCIM-Objekt extrahieren (falls vorhanden)
-        String primaryEmail = null;
-        if (incomingUser.getEmails() != null && !incomingUser.getEmails().isEmpty()) {
-            primaryEmail = incomingUser.getEmails().get(0).getValue();
-        }
-
-        // 3. Entity bauen und in Postgres speichern
-        UserEntity entity = new UserEntity(newId, incomingUser.getUserName(), primaryEmail);
-        userRepository.save(entity);
-
-        // 4. Das SCIM Response-Objekt fertigstellen
-        incomingUser.setId(newId);
-        
-        Meta meta = new Meta();
-        meta.setResourceType("User");
-        meta.setCreated(Calendar.getInstance());
-        meta.setLastModified(Calendar.getInstance());
-        String location = "http://localhost:8080/scim/v2/Users/" + newId;
-        meta.setLocation(location);
-        incomingUser.setMeta(meta);
-
-        return ResponseEntity
-                .created(URI.create(location))
-                .body(incomingUser);
+    private static String user(String id, String userName, String givenName, String familyName) {
+        return """
+                {
+                  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+                  "id": "%s",
+                  "userName": "%s",
+                  "name": { "givenName": "%s", "familyName": "%s" },
+                  "active": true,
+                  "meta": { "resourceType": "User", "location": "%s/Users/%s" }
+                }""".formatted(id, userName, givenName, familyName, BASE_URL, id);
     }
 
-    @GetMapping("/{id}")
-    @Operation(summary = "Benutzer aus Postgres abrufen")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Benutzer gefunden"),
-            @ApiResponse(responseCode = "404", description = "Benutzer nicht gefunden", content = @Content)
-    })
-    public ResponseEntity<UserResource> getUser(@PathVariable String id) {
-        
-        // 1. In Postgres nach der ID suchen
-        Optional<UserEntity> userOpt = userRepository.findById(id);
+    private static String listResponse(int total, String... resources) {
+        return """
+                {
+                  "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+                  "totalResults": %d,
+                  "startIndex": 1,
+                  "itemsPerPage": %d,
+                  "Resources": [ %s ]
+                }""".formatted(total, resources.length, String.join(",", resources));
+    }
 
-        if (userOpt.isEmpty()) {
-            // Wenn nicht gefunden: Sauberes HTTP 404 zurückgeben
-            return ResponseEntity.notFound().build();
-        }
+    private static final String MARIA = user("4711", "m.schneider@example.de", "Maria", "Schneider");
+    private static final String THOMAS = user("4712", "t.weber@example.de", "Thomas", "Weber");
 
-        UserEntity dbUser = userOpt.get();
+    @Test
+    @DisplayName("Get User details by userid")
+    void getUserById() {
+        oig.expect(requestTo(BASE_URL + "/Users/4711"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(MARIA, SCIM_JSON));
 
-        // 2. Datenbank-Entität wieder auf ein SCIM-Objekt (UserResource) mappen
-        UserResource scimUser = new UserResource();
-        scimUser.setId(dbUser.getId());
-        scimUser.setUserName(dbUser.getUserName());
-        
-        if (dbUser.getPrimaryEmail() != null) {
-            scimUser.addEmail(new Email()
-                    .setValue(dbUser.getPrimaryEmail())
-                    .setType("work")
-                    .setPrimary(true));
-        }
+        UserResource user = client.get(USER, UserResource.class, "4711");
 
-        return ResponseEntity.ok(scimUser);
+        assertThat(user.getId()).isEqualTo("4711");
+        assertThat(user.getUserName()).isEqualTo("m.schneider@example.de");
+        assertThat(user.getName().getGivenName()).isEqualTo("Maria");
+    }
+
+    @Test
+    @DisplayName("Get User Details by userName")
+    void getUserByUserName() {
+        String filter = "userName eq \"m.schneider@example.de\"";
+
+        oig.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getPath()).endsWith("/Users"))
+                .andExpect(request -> assertThat(request.getURI().getQuery()).contains("filter=" + filter))
+                .andExpect(queryParam("count", "1"))
+                .andRespond(withSuccess(listResponse(1, MARIA), SCIM_JSON));
+
+        ListResponse<UserResource> ergebnis = client.search(USER, UserResource.class, filter, 1, 1);
+
+        assertThat(ergebnis.getTotalResults()).isEqualTo(1);
+        assertThat(ergebnis.getResources()).singleElement()
+                .satisfies(u -> assertThat(u.getUserName()).isEqualTo("m.schneider@example.de"));
+    }
+
+    @Test
+    @DisplayName("Get User details by search criteria")
+    void getUsersBySearchCriteria() {
+        String filter = "name.familyName sw \"Sch\" and active eq true";
+
+        oig.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getQuery()).contains("filter=" + filter))
+                .andRespond(withSuccess(listResponse(1, MARIA), SCIM_JSON));
+
+        ListResponse<UserResource> ergebnis = client.search(USER, UserResource.class, filter, 1, 100);
+
+        assertThat(ergebnis.getResources())
+                .extracting(UserResource::getName)
+                .extracting(n -> n.getFamilyName())
+                .containsExactly("Schneider");
+    }
+
+    @Test
+    @DisplayName("Search User")
+    void searchUsers() {
+        oig.expect(method(HttpMethod.GET))
+                .andExpect(request -> assertThat(request.getURI().getPath()).endsWith("/Users"))
+                .andExpect(request -> assertThat(request.getURI().getQuery()).doesNotContain("filter"))
+                .andExpect(queryParam("startIndex", "1"))
+                .andExpect(queryParam("count", "10"))
+                .andRespond(withSuccess(listResponse(2, MARIA, THOMAS), SCIM_JSON));
+
+        ListResponse<UserResource> ergebnis = client.search(USER, UserResource.class, null, 1, 10);
+
+        assertThat(ergebnis.getTotalResults()).isEqualTo(2);
+        assertThat(ergebnis.getResources())
+                .extracting(UserResource::getId)
+                .containsExactly("4711", "4712");
     }
 }

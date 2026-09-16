@@ -1,3 +1,23 @@
+import com.unboundid.scim2.common.BaseScimResource;
+import com.unboundid.scim2.common.messages.ErrorResponse;
+import com.unboundid.scim2.common.messages.ListResponse;
+import com.unboundid.scim2.common.messages.PatchRequest;
+import com.unboundid.scim2.common.utils.JsonUtils;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.ResolvableType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
+import de.bund.bamf.debev.ng.idm.oig.client.scim.ScimErrorException;
+import de.bund.bamf.debev.ng.idm.oig.client.scim.ScimResourceType;
+
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Supplier;
+
 @Slf4j
 @Component
 public class OigScimClient {
@@ -64,7 +84,7 @@ public class OigScimClient {
             throw ScimErrorException.badGateway("OIG ist nicht erreichbar.");
         }
     }
-    
+
     private ErrorResponse toErrorResponse(RestClientResponseException e) {
         int status = e.getStatusCode().value();
         try {
